@@ -21,9 +21,10 @@ Version 1.0.2 integrates selected upstream improvements that fit SereinExt witho
 - expanded Extension SDK capabilities for bounded app queries, messaging settings, guild folders, native actions and action-result feedback (upstream #411);
 - Discord-like inline image sizing, higher-quality media renditions and smoother MP4/MOV/M4V-backed gifv motion while preserving SereinExt isolated web previews (upstream #409);
 - permission-gated server sticker management with static PNG/JPEG/WebP preparation, upload, edit and delete support (upstream #412);
+- the upstream server-creation flow with create/join picker, server name/icon preparation and bounded request state (upstream #414);
 - the existing SereinExt voice, login, multi-device presence, PT-BR/ES, moderation, Hyprland and web-media changes remain preserved.
 
-The upstream server-creation flow (#414) is intentionally not included in 1.0.2 because its normal-user `POST /guilds` behavior is unofficial and was not live-verified by upstream.
+Server creation is included as an **experimental compatibility feature**: upstream notes that the normal-user `POST /guilds` behavior is unofficial and was not live-verified, so SereinExt keeps the flow bounded and should not treat a failed request as proof that no server was created.
 
 ### SereinExt 1.0.1
 
