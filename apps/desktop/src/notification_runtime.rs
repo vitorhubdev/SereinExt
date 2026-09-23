@@ -121,6 +121,13 @@ impl Runtime {
 		if self.ring.is_some() {
 			ctx.request_repaint_after(Duration::from_millis(250));
 		}
+		// Live call cues are automatic notifications: honor DND and each cue's preference.
+		if let Some(cue) = ui.notification_cue.take()
+			&& audible
+			&& options.allows(cue)
+		{
+			sound = Some(cue);
+		}
 		// Explicit previews are allowed in the offline demo and intentionally ignore automatic mute choices.
 		if let Some(preview) = ui.notification_preview.take() {
 			sound = Some(preview);

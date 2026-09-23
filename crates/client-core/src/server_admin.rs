@@ -172,7 +172,15 @@ impl State {
 						.is_some_and(|(uploader, user)| uploader.id == user.id)))
 	}
 	pub fn can_open_member_settings(&self, guild: Id) -> bool {
+		// Discord exposes the Members page to several moderation permissions, not only
+		// Manage Guild. Keep this as an any-of gate; action-specific hierarchy checks
+		// still decide whether a given member can actually be changed or kicked.
 		self.can_manage_guild(guild)
+			|| self.guild_permission(guild, p::KICK_MEMBERS)
+			|| self.guild_permission(guild, p::BAN_MEMBERS)
+			|| self.guild_permission(guild, p::MANAGE_ROLES)
+			|| self.guild_permission(guild, p::MANAGE_NICKNAMES)
+			|| self.guild_permission(guild, p::MODERATE_MEMBERS)
 	}
 	fn admin_member(&self, guild: Id, user: Id) -> Option<&model::server_admin::Member> {
 		(self.server_admin.guild == Some(guild)).then_some(())?;

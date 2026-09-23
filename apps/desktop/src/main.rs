@@ -348,11 +348,9 @@ fn main() -> eframe::Result {
 					..eframe::egui_wgpu::WgpuSetupCreateNew::without_display_handle()
 				},
 			),
-			// Keep cursor-driven redraws synchronized even where AutoVsync selects FifoRelaxed.
-			surface: eframe::egui_wgpu::SurfaceConfig {
-				present_mode: eframe::wgpu::PresentMode::Fifo,
-				..eframe::egui_wgpu::SurfaceConfig::LOW_LATENCY
-			},
+			// Keep eframe's low-latency surface policy. Forcing FIFO adds an avoidable
+			// presentation queue on some compositors and makes native window dragging feel heavy.
+			surface: eframe::egui_wgpu::SurfaceConfig::LOW_LATENCY,
 			..Default::default()
 		},
 		persist_window: false,

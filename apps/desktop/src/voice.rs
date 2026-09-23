@@ -683,9 +683,8 @@ impl Voice {
 					state.gateway_connected,
 					live.user,
 					&call.participants,
-				) && ui.notification_options.allows(cue)
-				{
-					ui.notification_preview = Some(cue);
+				) {
+					ui.notification_cue = Some(cue);
 					ctx.request_repaint();
 				}
 			}

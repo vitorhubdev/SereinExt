@@ -368,6 +368,9 @@ pub struct MessagingUi {
 	pub voice_speaking: Vec<Id>,
 	pub notifications_enabled: bool,
 	pub notification_options: model::notification_preferences::Device,
+	/// Automatic live-client cue. The desktop runtime applies DND and per-sound preferences.
+	pub notification_cue: Option<model::notification_preferences::Sound>,
+	/// Explicit settings preview; intentionally allowed to bypass automatic mute policy.
 	pub notification_preview: Option<model::notification_preferences::Sound>,
 	pub notification_sound_status: &'static str,
 	pub notification_test_available: bool,
