@@ -248,7 +248,10 @@ impl LoginView {
 			true
 		});
 		view.connect_query_permission_state(|_, query| {
-			query.finish(webkit6::PermissionState::Denied);
+			// Do not pre-deny every Permissions API query. Returning Prompt lets WebKit
+			// raise the concrete permission-request signal below, where only hCaptcha's
+			// scoped third-party cookie access is allowed and device permissions stay denied.
+			query.finish(webkit6::PermissionState::Prompt);
 			true
 		});
 		view.connect_run_file_chooser(|_, request| {
@@ -302,8 +305,9 @@ impl LoginView {
 		});
 		// GTK owns its standalone window; no foreign winit/raw-handle embedding.
 		let _ = parent;
-		view.load_uri("https://discord.com/login");
 		window.present();
+		view.grab_focus();
+		view.load_uri("https://discord.com/login");
 		let display = gtk4::prelude::WidgetExt::display(&window);
 		Ok(Self {
 			view,

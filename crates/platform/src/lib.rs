@@ -144,6 +144,8 @@ impl LoginView {
 			include_str!("login-handoff.js").replace("__SEREIN_LOGIN_CAPABILITY__", &capability);
 		let builder = WebViewBuilder::new()
 			.with_url("https://discord.com/login")
+			.with_visible(true)
+			.with_focused(true)
 			.with_incognito(true)
 			.with_devtools(false)
 			.with_initialization_script_for_main_only(script, true)
@@ -167,6 +169,10 @@ impl LoginView {
 			.with_bounds(bounds(&parent))
 			.build_as_child(parent.as_ref())
 			.map_err(|_| Failure::Protocol)?;
+		// Some WebView2/WebKit hosts create a child before the parent becomes active.
+		// Make the owner's explicit login click immediately visible and keyboard-ready.
+		view.set_visible(true).map_err(|_| Failure::Protocol)?;
+		let _ = view.focus();
 		Ok(Self {
 			view,
 			tokens,
