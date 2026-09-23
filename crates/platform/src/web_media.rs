@@ -116,6 +116,13 @@ impl WebMediaView {
 			.with_focused(true)
 			.with_autoplay(true)
 			.with_devtools(false)
+			.with_permission_handler(|kind| {
+				if matches!(kind, wry::PermissionKind::Autoplay) {
+					wry::PermissionResponse::Allow
+				} else {
+					wry::PermissionResponse::Deny
+				}
+			})
 			.with_navigation_handler(|url| navigation_allowed(&url))
 			.with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
 			.with_download_started_handler(|_, _| false)
@@ -257,7 +264,7 @@ impl WebMediaView {
 			}
 			context.iteration(false);
 		}
-		use gtk4::prelude::DisplayExt;
+		use webkit6::prelude::*;
 		self.display.flush();
 	}
 }
@@ -269,7 +276,7 @@ impl Drop for WebMediaView {
 		self.view.terminate_web_process();
 		self.window.set_child(None::<&gtk4::Widget>);
 		self.window.destroy();
-		use gtk4::prelude::DisplayExt;
+		use webkit6::prelude::*;
 		self.display.flush();
 	}
 }

@@ -18,7 +18,7 @@ fn supported_web_media(value: &str) -> bool {
 	matches!(
 		url.host_str().map(|host| host.trim_start_matches("www.").to_ascii_lowercase()),
 		Some(host) if matches!(host.as_str(),
-			"youtube.com" | "youtu.be" | "x.com" | "twitter.com" | "vimeo.com" | "player.vimeo.com")
+			"youtube.com" | "m.youtube.com" | "youtu.be" | "x.com" | "twitter.com" | "vimeo.com" | "player.vimeo.com")
 	)
 }
 
