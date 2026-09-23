@@ -4504,10 +4504,13 @@ impl Desktop {
 					self.cache_error = true;
 					self.cache_status = error;
 				}
+				let stage = result.stage;
 				self.messaging
 					.accept_avatar(ctx, result.key.clone(), result.image);
-				self.messaging
-					.accept_gif_animation(result.key, result.frames);
+				if stage == avatars::DecodeStage::Settled {
+					self.messaging
+						.accept_gif_animation(result.key, result.frames);
+				}
 			}
 		}
 	}

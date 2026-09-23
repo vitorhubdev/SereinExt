@@ -1,7 +1,7 @@
 //! Native embed cards. External links share the timeline's explicit confirmation.
 use crate::{
 	attachments::{DownloadUi, embed_context_menu},
-	avatars::Avatars,
+	avatars::{Avatars, Surface},
 	markdown::{FormatCache, external_url},
 };
 use egui::RichText;
@@ -199,7 +199,9 @@ fn gallery(
 	download: &mut DownloadUi,
 	demo: bool,
 ) {
-	let width = ui.available_width().clamp(1.0, 480.0);
+	let width = ui
+		.available_width()
+		.clamp(1.0, crate::avatars::media::MEDIA_MAX_WIDTH);
 	let height = gallery_rect(embeds.len(), embeds.len() - 1, width).bottom();
 	let (area, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
 	for (index, embed) in embeds.iter().enumerate() {
@@ -215,7 +217,9 @@ fn gallery(
 					.as_deref()
 					.or(media.proxy_url.as_deref())
 					.and_then(external_url);
-				let image = images.show_banner(ui, media, rect.size(), demo);
+				let image = images
+					.show_media(ui, media, rect.size(), demo, Surface::Banner)
+					.response;
 				let response =
 					ui.interact(image.rect, image.id.with("media"), egui::Sense::click());
 				embed_context_menu(&response, media, download, demo);
@@ -307,7 +311,9 @@ fn image_preview(
 	download: &mut DownloadUi,
 	demo: bool,
 ) {
-	let painted = images.show_embed(ui, image, size, demo);
+	let painted = images
+		.show_media(ui, image, size, demo, Surface::Inline)
+		.response;
 	let response = ui.interact(painted.rect, painted.id.with("media"), egui::Sense::click());
 	response.widget_info(|| {
 		egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), "Image actions")
@@ -351,8 +357,17 @@ pub fn show(
 			}
 			if let Some(image) = inline_image(embed) {
 				let gif = gif_for_embed(embed, &state.gifs);
-				let painted =
-					images.show_gif_embed(ui, embed, gif.as_ref(), egui::vec2(480.0, 320.0), demo);
+				let painted = images.show_gif_embed(
+					ui,
+					embed,
+					gif.as_ref(),
+					egui::vec2(
+						ui.available_width()
+							.min(crate::avatars::media::MEDIA_MAX_WIDTH),
+						crate::avatars::media::MEDIA_MAX_HEIGHT,
+					),
+					demo,
+				);
 				let response =
 					ui.interact(painted.rect, painted.id.with("media"), egui::Sense::click());
 				response.widget_info(|| {
@@ -467,11 +482,12 @@ pub fn show(
 									if let Some(author) = &embed.author {
 										ui.horizontal_wrapped(|ui| {
 											if let Some(icon) = &author.icon {
-												images.show_embed(
+												images.show_media(
 													ui,
 													icon,
 													egui::vec2(20.0, 20.0),
 													demo,
+													Surface::Inline,
 												);
 											}
 											link(
@@ -561,7 +577,10 @@ pub fn show(
 								image_preview(
 									ui,
 									image,
-									egui::vec2(ui.available_width(), 320.0),
+									egui::vec2(
+										ui.available_width(),
+										crate::avatars::media::MEDIA_MAX_HEIGHT,
+									),
 									images,
 									download,
 									demo,
@@ -612,7 +631,13 @@ pub fn show(
 							if let Some(footer) = &embed.footer {
 								ui.horizontal_wrapped(|ui| {
 									if let Some(icon) = &footer.icon {
-										images.show_embed(ui, icon, egui::vec2(16.0, 16.0), demo);
+										images.show_media(
+											ui,
+											icon,
+											egui::vec2(16.0, 16.0),
+											demo,
+											Surface::Inline,
+										);
 									}
 									ui.add(
 										egui::Label::new(

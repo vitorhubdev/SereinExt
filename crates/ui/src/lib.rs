@@ -11,7 +11,8 @@ pub use video::{VideoCommand, VideoState, VideoUi};
 mod attachments;
 pub use attachments::DownloadUi;
 mod avatars;
-pub use avatars::{EMBED_EDGE, GifFrames, LARGE_EDGE, fit_edge};
+pub use avatars::media::{Lane, MAX_FRAMES, Motion, Rendition, Size, fit_edge, is_motion_video};
+pub use avatars::{EMBED_EDGE, GifFrames};
 mod categories;
 #[cfg(feature = "demo")]
 pub use categories::debug_thread_navigation_check;
