@@ -2087,9 +2087,9 @@ impl MessagingUi {
 			(false, true) => model::notification_preferences::Sound::Mute,
 			(false, false) => model::notification_preferences::Sound::Unmute,
 		};
-		if self.notification_options.allows(cue) {
-			self.notification_preview = Some(cue);
-		}
+		// This is a live client event, not the explicit Settings preview.
+		// DND and per-sound preferences are applied by the desktop notification runtime.
+		self.notification_cue = Some(cue);
 	}
 
 	/// Mute or deafen toggle: red slashed glyph while active, like Discord's user area.

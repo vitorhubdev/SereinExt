@@ -134,9 +134,9 @@ impl Echo {
 			if self.settings.echo_cancellation
 				|| self.settings.suppression == NoiseSuppression::WebRtc
 			{
-				self.processor
-					.set_stream_delay_ms(0)
-					.map_err(|_| "Echo cancellation delay is invalid")?;
+				// AEC3 estimates render/capture delay internally. Forcing 0 ms here
+				// misrepresents the real device/callback buffering and can destabilize
+				// cancellation on otherwise healthy audio paths.
 				self.processor
 					.process_capture_f32(&[chunk], &mut [&mut output])
 					.map_err(|_| "Microphone processing failed")?;
