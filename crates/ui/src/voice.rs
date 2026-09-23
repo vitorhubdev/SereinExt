@@ -1430,11 +1430,12 @@ impl MessagingUi {
 		.on_disabled_hover_text(hint);
 		if response.clicked() {
 			self.voice_camera_on_join = video.then_some(channel);
-			if let Err(reason) =
-				self.request_call_audio(state, channel, !guild && !incoming, None, commands)
+			if self
+				.request_call_audio(state, channel, !guild && !incoming, None, commands)
+				.is_err()
 			{
 				self.voice_camera_on_join = None;
-				state.status = Box::leak(reason.into_boxed_str());
+				state.status = "Joining this call is no longer available.";
 			}
 		}
 		response
