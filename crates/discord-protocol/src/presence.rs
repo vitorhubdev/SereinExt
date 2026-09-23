@@ -16,14 +16,12 @@ pub struct PresenceUpdate {
 	pub clients: Patch<model::ClientPlatforms>,
 }
 
-#[derive(Clone, Copy, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Clone, Copy)]
 enum ClientState {
 	Online,
 	Idle,
 	Dnd,
 	Offline,
-	#[serde(other)]
 	Other,
 }
 impl ClientState {
@@ -34,6 +32,30 @@ impl ClientState {
 			Self::Dnd => Some(model::ClientPresence::DoNotDisturb),
 			Self::Offline | Self::Other => None,
 		}
+	}
+}
+impl<'de> Deserialize<'de> for ClientState {
+	fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+		struct State;
+		impl Visitor<'_> for State {
+			type Value = ClientState;
+			fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+				f.write_str("a bounded Discord client presence state")
+			}
+			fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+				if value.len() > 32 {
+					return Err(E::custom("Client presence state exceeds capacity"));
+				}
+				Ok(match value {
+					"online" => ClientState::Online,
+					"idle" => ClientState::Idle,
+					"dnd" => ClientState::Dnd,
+					"offline" => ClientState::Offline,
+					_ => ClientState::Other,
+				})
+			}
+		}
+		d.deserialize_str(State)
 	}
 }
 #[derive(Deserialize)]
