@@ -1286,7 +1286,11 @@ impl MessagingUi {
 			|| !self.voice_available
 			|| !state.can_call(switch.channel)
 		{
+			let channel = switch.channel;
 			self.voice_switch = None;
+			if self.voice_camera_on_join == Some(channel) {
+				self.voice_camera_on_join = None;
+			}
 			return;
 		}
 		if let Some(started) = switch.confirmed_at {
@@ -1345,7 +1349,13 @@ impl MessagingUi {
 					commands.push(command);
 				}
 			}
-			Some(crate::dialog::Choice::Cancelled) => self.voice_switch = None,
+			Some(crate::dialog::Choice::Cancelled) => {
+				let channel = self.voice_switch.as_ref().map(|switch| switch.channel);
+				self.voice_switch = None;
+				if channel.is_some() && self.voice_camera_on_join == channel {
+					self.voice_camera_on_join = None;
+				}
+			}
 			None => {}
 		}
 	}
@@ -1420,7 +1430,12 @@ impl MessagingUi {
 		.on_disabled_hover_text(hint);
 		if response.clicked() {
 			self.voice_camera_on_join = video.then_some(channel);
-			self.request_call(state, channel, !guild && !incoming, commands);
+			if let Err(reason) =
+				self.request_call_audio(state, channel, !guild && !incoming, None, commands)
+			{
+				self.voice_camera_on_join = None;
+				state.status = Box::leak(reason.into_boxed_str());
+			}
 		}
 		response
 	}
