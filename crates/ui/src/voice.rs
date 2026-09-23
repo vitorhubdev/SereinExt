@@ -314,10 +314,10 @@ impl MessagingUi {
 		});
 		response.on_hover_text_with(|| {
 			format!(
-				"{} Â· View voice channel{}{}",
+				"{} · View voice channel{}{}",
 				channel.name,
 				channel_marks::label(access),
-				if connected { " Â· Connected" } else { "" }
+				if connected { " · Connected" } else { "" }
 			)
 		})
 	}
@@ -495,7 +495,7 @@ impl MessagingUi {
 			} else {
 				if !state.demo && !state.gateway_connected {
 					body_ui.label(
-						RichText::new("Last known participants Â· reconnect to refresh")
+						RichText::new("Last known participants · reconnect to refresh")
 							.small()
 							.color(STAGE_MUTED),
 					);
@@ -748,7 +748,7 @@ impl MessagingUi {
 				self.screen_tile(ui, rect, compact);
 				self.screen
 					.capture_status
-					.unwrap_or("Your screen Â· local preview")
+					.unwrap_or("Your screen · local preview")
 			}
 			Tile::Stream(streamer) => {
 				self.stream_tile(ui, state, rect, channel, *streamer, compact);
@@ -773,7 +773,7 @@ impl MessagingUi {
 			let hover = if hint.is_empty() {
 				label.to_owned()
 			} else {
-				format!("{hint} Â· {label}")
+				format!("{hint} · {label}")
 			};
 			if response.clicked() {
 				return Some(tile.focus());
@@ -829,7 +829,7 @@ impl MessagingUi {
 				ui.painter().rect_filled(rect, 8, TILE_FILL);
 				if !compact {
 					let status = if self.voice_stream_status.is_empty() {
-						"Connecting to the streamâ€¦"
+						"Connecting to the stream…"
 					} else {
 						self.voice_stream_status
 					};
@@ -1128,7 +1128,7 @@ impl MessagingUi {
 		} else if !connected {
 			if state.demo {
 				notices.push((
-					"Synthetic participants Â· microphone and speakers are off.".into(),
+					"Synthetic participants · microphone and speakers are off.".into(),
 					false,
 				));
 			} else if let Some(reason) = self.call_unavailable(state, channel) {
@@ -1601,7 +1601,7 @@ impl MessagingUi {
 		if self.voice_microphone_unavailable {
 			ui.label(
 				RichText::new(
-					"Microphone unavailable Â· choose another input. You are still connected.",
+					"Microphone unavailable · choose another input. You are still connected.",
 				)
 				.size(12.0)
 				.color(colors.warning),
@@ -1981,7 +1981,7 @@ impl MessagingUi {
 			design::notice(
 				ui,
 				design::Level::Warning,
-				"Microphone unavailable Â· choose another input. You are still connected.",
+				"Microphone unavailable · choose another input. You are still connected.",
 			);
 		}
 	}
@@ -2690,7 +2690,7 @@ impl MessagingUi {
 										);
 										ui.label(
 											RichText::new(if incoming {
-												unavailable.unwrap_or("Incoming callâ€¦")
+												unavailable.unwrap_or("Incoming call…")
 											} else if !state.gateway_connected {
 												"Reconnect to refresh call"
 											} else {
@@ -2744,7 +2744,7 @@ impl MessagingUi {
 		} else if connected {
 			"Voice Connected"
 		} else {
-			"Connectingâ€¦"
+			"Connecting…"
 		};
 		let color = if phase == Phase::Failed {
 			colors.danger
@@ -2766,7 +2766,7 @@ impl MessagingUi {
 				if self.voice_microphone_unavailable {
 					ui.label(
 						RichText::new(
-							"Microphone unavailable Â· still connected. Choose another input in Audio settings.",
+							"Microphone unavailable · still connected. Choose another input in Audio settings.",
 						)
 						.size(12.0)
 						.color(colors.warning),
@@ -3188,7 +3188,7 @@ fn speaking_avatar(ui: &egui::Ui, avatar: &egui::Response, name: &str) {
 		avatar.rect.width() * 0.5 + 2.0,
 		egui::Stroke::new(2.0, colors.positive),
 	);
-	let label = format!("{name} Â· Speaking");
+	let label = format!("{name} · Speaking");
 	avatar.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, &label));
 	avatar.clone().on_hover_text(label);
 }
