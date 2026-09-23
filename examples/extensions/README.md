@@ -1,6 +1,6 @@
 # Build your first Serein plugin
 
-> **Preview SDK — PR #405, not yet released.** The branch adds approved reply,
+> **Preview SDK — PR #411, not yet released.** The branch adds approved reply,
 > sticker, forward, channel, server, role, moderation and host-mediated media
 > actions. Install a matching host build before using those grants or variants.
 
@@ -106,8 +106,13 @@ Replace the example author and source URL before publishing.
 | `license` | string | License label; include the actual license in your source too. |
 | `source` | string | Public HTTPS source link, at most 2,048 UTF-8 bytes, without embedded credentials. It is metadata, not code to execute. |
 | `kind` | string | `plugin` for Wasm; declarative themes use `theme`. |
-| `capabilities` | string array | Only the permissions needed. Each requires consent; names must be known and unique. At most 64 declarations, with 42 supported today. |
+| `capabilities` | string array | Only the permissions needed. Each requires consent; names must be known and unique. At most 64 declarations, with 51 supported today; see the [capability reference](../../docs/extensions.md#capability-reference) for their scopes. |
 | `actions` | object array | Entry points invoked by users or the host. Plugins need 1–16 actions with unique IDs. |
+
+Plugins that use `data_queries` or `action_feedback` also declare `app_events` and
+one `app_event` action. Decode that handler with `ExtendedAppInvocation`; older
+`AppInvocation` handlers remain source-compatible. A tracked action result confirms
+native admission after Apply, not eventual service completion.
 
 `name`, `version`, `author` and `license` must be nonempty, at most 128 UTF-8 bytes,
 without control characters. IDs use lowercase ASCII letters, digits and hyphens,
