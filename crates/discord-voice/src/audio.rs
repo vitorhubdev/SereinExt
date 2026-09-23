@@ -570,18 +570,27 @@ impl Streams {
 		}
 		Err(last_error)
 	}
-	/// True when the call follows the system default and that default now points elsewhere.
+	/// True when a followed system default changes, or an explicitly selected device
+	/// becomes available again after we temporarily fell back to a default device.
 	fn default_changed(&self, settings: &Devices) -> bool {
 		let host = cpal::default_host();
 		let id = |device: Option<cpal::Device>| {
 			device.and_then(|d| d.id().ok()).map(|id| id.to_string())
 		};
-		(settings.output.is_none()
-			&& self.output_id.is_some()
-			&& id(host.default_output_device()) != self.output_id)
-			|| (settings.input.is_none()
-				&& self.input_id.is_some()
-				&& id(host.default_input_device()) != self.input_id)
+		let selected = |value: Option<&String>| -> Option<String> {
+			let value = value?;
+			let parsed = value.parse().ok()?;
+			id(host.device_by_id(&parsed))
+		};
+		let output_changed = match settings.output.as_ref() {
+			Some(value) => selected(Some(value)).is_some_and(|id| Some(id) != self.output_id),
+			None => self.output_id.is_some() && id(host.default_output_device()) != self.output_id,
+		};
+		let input_changed = match settings.input.as_ref() {
+			Some(value) => selected(Some(value)).is_some_and(|id| Some(id) != self.input_id),
+			None => self.input_id.is_some() && id(host.default_input_device()) != self.input_id,
+		};
+		output_changed || input_changed
 	}
 	fn open(settings: &Devices, gate: Arc<Gate>, revision: u64) -> Result<Self, &'static str> {
 		if gate.stopped.load(Ordering::Acquire)
@@ -736,11 +745,9 @@ fn choose(host: &cpal::Host, id: Option<&str>, input: bool) -> Result<cpal::Devi
 		if let Some(device) = host.device_by_id(&id) {
 			return Ok(device);
 		}
-		if input {
-			return Err("Selected microphone is unavailable");
-		}
 	}
-	// Keep the preference, but use the default while the selected device is absent.
+	// Preserve the explicit preference, but keep calls usable while a USB/Bluetooth device
+	// is temporarily absent. default_changed switches back when the selected device returns.
 	if input {
 		host.default_input_device()
 	} else {
