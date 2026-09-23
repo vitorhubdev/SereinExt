@@ -310,6 +310,8 @@ pub struct MessagingUi {
 	voice_switch: Option<voice::CallSwitch>,
 	pub screen: screen::ScreenUi,
 	pub voice_camera_available: bool,
+	/// Channel whose next successful join should immediately enable the selected camera.
+	voice_camera_on_join: Option<Id>,
 	pub voice_camera_status: &'static str,
 	pub voice_cameras: Vec<(String, String)>,
 	pub voice_camera_device: Option<String>,

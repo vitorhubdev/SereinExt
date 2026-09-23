@@ -512,11 +512,36 @@ impl MessagingUi {
 			egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
 		));
 		if connected {
+			if self.voice_camera_on_join == Some(channel) {
+				let ready = state.voice.active.as_ref().is_some_and(|call| {
+					call.channel == channel
+						&& matches!(call.phase, Phase::Connected | Phase::Waiting)
+						&& !call.camera
+				});
+				if ready && self.voice_camera_available && state.can_camera(channel) {
+					if let Some(command) = state.set_call_camera(true) {
+						commands.push(command);
+					}
+					self.voice_camera_on_join = None;
+				} else if state
+					.voice
+					.active
+					.as_ref()
+					.is_some_and(|call| call.channel == channel && call.phase == Phase::Failed)
+					|| !self.voice_camera_available
+					|| !state.can_camera(channel)
+				{
+					self.voice_camera_on_join = None;
+				}
+			}
 			self.call_controls(&mut bar_ui, state, channel, commands);
 		} else {
 			bar_ui.horizontal_centered(|ui| {
-				ui.add_space((ui.available_width() - 160.0).max(0.0) * 0.5);
-				self.call_button(ui, state, channel, commands);
+				self.call_button(ui, state, channel, commands, false);
+				if self.voice_camera_available && state.can_camera(channel) {
+					ui.add_space(8.0);
+					self.call_button(ui, state, channel, commands, true);
+				}
 			});
 		}
 	}
@@ -1331,6 +1356,7 @@ impl MessagingUi {
 		state: &mut State,
 		channel: Id,
 		commands: &mut Vec<Command>,
+		video: bool,
 	) -> egui::Response {
 		let unavailable = self.call_unavailable(state, channel);
 		let incoming = state.voice.incoming == Some(channel);
@@ -1338,7 +1364,17 @@ impl MessagingUi {
 			.channels
 			.iter()
 			.any(|c| c.id == channel && c.kind == 2);
-		let label = if guild {
+		let label = if video {
+			if guild {
+				"Join Video"
+			} else if incoming {
+				"Answer with video"
+			} else if state.voice.has_dm_call(channel) {
+				"Join video"
+			} else {
+				"Start video call"
+			}
+		} else if guild {
 			"Join Voice"
 		} else if incoming {
 			"Answer call"
@@ -1347,7 +1383,9 @@ impl MessagingUi {
 		} else {
 			"Start voice call"
 		};
-		let hint = unavailable.unwrap_or(if state.can_speak(channel) {
+		let hint = unavailable.unwrap_or(if video {
+			"Join the call and enable your selected camera as soon as voice is connected."
+		} else if state.can_speak(channel) {
 			"Join audio. Your microphone starts after the call is secured."
 		} else {
 			"Join to listen. Speaking is unavailable in this channel."
@@ -1365,13 +1403,23 @@ impl MessagingUi {
 			)
 		} else {
 			ui.add_enabled_ui(unavailable.is_none(), |ui| {
-				crate::icons::button(ui, crate::icons::Icon::Phone, 32.0, label)
+				crate::icons::button(
+					ui,
+					if video {
+						crate::icons::Icon::Video
+					} else {
+						crate::icons::Icon::Phone
+					},
+					32.0,
+					label,
+				)
 			})
 			.inner
 		}
 		.on_hover_text(hint)
 		.on_disabled_hover_text(hint);
 		if response.clicked() {
+			self.voice_camera_on_join = video.then_some(channel);
 			self.request_call(state, channel, !guild && !incoming, commands);
 		}
 		response
