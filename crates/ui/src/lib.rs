@@ -26,6 +26,7 @@ mod components;
 mod composer_text;
 pub mod design;
 mod embeds;
+pub use embeds::take_web_media_request;
 mod extension_account_actions;
 mod extension_actions;
 mod extension_admin_actions;

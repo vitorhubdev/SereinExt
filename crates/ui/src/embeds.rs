@@ -8,6 +8,38 @@ use egui::RichText;
 use model::{Embed, Gif, Message};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
+const WEB_MEDIA_REQUEST: &str = "serein-web-media-request";
+
+fn supported_web_media(value: &str) -> bool {
+	let Ok(url) = url::Url::parse(value) else { return false };
+	if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+		return false;
+	}
+	matches!(
+		url.host_str().map(|host| host.trim_start_matches("www.").to_ascii_lowercase()),
+		Some(host) if matches!(host.as_str(),
+			"youtube.com" | "youtu.be" | "x.com" | "twitter.com" | "vimeo.com" | "player.vimeo.com")
+	)
+}
+
+fn web_media_target(embed: &Embed) -> Option<&str> {
+	[
+		embed.url.as_deref(),
+		embed.video.as_ref().and_then(|media| media.url.as_deref()),
+	]
+	.into_iter()
+	.flatten()
+	.find(|url| supported_web_media(url))
+}
+
+fn request_web_media(ctx: &egui::Context, url: &str) {
+	ctx.data_mut(|data| data.insert_temp(egui::Id::new(WEB_MEDIA_REQUEST), url.to_owned()));
+}
+
+pub fn take_web_media_request(ctx: &egui::Context) -> Option<String> {
+	ctx.data_mut(|data| data.remove_temp(egui::Id::new(WEB_MEDIA_REQUEST)))
+}
+
 pub fn has_spoilers(message: &Message) -> bool {
 	has_media_spoilers(message) || message.content.contains("||")
 }
@@ -547,19 +579,31 @@ pub fn show(
 									demo,
 								);
 							}
+							let web_media = web_media_target(embed);
 							if embed.video.is_some()
 								|| matches!(embed.kind.as_str(), "video" | "gifv")
+								|| web_media.is_some()
 							{
-								ui.small("Video preview · playback opens in your browser");
-								link(
-									ui,
-									"Open video…",
-									embed.url.as_deref().or_else(|| {
-										embed.video.as_ref().and_then(|v| v.url.as_deref())
-									}),
-									opening,
-									false,
-								);
+								if let Some(target) = web_media {
+									ui.small("Web video preview · isolated player inside Serein");
+									ui.horizontal_wrapped(|ui| {
+										if ui.small_button("Play in Serein").clicked() {
+											request_web_media(ui.ctx(), target);
+										}
+										link(ui, "Open in browser…", Some(target), opening, false);
+									});
+								} else {
+									ui.small("Video preview · playback opens in your browser");
+									link(
+										ui,
+										"Open video…",
+										embed.url.as_deref().or_else(|| {
+											embed.video.as_ref().and_then(|v| v.url.as_deref())
+										}),
+										opening,
+										false,
+									);
+								}
 							} else if embed.title.is_none()
 								&& let Some(url) = embed.url.as_deref()
 							{
@@ -1166,5 +1210,25 @@ mod tests {
 			}
 		}
 		output.drop_without_applying_deltas();
+	}
+	#[test]
+	fn web_media_hosts_are_explicitly_bounded() {
+		for url in [
+			"https://youtube.com/watch?v=dQw4w9WgXcQ",
+			"https://youtu.be/dQw4w9WgXcQ",
+			"https://x.com/example/status/123",
+			"https://twitter.com/example/status/123",
+			"https://vimeo.com/123456",
+		] {
+			assert!(supported_web_media(url), "{url}");
+		}
+		for url in [
+			"http://youtube.com/watch?v=dQw4w9WgXcQ",
+			"https://youtube.com.evil.test/watch?v=dQw4w9WgXcQ",
+			"https://user@x.com/example/status/123",
+			"https://example.com/video",
+		] {
+			assert!(!supported_web_media(url), "{url}");
+		}
 	}
 }

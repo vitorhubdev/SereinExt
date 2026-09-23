@@ -725,6 +725,7 @@ struct Desktop {
 	extensions: extension_bridge::Bridge,
 	extension_close_pending: bool,
 	login: Option<platform::LoginView>,
+	web_media: Option<platform::web_media::WebMediaView>,
 	captcha: captcha::Captcha,
 	connection: Option<connection::Connection>,
 	state: State,
@@ -1849,6 +1850,7 @@ impl Desktop {
 			extensions: extension_bridge::Bridge::default(),
 			extension_close_pending: false,
 			login: None,
+			web_media: None,
 			captcha: captcha::Captcha::default(),
 			connection: None,
 			state,
@@ -1979,6 +1981,7 @@ impl Desktop {
 			.disconnect_voice("Discord login session changed; start a new call");
 		self.uploads.cancel();
 		self.login = None;
+		self.web_media = None;
 		self.connection = None;
 		if let Some(worker) = self.avatars.take() {
 			self.avatar_cleanup = Some(worker.shutdown());
@@ -2053,6 +2056,7 @@ impl Desktop {
 		let was_demo = self.state.demo;
 		self.clear_avatars(ctx);
 		self.login = None;
+		self.web_media = None;
 		self.connection = None;
 		self.pending_save = None;
 		self.pending_account_save = None;
@@ -5143,6 +5147,12 @@ impl Desktop {
 				));
 			}
 		}
+		if let Some(media) = &self.web_media {
+			media.pump();
+			if media.closed() {
+				self.web_media = None;
+			}
+		}
 		if let Some(login) = &self.login {
 			login.pump();
 			if let Some(secret) = login.token() {
@@ -5724,7 +5734,39 @@ impl eframe::App for Desktop {
 			ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
 			self.confirming_close = true;
 		}
-		if self.login.is_some() {
+		if self.web_media.as_ref().is_some_and(|media| media.embedded()) {
+			let p = ui::design::palette(ui);
+			egui::Panel::top("web-media-header")
+				.exact_size(platform::web_media::HEADER_HEIGHT)
+				.show_separator_line(false)
+				.frame(
+					egui::Frame::NONE
+						.fill(ui::design::window_palette(ui).surface)
+						.stroke(egui::Stroke::new(1.0, p.border))
+						.inner_margin(egui::Margin::symmetric(16, 0)),
+				)
+				.show(ui, |ui| {
+					ui::design::window_drag(ui, ui.max_rect());
+					ui.horizontal_centered(|ui| {
+						ui.label(ui::design::semibold(ui, "Web media preview", 15.0).color(p.text_strong));
+						ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+							if ui::design::secondary_button(ui, "Back to chat").clicked() {
+								self.web_media = None;
+							}
+						});
+					});
+				});
+			egui::CentralPanel::default()
+				.frame(egui::Frame::NONE.fill(p.canvas))
+				.show(ui, |ui| {
+					ui.centered_and_justified(|ui| {
+						ui.label(egui::RichText::new("Loading isolated media player…").color(p.muted));
+					});
+				});
+			if let Some(media) = &self.web_media {
+				media.resize(&self.window);
+			}
+		} else if self.login.is_some() {
 			let p = ui::design::palette(ui);
 			egui::Panel::top("login-header")
 				.exact_size(platform::LOGIN_HEADER_HEIGHT)
@@ -5802,6 +5844,17 @@ impl eframe::App for Desktop {
 				self.messaging.notification_sound_status = "Could not save device notification settings. Changes apply only until restart.";
 			}
 			let mut commands = self.messaging.show(ui, &mut self.state);
+			if let Some(target) = ui::take_web_media_request(&ctx) {
+				let wake = ctx.clone();
+				match platform::web_media::WebMediaView::open(
+					self.window.clone(),
+					&target,
+					move || wake.request_repaint(),
+				) {
+					Ok(media) => self.web_media = Some(media),
+					Err(error) => self.messaging.toasts.push(ui::design::Level::Error, error),
+				}
+			}
 			self.extensions.cancel_stale_message_events(&self.state);
 			self.choose_interaction_files(&ctx);
 			if let Some(command) = self.captcha.sync(
