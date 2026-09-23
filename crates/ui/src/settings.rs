@@ -77,8 +77,8 @@ impl Page {
 		),
 		("Customization", &[Self::Themes, Self::Extensions]),
 	];
-	fn label(self) -> &'static str {
-		match self {
+	fn label(self, language: model::Language) -> &'static str {
+		let english = match self {
 			Self::Account => "My Account",
 			Self::Profile => "Profile",
 			Self::General => "General",
@@ -93,10 +93,11 @@ impl Page {
 			Self::Updates => "Updates",
 			Self::Extensions => "Extensions",
 			Self::Themes => "Themes",
-		}
+		};
+		crate::i18n::text(language, english)
 	}
-	fn description(self) -> &'static str {
-		match self {
+	fn description(self, language: model::Language) -> &'static str {
+		let english = match self {
 			Self::Account => "The Discord account signed in on this device.",
 			Self::Profile => "Choose how you appear across Discord.",
 			Self::General => "Startup, window and graphics behavior on this device.",
@@ -113,7 +114,8 @@ impl Page {
 			Self::Updates => "Keep Serein up to date on this device.",
 			Self::Extensions => "Manage community plugins.",
 			Self::Themes => "Choose a community theme.",
-		}
+		};
+		crate::i18n::text(language, english)
 	}
 	fn matches(self, query: &str) -> bool {
 		let keywords = match self {
@@ -324,7 +326,7 @@ impl MessagingUi {
 										if editing_theme {
 											"Theme maker"
 										} else {
-											self.settings.page.label()
+											self.settings.page.label(self.language)
 										},
 										20.0,
 									)
@@ -334,7 +336,7 @@ impl MessagingUi {
 									RichText::new(if editing_theme {
 										"Make it yours. Preview changes in your conversations."
 									} else {
-										self.settings.page.description()
+										self.settings.page.description(self.language)
 									})
 									.size(13.0)
 									.color(colors.muted),
@@ -350,7 +352,7 @@ impl MessagingUi {
 							ui.add_space(8.0);
 							self.settings_search(ui);
 							egui::ComboBox::from_id_salt("settings-page")
-								.selected_text(self.settings.page.label())
+								.selected_text(self.settings.page.label(self.language))
 								.width(ui.available_width())
 								.show_ui(ui, |ui| {
 									for page in Page::ALL {
@@ -358,7 +360,7 @@ impl MessagingUi {
 											ui.selectable_value(
 												&mut self.settings.page,
 												page,
-												page.label(),
+												page.label(self.language),
 											);
 										}
 									}
@@ -479,10 +481,10 @@ impl MessagingUi {
 						continue;
 					}
 					ui.add_space(6.0);
-					ui.add(egui::Label::new(design::eyebrow(ui, heading, colors.muted)));
+					ui.add(egui::Label::new(design::eyebrow(ui, crate::i18n::text(self.language, heading), colors.muted)));
 					ui.add_space(2.0);
 					for page in visible {
-						if nav_item(ui, page.label(), self.settings.page == page).clicked() {
+						if nav_item(ui, page.label(self.language), self.settings.page == page).clicked() {
 							if page == Page::MessagingPermissions && self.settings.page != page {
 								self.settings.messaging_permissions.requested = false;
 							}
@@ -736,37 +738,54 @@ impl MessagingUi {
 	}
 
 	fn general_settings(&mut self, ui: &mut egui::Ui, _demo: bool) {
-		design::group(ui, "Startup", |ui| {
+		design::group(ui, crate::i18n::text(self.language, "Language"), |ui| {
+			design::row(
+				ui,
+				crate::i18n::text(self.language, "App language"),
+				Some(crate::i18n::text(self.language, "Changes apply immediately and are saved on this device.")),
+				|ui| {
+					egui::ComboBox::from_id_salt("ui-language")
+						.selected_text(self.language.label())
+						.width(ui.available_width().min(220.0))
+						.show_ui(ui, |ui| {
+							for language in model::Language::ALL {
+								ui.selectable_value(&mut self.language, language, language.label());
+							}
+						});
+				},
+			);
+		});
+		design::group(ui, crate::i18n::text(self.language, "Startup"), |ui| {
 			ui.add_enabled_ui(self.startup_available && !self.startup_busy, |ui| {
 				design::switch(
 					ui,
-					"Open Serein when your computer starts",
-					Some("Serein signs in and connects in the background."),
+					crate::i18n::text(self.language, "Open Serein when your computer starts"),
+					Some(crate::i18n::text(self.language, "Serein signs in and connects in the background.")),
 					&mut self.startup_enabled,
 				);
 				design::card_divider(ui);
 				ui.add_enabled_ui(self.startup_enabled, |ui| {
 					design::switch(
 						ui,
-						"Start minimized",
-						Some("Start in the background, out of your way."),
+						crate::i18n::text(self.language, "Start minimized"),
+						Some(crate::i18n::text(self.language, "Start in the background, out of your way.")),
 						&mut self.startup_minimized,
 					);
 				});
 			});
 			if !self.startup_available {
-				design::hint(ui, "Automatic startup is available on Windows and macOS.");
+				design::hint(ui, crate::i18n::text(self.language, "Automatic startup is available on Windows and macOS."));
 			} else if !self.startup_status.is_empty() {
 				design::hint(ui, self.startup_status);
 			}
 		});
-		design::group(ui, "Window", |ui| {
+		design::group(ui, crate::i18n::text(self.language, "Window"), |ui| {
 			#[cfg(any(target_os = "windows", target_os = "macos"))]
 			{
 				design::switch(
 					ui,
-					"Hide Serein title bar",
-					Some("Use the system title bar and window buttons instead."),
+					crate::i18n::text(self.language, "Hide Serein title bar"),
+					Some(crate::i18n::text(self.language, "Use the system title bar and window buttons instead.")),
 					&mut self.hide_title_bar,
 				);
 				design::card_divider(ui);
@@ -775,9 +794,9 @@ impl MessagingUi {
 				design::switch(
 					ui,
 					if cfg!(target_os = "macos") {
-						"Keep Serein in the menu bar"
+						crate::i18n::text(self.language, "Keep Serein in the menu bar")
 					} else {
-						"Keep Serein in the system tray"
+						crate::i18n::text(self.language, "Keep Serein in the system tray")
 					},
 					Some(if cfg!(target_os = "macos") {
 						"Closing the window keeps Serein in the menu bar. Quit from its menu to exit."
@@ -790,12 +809,12 @@ impl MessagingUi {
 				);
 			});
 			if !self.tray_available {
-				design::hint(ui, "The tray is unavailable on this platform.");
+				design::hint(ui, crate::i18n::text(self.language, "The tray is unavailable on this platform."));
 			} else if !self.tray_status.is_empty() {
 				design::hint(ui, self.tray_status);
 			}
 		});
-		design::group(ui, "Graphics", |ui| {
+		design::group(ui, crate::i18n::text(self.language, "Graphics"), |ui| {
 			let detail = if self.gpu_adapter.is_empty() {
 				"Takes effect the next time Serein starts.".to_owned()
 			} else {
@@ -804,7 +823,7 @@ impl MessagingUi {
 					self.gpu_adapter
 				)
 			};
-			design::row(ui, "Render with", Some(&detail), |ui| {
+			design::row(ui, crate::i18n::text(self.language, "Render with"), Some(&detail), |ui| {
 				egui::ComboBox::from_id_salt("gpu-preference")
 					.selected_text(self.gpu_preference.label())
 					.width(ui.available_width().min(220.0))

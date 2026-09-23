@@ -49,6 +49,25 @@ pub use search::*;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{fmt, str::FromStr};
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Language {
+	#[default]
+	English,
+	PortugueseBrazil,
+	Spanish,
+}
+impl Language {
+	pub const ALL: [Self; 3] = [Self::English, Self::PortugueseBrazil, Self::Spanish];
+	pub fn label(self) -> &'static str {
+		match self {
+			Self::English => "English",
+			Self::PortugueseBrazil => "Português (Brasil)",
+			Self::Spanish => "Español",
+		}
+	}
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Id(pub u64);
 impl fmt::Display for Id {

@@ -47,6 +47,7 @@ mod guild_folders;
 mod highlight;
 pub mod icons;
 mod invites;
+pub mod i18n;
 mod local_time;
 mod markdown;
 mod member_search;
@@ -239,6 +240,8 @@ pub struct MessagingUi {
 	pub reading_preferences: model::ReadingPreferences,
 	pub show_hidden_channels: bool,
 	pub hide_title_bar: bool,
+	/// Device-local UI language. English is the migration/default locale.
+	pub language: model::Language,
 	/// Which GPU renders the window; the running adapter only changes on restart.
 	pub gpu_preference: model::GpuPreference,
 	/// Adapter currently in use, shown next to the preference for bug reports.
