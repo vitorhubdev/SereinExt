@@ -14,6 +14,17 @@
 > **SereinExt is an independent modified fork of [ViceVerse-cz/Serein](https://github.com/ViceVerse-cz/Serein).**
 > Upstream remains credited as the original project. SereinExt versions and changes are maintained in this repository and may intentionally diverge from upstream.
 
+### SereinExt 1.0.2
+
+Version 1.0.2 integrates selected upstream improvements that fit SereinExt without replacing the fork-specific fixes:
+
+- expanded Extension SDK capabilities for bounded app queries, messaging settings, guild folders, native actions and action-result feedback (upstream #411);
+- Discord-like inline image sizing, higher-quality media renditions and smoother MP4/MOV/M4V-backed gifv motion while preserving SereinExt isolated web previews (upstream #409);
+- permission-gated server sticker management with static PNG/JPEG/WebP preparation, upload, edit and delete support (upstream #412);
+- the existing SereinExt voice, login, multi-device presence, PT-BR/ES, moderation, Hyprland and web-media changes remain preserved.
+
+The upstream server-creation flow (#414) is intentionally not included in 1.0.2 because its normal-user `POST /guilds` behavior is unofficial and was not live-verified by upstream.
+
 ### SereinExt 1.0.1
 
 Version 1.0.1 is the first maintained SereinExt line. The current `main` includes:
@@ -65,7 +76,7 @@ SereinExt is currently **source/tag first**. Until this repository publishes its
 
 - Repository: [`vitorhubdev/SereinExt`](https://github.com/vitorhubdev/SereinExt)
 - Development branch: `main`
-- Workspace version: `1.0.1`
+- Workspace version: `1.0.2`
 - Version history: [Tags](https://github.com/vitorhubdev/SereinExt/tags)
 
 ### Build from source
