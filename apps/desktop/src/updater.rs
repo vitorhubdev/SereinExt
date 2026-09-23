@@ -611,7 +611,15 @@ async fn check_release(nightly: bool, cancel: Arc<AtomicBool>) -> Result<Option<
 	} else {
 		format!("{RELEASES}/latest")
 	};
-	let body = bounded_body(&client, &endpoint, MAX_METADATA, &cancel).await?;
+	let body = match bounded_body(&client, &endpoint, MAX_METADATA, &cancel).await {
+		Ok(body) => body,
+		// SereinExt is tag-only until a release is explicitly published. An empty
+		// release channel is therefore a valid "no update" state, not an updater failure.
+		Err(error) if error == "No published release is available on this channel yet." => {
+			return Ok(None);
+		}
+		Err(error) => return Err(error),
+	};
 	let releases = if nightly {
 		serde_json::from_slice::<Vec<Release>>(&body)
 	} else {

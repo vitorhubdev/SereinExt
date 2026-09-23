@@ -14,6 +14,10 @@
 > **SereinExt is an independent modified fork of [ViceVerse-cz/Serein](https://github.com/ViceVerse-cz/Serein).**
 > Upstream remains credited as the original project. SereinExt versions and changes are maintained in this repository and may intentionally diverge from upstream.
 
+### SereinExt 1.0.1
+
+This tag line establishes the modified fork baseline. It fixes remote voice join/leave cues, isolates SereinExt saved-login credentials from upstream Serein, points update metadata at this fork, and applies the SereinExt identity/versioning. GitHub Releases remain intentionally unpublished until the fork is declared ready.
+
 
 <p align="center">
   <a href="#downloads--installation"><strong>📦 Downloads</strong></a> &nbsp;•&nbsp;
