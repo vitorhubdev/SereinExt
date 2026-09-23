@@ -16,7 +16,19 @@
 
 ### SereinExt 1.0.1
 
-This tag line establishes the modified fork baseline. It fixes remote voice join/leave cues, isolates SereinExt saved-login credentials from upstream Serein, points update metadata at this fork, and applies the SereinExt identity/versioning. GitHub Releases remain intentionally unpublished until the fork is declared ready.
+Version 1.0.1 is the first maintained SereinExt line. The current `main` includes:
+
+- corrected remote voice join/leave cues, AEC delay handling and selected-device recovery;
+- moderator/member-removal fixes and lower drag/presentation latency;
+- direct join-video flow with bounded failure state;
+- compact Discord multi-device presence for desktop/mobile/web;
+- more reliable Discord login WebView focus and Linux permission flow;
+- persistent English, Português (Brasil) and Español UI locale infrastructure;
+- isolated in-app YouTube, X/Twitter and Vimeo previews with device permissions denied;
+- Hyprland tray/notification restoration ported from upstream;
+- SereinExt-specific credential/update identity and cleaned voice UI encoding.
+
+The source is still being validated before a binary GitHub Release is published. A tag does not imply that upstream Serein packages are SereinExt builds.
 
 
 <p align="center">
@@ -47,122 +59,27 @@ This tag line establishes the modified fork baseline. It fixes remote voice join
 
 ## Downloads & Installation
 
-SereinExt is currently distributed through **version tags first**. Version **1.0.1** starts the modified fork line; a GitHub Release will only be published when the fork is declared ready. The upstream installation notes below are retained for compatibility/reference and may not describe a SereinExt binary yet.
+SereinExt is currently **source/tag first**. Until this repository publishes its own GitHub Release assets, do not treat installers, Flatpaks, AppImages, Homebrew packages or package repositories published by upstream Serein as SereinExt binaries.
 
-| Platform | Format | Architectures | Details |
-|---|---|---|---|
-| **Windows** | `-Setup.exe`, `.zip` | `x86_64`, `aarch64` | Per-user NSIS installer (recommended) or standalone portable archive |
-| **macOS** | Homebrew Cask, `.zip` | Apple Silicon (`aarch64`) | Signed and notarized `.app` bundle |
-| **Linux** | Flatpak (recommended), Repositories (`apt`, `dnf`, `zypper`, `pacman`), Gentoo ebuild, `.AppImage` | `x86_64` | Flatpak with automatic updates; signed package repositories; portable AppImage |
+### Current source
 
----
+- Repository: [`vitorhubdev/SereinExt`](https://github.com/vitorhubdev/SereinExt)
+- Development branch: `main`
+- Workspace version: `1.0.1`
+- Version history: [Tags](https://github.com/vitorhubdev/SereinExt/tags)
 
-<details open>
-<summary><h3>🐧 Linux (Flatpak, Repositories, Gentoo, AppImage)</h3></summary>
+### Build from source
 
-#### 1. Flatpak (Recommended)
-
-Flatpak is the recommended distribution format for Linux, featuring sandbox isolation, bundled GNOME/WebKit runtimes, and automatic background updates.
-
-- **One-Click Repository Install (Automatic Updates)**:
-  ```sh
-  flatpak install --user https://viceverse-cz.github.io/Serein/flatpak/serein.flatpakref
-  ```
-  Once installed, your desktop software store (GNOME Software, KDE Discover) or `flatpak update` will automatically discover and install updates.
-
-- **Standalone Offline Bundle**:
-  Download `Serein-linux.flatpak` from [Releases](https://github.com/ViceVerse-cz/rustcord/releases):
-  ```sh
-  flatpak install --user ./Serein-linux.flatpak
-  flatpak run cz.viceverse.serein
-  ```
-
-See [Flatpak guide](packaging/flatpak/README.md) for sandbox permissions and source build details.
-
-#### 2. Native Package Repositories (apt, dnf, zypper, pacman)
-
-Configure the signed package repository for your distribution with one command:
-```sh
-curl -fsSL https://viceverse-cz.github.io/Serein/setup.sh | sh
-```
-The script detects your distribution (Ubuntu/Debian, Fedora, openSUSE, Arch Linux), cryptographically verifies the GPG signing key, and configures the repository with an option to install immediately.
-
-After setup, manage Serein with your native package manager:
-```sh
-# Ubuntu / Debian: sudo apt install serein
-# Fedora:          sudo dnf install serein
-# openSUSE:        sudo zypper install serein
-# Arch Linux:      sudo pacman -S serein
-```
-Your normal system updates (`apt upgrade`, `dnf upgrade`, `zypper update`, `pacman -Syu`) will keep Serein updated. See [Signed package repositories](packaging/repositories/README.md) for manual GPG verification steps.
-
-#### 3. Gentoo (source or binary)
-
-Gentoo users can install Serein from the [vitaly-zdanevich-overlay](https://github.com/vitaly-zdanevich/gentoo-overlay) overlay. It provides a source ebuild ([net-im/serein](https://github.com/vitaly-zdanevich/gentoo-overlay/tree/main/net-im/serein)) and a prebuilt amd64 ebuild ([net-im/serein-bin](https://github.com/vitaly-zdanevich/gentoo-overlay/tree/main/net-im/serein-bin)).
+The workspace pins Rust **1.98** and uses the same native platform dependencies documented in this repository.
 
 ```sh
-sudo eselect repository add vitaly-zdanevich-overlay git https://github.com/vitaly-zdanevich/gentoo-overlay.git
-sudo emaint sync -r vitaly-zdanevich-overlay
-echo 'net-im/serein ~amd64' | sudo tee /etc/portage/package.accept_keywords/serein
-sudo emerge --ask net-im/serein
+git clone https://github.com/vitorhubdev/SereinExt.git
+cd SereinExt
+cargo build --locked --release -p serein
 ```
 
-Use `net-im/serein-bin` in the keyword file and emerge command to install the prebuilt binary instead. The source ebuild requires Rust 1.98.1 or newer. The binary ebuild targets amd64 systems with glibc 2.43 or newer. The two ebuilds install the same files, so choose one.
+Platform-specific runtime/build requirements remain documented under [Platform Support](docs/platform-support.md) and the `packaging/` directory. Upstream documentation can still be useful as technical reference, but its downloads belong to the original project, not this fork.
 
-#### 4. Standalone AppImage (Portable)
-
-Download `serein-<version>-Linux-X64.AppImage` from [Releases](https://github.com/ViceVerse-cz/rustcord/releases), make it executable, and run:
-```sh
-chmod +x ./serein-*-Linux-X64.AppImage
-./serein-*-Linux-X64.AppImage
-```
-Keep the AppImage in a writable directory to receive in-app updates via **Settings → Updates**. Note that the AppImage uses host GTK4 and WebKitGTK 6.0 libraries; see [AppImage setup and runtime dependencies](packaging/appimage/README.md) for host requirements.
-
-</details>
-
-<details>
-<summary><h3>🪟 Windows (Installer, PowerShell, Portable)</h3></summary>
-
-#### 1. Setup Installer (Recommended)
-Download the `Windows-X64-Setup.exe` or `Windows-ARM64-Setup.exe` asset for your system from [Releases](https://github.com/ViceVerse-cz/rustcord/releases) and run it:
-- Installs per-user to `%LOCALAPPDATA%\Programs\Serein` without requiring administrator/UAC elevation.
-- Automatically registers Start Menu shortcuts and configures AppUserModelID (`cz.viceverse.serein`) for native Windows toast notifications.
-- Registers in Windows Settings (Installed Apps / Add or Remove Programs) with full uninstall support.
-- Fully compatible with in-app self-updates: updates automatically synchronize the registered version.
-
-#### 2. Standalone PowerShell Setup
-Extract the `Windows-X64.zip` or `Windows-ARM64.zip` asset for your system and run:
-```powershell
-powershell -ExecutionPolicy Bypass -File .\setup.ps1
-```
-To uninstall later:
-```powershell
-powershell -ExecutionPolicy Bypass -File .\setup.ps1 -Uninstall
-```
-
-#### 3. Portable Archive
-Extract the `Windows-X64.zip` or `Windows-ARM64.zip` asset for your system anywhere and launch `serein.exe`. To enable native desktop notifications:
-```powershell
-powershell -File .\install-notifications.ps1
-```
-Run the script from the extracted folder beside `serein.exe`. If PowerShell's `RemoteSigned` policy blocks the downloaded script, review it and run `Unblock-File -LiteralPath .\install-notifications.ps1` in that folder before retrying. The Windows installer registers the shortcut automatically, so installed builds do not need this script.
-
-</details>
-
-<details>
-<summary><h3>🍎 macOS (Homebrew Cask, Standalone .app)</h3></summary>
-
-#### Homebrew Cask
-```sh
-brew tap ViceVerse-cz/serein https://github.com/ViceVerse-cz/Serein.git
-brew install --cask serein
-```
-The explicit repository URL keeps the cask in this repository; a separate `homebrew-serein` tap is not required.
-
-#### Standalone Bundle
-Download `serein-<version>-macOS-ARM64.zip` from [Releases](https://github.com/ViceVerse-cz/rustcord/releases), unzip, and drag `Serein.app` to your `/Applications` folder.
-
-</details>
 
 ---
 
