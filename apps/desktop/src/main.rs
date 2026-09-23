@@ -1846,6 +1846,7 @@ impl Desktop {
 		align_undecorated_surface(&window);
 		// The GPU surface and X11 visual are selected at startup. Opaque launches
 		// keep the same native/compositor path as builds without window effects.
+		let tray_window = tray_window::State::default();
 		Ok(Self {
 			extensions: extension_bridge::Bridge::default(),
 			extension_close_pending: false,
@@ -1870,7 +1871,10 @@ impl Desktop {
 			notification_runtime: Default::default(),
 			notifications: {
 				let wake = cc.egui_ctx.clone();
-				platform::notifications::Notifications::new(move || wake.request_repaint())
+				platform::notifications::Notifications::new(
+					move || wake.request_repaint(),
+					tray_window.restorer(),
+				)
 			},
 			uploads: uploads::Uploads::default(),
 			interaction_files: Default::default(),
@@ -1914,7 +1918,7 @@ impl Desktop {
 			tray_setting,
 			startup,
 			tray: None,
-			tray_window: tray_window::State::default(),
+			tray_window,
 			hotkeys,
 			tray_error: None,
 			#[cfg(feature = "demo")]
@@ -2339,7 +2343,10 @@ impl Desktop {
 			#[cfg(target_os = "linux")]
 			let tray = {
 				let _runtime = self.runtime.enter();
-				platform::tray::Tray::new(move || wake.request_repaint())
+				platform::tray::Tray::new(
+					move || wake.request_repaint(),
+					self.tray_window.restorer(),
+				)
 			};
 			#[cfg(not(target_os = "linux"))]
 			let tray = platform::tray::Tray::new(self.window.clone(), move || wake.request_repaint());

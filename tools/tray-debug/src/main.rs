@@ -78,7 +78,7 @@ mod linux {
 		let wake = Arc::new(Notify::new());
 		let start = || {
 			let wake = wake.clone();
-			Tray::new(move || wake.notify_one()).unwrap()
+			Tray::new(move || wake.notify_one(), || {}).unwrap()
 		};
 		let missing = start();
 		event(&missing, &wake, Event::Unavailable).await;
