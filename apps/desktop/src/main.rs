@@ -4838,7 +4838,7 @@ impl Desktop {
 					self.credential_status = if result.is_ok() {
 						"Saved login removed"
 					} else {
-						"Could not remove saved login; remove cz.viceverse.serein / discord-session in your OS credential manager"
+						"Could not remove saved login; remove io.github.vitorhubdev.SereinExt / discord-session in your OS credential manager"
 					};
 				}
 			}

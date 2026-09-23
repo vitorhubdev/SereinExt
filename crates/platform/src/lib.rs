@@ -34,6 +34,9 @@ pub use login_linux::LoginView;
 /// Logical height of the native header the desktop app draws above the login webview.
 pub const LOGIN_HEADER_HEIGHT: f32 = 56.0;
 const SERVICE: &str = "cz.viceverse.serein";
+/// SereinExt must not share saved Discord sessions with the upstream Serein app.
+/// Keep the native application id above for packaging compatibility while the fork is tag-only.
+const CREDENTIAL_SERVICE: &str = "io.github.vitorhubdev.SereinExt";
 const ACCOUNT: &str = "discord-session";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CredentialError {
@@ -82,7 +85,7 @@ pub fn forget_account_session(account: model::Id) -> Result<(), CredentialError>
 	forget_entry(&account_entry(account))
 }
 fn load_entry(name: &str) -> Result<Option<SessionSecret>, CredentialError> {
-	let entry = keyring::Entry::new(SERVICE, name).map_err(|_| CredentialError::Unavailable)?;
+	let entry = keyring::Entry::new(CREDENTIAL_SERVICE, name).map_err(|_| CredentialError::Unavailable)?;
 	match entry.get_password() {
 		Ok(value) => SessionSecret::from_owner_input(value)
 			.map(Some)
@@ -92,12 +95,12 @@ fn load_entry(name: &str) -> Result<Option<SessionSecret>, CredentialError> {
 	}
 }
 fn save_entry(name: &str, secret: &SessionSecret) -> Result<(), CredentialError> {
-	keyring::Entry::new(SERVICE, name)
+	keyring::Entry::new(CREDENTIAL_SERVICE, name)
 		.and_then(|entry| entry.set_password(secret.expose()))
 		.map_err(|_| CredentialError::Unavailable)
 }
 fn forget_entry(name: &str) -> Result<(), CredentialError> {
-	match keyring::Entry::new(SERVICE, name).and_then(|entry| entry.delete_credential()) {
+	match keyring::Entry::new(CREDENTIAL_SERVICE, name).and_then(|entry| entry.delete_credential()) {
 		Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
 		Err(_) => Err(CredentialError::Unavailable),
 	}
