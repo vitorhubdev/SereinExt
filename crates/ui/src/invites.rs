@@ -1,5 +1,5 @@
 //! Fixed-height native invite cards; only visible cards request bounded metadata.
-use crate::avatars::Avatars;
+use crate::avatars::{Avatars, Surface};
 use client_core::invites::valid_code;
 use model::Message;
 
@@ -179,7 +179,13 @@ pub fn show(
 								if let Some(icon) = embed.and_then(|e| e.thumbnail.as_ref()) {
 									let mut icon_ui =
 										ui.new_child(egui::UiBuilder::new().max_rect(icon_rect));
-									images.show_embed(&mut icon_ui, icon, icon_rect.size(), demo);
+									images.show_media(
+										&mut icon_ui,
+										icon,
+										icon_rect.size(),
+										demo,
+										Surface::Inline,
+									);
 								} else {
 									ui.painter().rect_filled(icon_rect, 16, colors.sidebar);
 									let initial = embed

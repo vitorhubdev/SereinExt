@@ -1,5 +1,8 @@
 //! Native component controls; transport authorization and validation stay in client-core.
-use crate::{avatars::Avatars, design, dialog, markdown};
+use crate::{
+	avatars::{Avatars, Surface},
+	design, dialog, markdown,
+};
 use client_core::{Command, State};
 use model::{Component, Id, Message};
 
@@ -1112,18 +1115,30 @@ fn show_media(
 	};
 	if thumbnail {
 		let response = avatars
-			.show_embed(ui, &image, egui::vec2(THUMBNAIL_SIZE, THUMBNAIL_SIZE), demo)
+			.show_media(
+				ui,
+				&image,
+				egui::vec2(THUMBNAIL_SIZE, THUMBNAIL_SIZE),
+				demo,
+				Surface::Inline,
+			)
+			.response
 			.on_hover_cursor(egui::CursorIcon::PointingHand);
 		if response.clicked() {
 			*opening = resolve_media(&media.url, message).and_then(markdown::external_url);
 		}
 		return;
 	}
-	avatars.show_embed(
+	avatars.show_media(
 		ui,
 		&image,
-		egui::vec2(ui.available_width().min(420.0), 280.0),
+		egui::vec2(
+			ui.available_width()
+				.min(crate::avatars::media::MEDIA_MAX_WIDTH),
+			crate::avatars::media::MEDIA_MAX_HEIGHT,
+		),
 		demo,
+		Surface::Inline,
 	);
 	if let Some(description) = description {
 		ui.small(description);

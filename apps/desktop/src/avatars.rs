@@ -5,7 +5,7 @@ use model::Id;
 use rasterlottie::{Animation as Lottie, RenderConfig, Renderer, Rgba8};
 use sha2::{Digest, Sha256};
 use std::{
-	collections::BinaryHeap,
+	collections::{BinaryHeap, VecDeque},
 	fs::{self, OpenOptions},
 	io::{self, Cursor, Read, Write},
 	path::{Path, PathBuf},
@@ -17,10 +17,15 @@ use std::{
 	time::{Duration, Instant, SystemTime},
 };
 use tokio::sync::{mpsc as async_mpsc, watch};
+use ui::{Lane, Motion, Rendition, Size};
 
 const MAX_ENCODED: usize = 2 * 1024 * 1024;
 const MAX_ANIMATED_ENCODED: usize = 16 * 1024 * 1024;
-const MAX_LARGE_ENCODED: usize = 16 * 1024 * 1024;
+const MAX_MEDIA_ENCODED: usize = 32 * 1024 * 1024;
+const ANIMATION_CANVAS: u32 = 2048;
+// GIF decoding can hold a persistent canvas, a frame and a composited canvas.
+const ANIMATION_ALLOC: u64 = 3 * 2048 * 2048 * 4;
+const QUEUED: usize = 1024;
 fn is_animated_key(key: &str) -> bool {
 	if key.starts_with("anim:") {
 		return true;
@@ -46,10 +51,10 @@ fn is_animated_key(key: &str) -> bool {
 	false
 }
 fn encoded_limit(key: &str) -> usize {
-	if is_animated_key(key) {
+	if let Some(rendition) = Rendition::parse(key) {
+		media_encoded(&rendition)
+	} else if is_animated_key(key) {
 		MAX_ANIMATED_ENCODED
-	} else if key.starts_with("large:") {
-		MAX_LARGE_ENCODED
 	} else if key.starts_with("gif:") {
 		// Provider previews are full clips even when only their first frame is shown.
 		MAX_ANIMATED_ENCODED
@@ -60,11 +65,20 @@ fn encoded_limit(key: &str) -> usize {
 fn lottie_key(key: &str) -> bool {
 	key.starts_with("embed:sticker-") && key.ends_with("-3")
 }
-/// Decode budget for one key: the longest edge kept in memory.
+fn media_encoded(rendition: &Rendition) -> usize {
+	let (width, height) = match rendition.size {
+		Size::Exact { width, height } => (width, height),
+		Size::Longest(edge) => (edge.get(), edge.get()),
+	};
+	match rendition.motion {
+		Motion::Animated => MAX_ANIMATED_ENCODED,
+		Motion::Still => {
+			(width as usize * height as usize * 3).clamp(MAX_ENCODED, MAX_MEDIA_ENCODED)
+		}
+	}
+}
 fn decode_edge(key: &str) -> u32 {
-	if key.starts_with("large:") {
-		ui::LARGE_EDGE
-	} else if key.starts_with("anim:")
+	if key.starts_with("anim:")
 		|| key.starts_with("embed:")
 		|| key.starts_with("gif:")
 		|| key.starts_with("spotify-")
@@ -74,6 +88,86 @@ fn decode_edge(key: &str) -> u32 {
 		ui::EMBED_EDGE
 	} else {
 		128
+	}
+}
+
+#[derive(Clone, Copy)]
+struct Budget {
+	fit: u32,
+	encoded: usize,
+	canvas: u32,
+	alloc: u64,
+	frames: Option<FrameBudget>,
+}
+
+#[derive(Clone, Copy)]
+struct FrameBudget {
+	fit: u32,
+	bytes: usize,
+	count: usize,
+	shrinks: u32,
+}
+
+impl Budget {
+	fn legacy(edge: u32) -> Self {
+		let embed = edge >= ui::EMBED_EDGE;
+		Self {
+			fit: if edge <= 128 { 64 } else { edge },
+			encoded: if embed {
+				MAX_ANIMATED_ENCODED
+			} else {
+				MAX_AVATAR_ENCODED
+			},
+			canvas: if embed { 1024 } else { 256 },
+			alloc: if embed { 8 * 1024 * 1024 } else { 1024 * 1024 },
+			frames: None,
+		}
+	}
+}
+
+impl FrameBudget {
+	fn legacy(edge: u32) -> Self {
+		Self {
+			fit: edge.min(ui::EMBED_EDGE),
+			bytes: 12 * 1024 * 1024,
+			count: 80,
+			shrinks: 0,
+		}
+	}
+}
+
+fn budget(key: &str) -> Budget {
+	let Some(rendition) = Rendition::parse(key) else {
+		let edge = decode_edge(key);
+		return Budget {
+			frames: is_animated_key(key).then(|| FrameBudget::legacy(edge)),
+			..Budget::legacy(edge)
+		};
+	};
+	let longest = rendition.size.longest();
+	match rendition.motion {
+		Motion::Still => Budget {
+			fit: longest,
+			encoded: media_encoded(&rendition),
+			canvas: match rendition.size {
+				Size::Exact { .. } => (longest * 2).min(8192),
+				Size::Longest(_) => 8192,
+			},
+			alloc: 128 * 1024 * 1024,
+			frames: None,
+		},
+		Motion::Animated => Budget {
+			fit: longest,
+			encoded: MAX_ANIMATED_ENCODED,
+			canvas: ANIMATION_CANVAS,
+			alloc: ANIMATION_ALLOC,
+			frames: Some(FrameBudget {
+				fit: longest,
+				bytes: rendition.lane.frame_bytes(),
+				count: ui::MAX_FRAMES,
+				shrinks: 2,
+			}),
+		},
 	}
 }
 const MAX_AVATAR_ENCODED: usize = 512 * 1024;
@@ -90,6 +184,13 @@ pub struct AvatarResult {
 	pub image: Option<egui::ColorImage>,
 	pub frames: ui::GifFrames,
 	pub error: Option<&'static str>,
+	pub stage: DecodeStage,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum DecodeStage {
+	Preview,
+	Settled,
 }
 
 pub struct AvatarWorker {
@@ -233,6 +334,9 @@ fn is_direct_gif_url(url: &str) -> bool {
 
 // Build, rather than accept, URLs. Even malformed service metadata cannot choose a host/path.
 fn cdn_url(key: &str) -> Option<String> {
+	if key.starts_with("media:") {
+		return media_urls(&Rendition::parse(key)?).map(|urls| urls.primary);
+	}
 	if let Some(value) = key
 		.strip_prefix("anim:sticker-")
 		.or_else(|| key.strip_prefix("embed:sticker-"))
@@ -326,30 +430,12 @@ fn cdn_url(key: &str) -> Option<String> {
 		});
 	}
 	if let Some(source) = key.strip_prefix("anim:") {
-		if is_direct_gif_url(source)
-			|| (model::valid_gif_preview(source)
-				&& (source.ends_with(".gif") || source.ends_with(".webp")))
-		{
-			return Some(source.to_owned());
-		}
-		let mut url = url::Url::parse(&embed_url(source, ui::EMBED_EDGE)?).ok()?;
-		let query: Vec<_> = url
-			.query_pairs()
-			.filter(|(key, _)| key != "format")
-			.map(|(k, v)| (k.into_owned(), v.into_owned()))
-			.collect();
-		url.set_query(None);
-		url.query_pairs_mut()
-			.extend_pairs(query)
-			.append_pair("format", "gif");
-		return Some(url.into());
+		return (model::valid_gif_preview(source)
+			&& (source.ends_with(".gif") || source.ends_with(".webp")))
+		.then(|| source.to_owned());
 	}
 	if let Some(source) = key.strip_prefix("embed:") {
 		return embed_url(source, ui::EMBED_EDGE);
-	}
-	// The media viewer's rendition: same validation, larger proxy edge.
-	if let Some(source) = key.strip_prefix("large:") {
-		return embed_url(source, ui::LARGE_EDGE);
 	}
 	// Provider previews arrive only inside a service GIF result; the address is used verbatim.
 	if let Some(source) = key.strip_prefix("gif:") {
@@ -384,8 +470,159 @@ fn cdn_url(key: &str) -> Option<String> {
 		.then(|| format!("https://cdn.discordapp.com/avatars/{id}/{hash}.{ext}?size=128"))
 }
 
-// Only service-provided image objects reach this path. Never fetch an arbitrary embed source.
+/// Every value is unofficial proxy behavior.
+#[derive(Clone, Copy)]
+enum ProxyFormat {
+	/// Observed in official client URLs, not documented.
+	LosslessWebp,
+	/// Unverified for attachments.
+	AnimatedWebp,
+	Gif,
+}
+
+impl ProxyFormat {
+	fn query(self) -> &'static [(&'static str, &'static str)] {
+		match self {
+			Self::LosslessWebp => &[("format", "webp"), ("quality", "lossless")],
+			Self::AnimatedWebp => &[("format", "webp"), ("animated", "true")],
+			Self::Gif => &[("format", "gif")],
+		}
+	}
+}
+
+struct MediaUrls {
+	primary: String,
+	fallback: Option<String>,
+}
+
+fn media_urls(rendition: &Rendition) -> Option<MediaUrls> {
+	let source = rendition.source.as_str();
+	let size = rendition.size;
+	let path = source.split(['?', '#']).next().unwrap_or(source);
+	let webp = path
+		.rsplit_once('.')
+		.is_some_and(|(_, extension)| extension.eq_ignore_ascii_case("webp"));
+	let provider = (model::valid_gif_url(source) && path.ends_with(".gif"))
+		|| (model::valid_gif_preview(source)
+			&& (path.ends_with(".gif") || path.ends_with(".webp")));
+	let (primary, fallback) = match rendition.motion {
+		Motion::Still => (proxy_url(source, size, ProxyFormat::LosslessWebp), None),
+		Motion::Animated if let Some(video) = motion_video_source(source) => (Some(video), None),
+		Motion::Animated if provider => (Some(source.to_owned()), None),
+		Motion::Animated if webp => (
+			proxy_url(source, size, ProxyFormat::AnimatedWebp),
+			proxy_url(source, size, ProxyFormat::Gif),
+		),
+		Motion::Animated => (
+			proxy_url(source, size, ProxyFormat::Gif),
+			direct_gif(source, size),
+		),
+	};
+	match primary {
+		Some(primary) => Some(MediaUrls { primary, fallback }),
+		None => fallback.map(|primary| MediaUrls {
+			primary,
+			fallback: None,
+		}),
+	}
+}
+
+fn motion_video_source(source: &str) -> Option<String> {
+	if !ui::is_motion_video(source) {
+		return None;
+	}
+	let url = url::Url::parse(source).ok()?;
+	if url.scheme() != "https"
+		|| !url.username().is_empty()
+		|| url.password().is_some()
+		|| url.port().is_some()
+	{
+		return None;
+	}
+	let host = url.host_str()?;
+	let allowed = model::valid_gif_url(source)
+		|| matches!(
+			host,
+			"cdn.discordapp.com"
+				| "media.discordapp.net"
+				| "images-ext-1.discordapp.net"
+				| "images-ext-2.discordapp.net"
+		);
+	allowed.then(|| source.to_owned())
+}
+
+fn direct_gif(source: &str, size: Size) -> Option<String> {
+	let mut url = url::Url::parse(source).ok()?;
+	if url.host_str() == Some("media.discordapp.net") {
+		url.set_host(Some("cdn.discordapp.com")).ok()?;
+	}
+	if !url.path().starts_with("/attachments/") {
+		let side = size.longest().next_power_of_two().clamp(16, 4096);
+		url.query_pairs_mut().append_pair("size", &side.to_string());
+	}
+	let url = String::from(url);
+	is_direct_gif_url(&url).then_some(url)
+}
+
+fn proxy_url(source: &str, size: Size, format: ProxyFormat) -> Option<String> {
+	let url = proxy_base(source)?;
+	Some(match size {
+		Size::Exact { width, height } => proxy_query(url, format.query(), width, Some(height)),
+		Size::Longest(edge) => proxy_query(url, format.query(), edge.get(), None),
+	})
+}
+
 pub(crate) fn embed_url(source: &str, edge: u32) -> Option<String> {
+	let url = proxy_base(source)?;
+	let dimension = |name| {
+		url.query_pairs()
+			.find(|(key, _)| key == name)
+			.and_then(|(_, value)| value.parse::<u32>().ok())
+			.filter(|value| *value > 0)
+	};
+	let format = &[("format", "png")];
+	Some(
+		match dimension("width")
+			.zip(dimension("height"))
+			.map(|(width, height)| ui::fit_edge(width, height, edge))
+		{
+			Some((width, height)) => proxy_query(url, format, width, Some(height)),
+			None => proxy_query(url, format, edge, None),
+		},
+	)
+}
+
+fn proxy_query(
+	mut url: url::Url,
+	format: &[(&str, &str)],
+	width: u32,
+	height: Option<u32>,
+) -> String {
+	let query: Vec<_> = url
+		.query_pairs()
+		.filter(|(key, _)| {
+			!matches!(
+				key.as_ref(),
+				"format" | "width" | "height" | "quality" | "animated" | "fit"
+			)
+		})
+		.map(|(key, value)| (key.into_owned(), value.into_owned()))
+		.collect();
+	url.set_query(None);
+	{
+		let mut pairs = url.query_pairs_mut();
+		pairs
+			.extend_pairs(query)
+			.extend_pairs(format.iter().copied())
+			.append_pair("width", &width.to_string());
+		if let Some(height) = height {
+			pairs.append_pair("height", &height.to_string());
+		}
+	}
+	url.into()
+}
+
+fn proxy_base(source: &str) -> Option<url::Url> {
 	if source.len() > 2048 || source.bytes().any(|b| b.is_ascii_control() || b == b'\\') {
 		return None;
 	}
@@ -440,42 +677,7 @@ pub(crate) fn embed_url(source: &str, edge: u32) -> Option<String> {
 	if host == "cdn.discordapp.com" {
 		url.set_host(Some("media.discordapp.net")).ok()?;
 	}
-	// Keep the aspect ratio supplied by the media metadata, within the decode budget.
-	let dimension = |name| {
-		url.query_pairs()
-			.find(|(key, _)| key == name)
-			.and_then(|(_, value)| value.parse::<u32>().ok())
-			.filter(|value| *value > 0)
-	};
-	let dimensions = dimension("width")
-		.zip(dimension("height"))
-		.map(|(width, height)| ui::fit_edge(width, height, edge));
-	// Static proxy conversion is unofficial. A rejected/unsupported format stays a placeholder;
-	// do not follow redirects, contact the original host, or add animation decoders as fallback.
-	let query: Vec<_> = url
-		.query_pairs()
-		.filter(|(key, _)| {
-			!matches!(
-				key.as_ref(),
-				"format" | "width" | "height" | "quality" | "animated" | "fit"
-			)
-		})
-		.map(|(key, value)| (key.into_owned(), value.into_owned()))
-		.collect();
-	url.set_query(None);
-	url.query_pairs_mut()
-		.extend_pairs(query)
-		.append_pair("format", "png");
-	if let Some((width, height)) = dimensions {
-		url.query_pairs_mut()
-			.append_pair("width", &width.to_string())
-			.append_pair("height", &height.to_string());
-	} else {
-		// Without dimensions, let the proxy derive height rather than request a square crop.
-		url.query_pairs_mut()
-			.append_pair("width", &edge.to_string());
-	}
-	Some(url.into())
+	Some(url)
 }
 
 fn application_icon_url(key: &str, bytes: &[u8]) -> Option<String> {
@@ -494,7 +696,7 @@ fn disk_key(key: &str) -> Option<String> {
 	let url = cdn_url(key)?;
 	if key.starts_with("anim:")
 		|| key.starts_with("embed:")
-		|| key.starts_with("large:")
+		|| key.starts_with("media:")
 		|| key.starts_with("gif:")
 	{
 		Some(format!("embed-{:x}", Sha256::digest(url.as_bytes())))
@@ -538,7 +740,36 @@ async fn run(
 	let mut cooldown = Instant::now();
 	// Eight bounded loads overlap; each downloads and decodes off this loop, which owns the disk.
 	let mut jobs = tokio::task::JoinSet::new();
+	let (mut viewer, mut inline) = (VecDeque::<String>::new(), VecDeque::<String>::new());
 	loop {
+		while jobs.len() < JOBS
+			&& !*cancelled.borrow()
+			&& let Some(key) = viewer.pop_front().or_else(|| inline.pop_front())
+		{
+			let Some(MediaUrls { primary, fallback }) = job_urls(&key) else {
+				continue;
+			};
+			let mut error = disk.is_none().then_some(CACHE_ERROR);
+			let cached = disk.as_mut().and_then(|disk| match disk.read(&key) {
+				Ok(bytes) => bytes,
+				Err(_) => {
+					error = Some(CACHE_ERROR);
+					None
+				}
+			});
+			jobs.spawn(load(Job {
+				budget: budget(&key),
+				key,
+				url: primary,
+				fallback,
+				cached,
+				error,
+				client: client.clone(),
+				cooldown,
+				early: results.clone(),
+				ctx: ctx.clone(),
+			}));
+		}
 		let loaded = tokio::select! {
 			biased;
 			_ = cancelled.changed() => break,
@@ -546,25 +777,14 @@ async fn run(
 				let Some(Ok(loaded)) = completed else { break };
 				loaded
 			},
-			key = requests.recv(), if jobs.len() < JOBS => {
+			key = requests.recv(), if viewer.len() + inline.len() < QUEUED => {
 				let Some(key) = key else { break };
 				if *cancelled.borrow() { break; }
-				let Some(url) = cdn_url(&key) else { continue };
-				let mut error = disk.is_none().then_some(CACHE_ERROR);
-				let cached = disk.as_mut().and_then(|disk| match disk.read(&key) {
-					Ok(bytes) => bytes,
-					Err(_) => { error = Some(CACHE_ERROR); None }
-				});
-				jobs.spawn(load(Job {
-					key,
-					url,
-					cached,
-					error,
-					client: client.clone(),
-					cooldown,
-					early: results.clone(),
-					ctx: ctx.clone(),
-				}));
+				if Rendition::parse(&key).is_some_and(|rendition| rendition.lane == Lane::Viewer) {
+					viewer.push_back(key);
+				} else {
+					inline.push_back(key);
+				}
 				continue;
 			},
 		};
@@ -590,17 +810,35 @@ async fn run(
 		tokio::select! {
 			biased;
 			_ = cancelled.changed() => break,
-			result = results.send(AvatarResult { key, image, frames, error }) => if result.is_err() { break },
+			result = results.send(AvatarResult {
+			key,
+			image,
+			frames,
+			error,
+			stage: DecodeStage::Settled,
+		}) => if result.is_err() { break },
 		}
 		ctx.request_repaint();
 	}
 	jobs.abort_all();
 }
 
+fn job_urls(key: &str) -> Option<MediaUrls> {
+	match Rendition::parse(key) {
+		Some(rendition) => media_urls(&rendition),
+		None => cdn_url(key).map(|primary| MediaUrls {
+			primary,
+			fallback: None,
+		}),
+	}
+}
+
 const JOBS: usize = 8;
 struct Job {
 	key: String,
 	url: String,
+	fallback: Option<String>,
+	budget: Budget,
 	cached: Option<Vec<u8>>,
 	error: Option<&'static str>,
 	client: Option<reqwest::Client>,
@@ -623,6 +861,8 @@ async fn load(job: Job) -> Loaded {
 	let Job {
 		key,
 		url,
+		fallback,
+		budget,
 		cached,
 		error,
 		client,
@@ -630,12 +870,12 @@ async fn load(job: Job) -> Loaded {
 		early,
 		ctx,
 	} = job;
-	let animated = is_animated_key(&key);
+	let animated = budget.frames.is_some();
 	let mut until = cooldown;
 	let mut early = animated.then_some((early, ctx));
-	let mut fallback = None;
+	let mut stale = None;
 	if let Some(bytes) = cached {
-		let (image, frames, _) = decode_blocking(&key, bytes, false, early.clone()).await;
+		let (image, frames, _) = decode_blocking(&key, bytes, false, budget, early.clone()).await;
 		// A single stored frame is fetched again: a static rendition may share its cache name.
 		if image.is_some() && (!animated || frames.len() >= 2) {
 			return Loaded {
@@ -650,27 +890,28 @@ async fn load(job: Job) -> Loaded {
 		if image.is_some() {
 			early = None;
 		}
-		fallback = image;
+		stale = image;
 	}
-	let bytes = match &client {
-		Some(client) if Instant::now() >= cooldown => fetch(client, &key, url, &mut until).await,
-		_ => None,
-	};
-	let Some(bytes) = bytes else {
-		return Loaded {
-			key,
-			fetched: None,
-			image: fallback,
-			frames: Vec::new(),
-			error,
-			until,
-		};
-	};
-	let (image, frames, bytes) = decode_blocking(&key, bytes, lottie_key(&key), early).await;
-	let image = image.or(fallback);
+	let (mut image, mut frames, mut fetched) = (None, Vec::new(), None);
+	if let Some(client) = &client
+		&& Instant::now() >= cooldown
+	{
+		for url in std::iter::once(url).chain(fallback) {
+			let Some(bytes) = fetch(client, &key, url, &mut until).await else {
+				continue;
+			};
+			(image, frames, fetched) =
+				decode_blocking(&key, bytes, lottie_key(&key), budget, early.clone()).await;
+			if image.is_some() {
+				break;
+			}
+		}
+	}
+	let fetched = fetched.filter(|_| image.is_some());
+	let image = image.or(stale);
 	Loaded {
-		fetched: bytes.filter(|_| image.is_some()),
 		key,
+		fetched,
 		image,
 		frames,
 		error,
@@ -704,6 +945,7 @@ async fn decode_blocking(
 	key: &str,
 	bytes: Vec<u8>,
 	lottie: bool,
+	budget: Budget,
 	early: Option<(async_mpsc::Sender<AvatarResult>, egui::Context)>,
 ) -> (Option<egui::ColorImage>, ui::GifFrames, Option<Vec<u8>>) {
 	let key = key.to_owned();
@@ -715,28 +957,29 @@ async fn decode_blocking(
 		}) else {
 			return (None, Vec::new(), None);
 		};
-		let edge = decode_edge(&key);
-		if !is_animated_key(&key) {
-			return (decode(&bytes, edge), Vec::new(), Some(bytes));
-		}
-		if let Some((results, ctx)) = early
-			&& let Some(image) = decode(&bytes, edge)
-			&& results
-				.blocking_send(AvatarResult {
-					key: key.clone(),
-					image: Some(image),
-					frames: Vec::new(),
-					error: None,
-				})
-				.is_ok()
-		{
-			ctx.request_repaint();
-		}
-		let frames = decode_animation(&bytes, edge).unwrap_or_default();
+		let Some(frame_budget) = budget.frames else {
+			return (decode(&bytes, &budget), Vec::new(), Some(bytes));
+		};
+		let post = |image: &egui::ColorImage| {
+			if let Some((results, ctx)) = &early
+				&& results
+					.blocking_send(AvatarResult {
+						key: key.clone(),
+						image: Some(image.clone()),
+						frames: Vec::new(),
+						error: None,
+						stage: DecodeStage::Preview,
+					})
+					.is_ok()
+			{
+				ctx.request_repaint();
+			}
+		};
+		let frames = decode_animation(&bytes, &frame_budget, post).unwrap_or_default();
 		let image = frames
 			.first()
 			.map(|(_, image)| image.as_ref().clone())
-			.or_else(|| decode(&bytes, edge));
+			.or_else(|| decode(&bytes, &budget));
 		(image, frames, Some(bytes))
 	})
 	.await
@@ -830,18 +1073,8 @@ async fn download(
 	Some(bytes)
 }
 
-/// Decode one still image and keep its longest edge within `edge` pixels.
-fn decode(bytes: &[u8], edge: u32) -> Option<egui::ColorImage> {
-	let large = edge > ui::EMBED_EDGE;
-	let embed = edge >= ui::EMBED_EDGE;
-	let encoded_limit = if large {
-		MAX_LARGE_ENCODED
-	} else if embed {
-		MAX_ANIMATED_ENCODED
-	} else {
-		MAX_AVATAR_ENCODED
-	};
-	if bytes.len() > encoded_limit {
+fn decode(bytes: &[u8], budget: &Budget) -> Option<egui::ColorImage> {
+	if bytes.len() > budget.encoded {
 		return None;
 	}
 	// Provider previews can be GIF/JPEG/WebP; decode only the first frame, within limits.
@@ -849,30 +1082,17 @@ fn decode(bytes: &[u8], edge: u32) -> Option<egui::ColorImage> {
 		.with_guessed_format()
 		.ok()?;
 	let mut limits = image::Limits::default();
-	let side = if large {
-		edge * 2
-	} else if embed {
-		1024
-	} else {
-		256
-	};
-	limits.max_image_width = Some(side);
-	limits.max_image_height = Some(side);
-	limits.max_alloc = Some(if large {
-		96 * 1024 * 1024
-	} else if embed {
-		8 * 1024 * 1024
-	} else {
-		1024 * 1024
-	});
+	limits.max_image_width = Some(budget.canvas);
+	limits.max_image_height = Some(budget.canvas);
+	limits.max_alloc = Some(budget.alloc);
 	reader.limits(limits);
 	let mut image = reader.decode().ok()?;
-	// wgpu textures have no mip chain. A 128px face bilinear-minified into the
-	// 48px rail aliases. Lanczos down to 64 leaves a 4/3 sample for that slot
-	// and stays near 1:1 at 150% zoom or the 72px settings icon.
-	let upload = if edge <= 128 { 64 } else { edge };
-	if image.width() > upload || image.height() > upload {
-		image = image.resize(upload, upload, image::imageops::FilterType::Lanczos3);
+	if image.width() > budget.fit || image.height() > budget.fit {
+		image = image.resize(
+			budget.fit,
+			budget.fit,
+			image::imageops::FilterType::Lanczos3,
+		);
 	}
 	let image = image.into_rgba8();
 	Some(egui::ColorImage::from_rgba_unmultiplied(
@@ -881,17 +1101,216 @@ fn decode(bytes: &[u8], edge: u32) -> Option<egui::ColorImage> {
 	))
 }
 
-fn decode_animation(bytes: &[u8], edge: u32) -> Option<ui::GifFrames> {
-	use image::{AnimationDecoder, ImageDecoder};
+fn resize_to(image: image::RgbaImage, fit: u32) -> image::RgbaImage {
+	let (width, height) = ui::fit_edge(image.width(), image.height(), fit);
+	if (width, height) == image.dimensions() {
+		return image;
+	}
+	let filter = if image.width().max(image.height()) <= 2 * width.max(height) {
+		image::imageops::FilterType::Triangle
+	} else {
+		image::imageops::FilterType::Lanczos3
+	};
+	image::imageops::resize(&image, width, height, filter)
+}
+
+fn decode_motion_video(
+	bytes: &[u8],
+	budget: &FrameBudget,
+	first: impl Fn(&egui::ColorImage),
+) -> Option<ui::GifFrames> {
+	let started = Instant::now();
+	let mut fit = budget.fit;
+	let mut shrinks = budget.shrinks;
+	let mut posted = false;
+	// One owned copy for the decoder's 'static stream, shared by every shrink pass.
+	let bytes: Arc<[u8]> = bytes.into();
+	'decode: loop {
+		let mut decoder =
+			platform::video::Decoder::open(Box::new(Cursor::new(bytes.clone()))).ok()?;
+		let duration = decoder.info().duration;
+		let mut frames: Vec<(f64, Arc<egui::ColorImage>)> = Vec::new();
+		let mut total = 0usize;
+		let mut stride = 1usize;
+		let mut index = 0usize;
+		loop {
+			// A partial clip would loop with a visible jump; the embed falls back to its GIF instead.
+			if index >= 600 || started.elapsed() > Duration::from_secs(3) {
+				return None;
+			}
+			match decoder.poll_video() {
+				Ok(std::task::Poll::Pending) => {
+					let _ = decoder.poll_audio();
+					std::thread::sleep(Duration::from_millis(2));
+				}
+				Ok(std::task::Poll::Ready(Some(platform::video::Sample::Video {
+					pts,
+					width,
+					height,
+					rgba,
+				}))) => {
+					let pixels = (width as usize).checked_mul(height as usize)?;
+					if width == 0 || height == 0 || rgba.len() != pixels.checked_mul(4)? {
+						return None;
+					}
+					if !index.is_multiple_of(stride) {
+						index += 1;
+						continue;
+					}
+					let image = image::RgbaImage::from_raw(width, height, rgba)?;
+					let image = resize_to(image, fit);
+					let frame_bytes = image.width() as usize * image.height() as usize * 4;
+					// accept_frames also keeps one playback texture the size of this frame.
+					if total + 2 * frame_bytes > budget.bytes && shrinks > 0 {
+						shrinks -= 1;
+						fit = ((fit as f32 * 0.707) as u32).max(1);
+						posted = false;
+						continue 'decode;
+					}
+					if frames.len() >= budget.count || total + 2 * frame_bytes > budget.bytes {
+						frames = frames.chunks(2).map(|pair| pair[0].clone()).collect();
+						total = frames.iter().map(|(_, image)| image.pixels.len() * 4).sum();
+						stride *= 2;
+					}
+					let stored = Arc::new(egui::ColorImage::from_rgba_unmultiplied(
+						[image.width() as usize, image.height() as usize],
+						image.as_raw(),
+					));
+					if !posted {
+						first(&stored);
+						posted = true;
+					}
+					total += frame_bytes;
+					frames.push((pts, stored));
+					index += 1;
+				}
+				Ok(std::task::Poll::Ready(Some(_))) => {}
+				Ok(std::task::Poll::Ready(None)) => break,
+				Err(_) => return None,
+			}
+		}
+		if frames.len() < 2 {
+			return None;
+		}
+		let mut timed = Vec::with_capacity(frames.len());
+		for pair in frames.windows(2) {
+			timed.push((frame_delay(pair[1].0 - pair[0].0), pair[0].1.clone()));
+		}
+		let (pts, image) = frames.last()?;
+		let tail = if duration.is_finite() && duration > *pts {
+			frame_delay(duration - *pts)
+		} else {
+			timed
+				.last()
+				.map(|(delay, _)| *delay)
+				.unwrap_or_else(|| Duration::from_millis(50))
+		};
+		timed.push((tail, image.clone()));
+		return Some(timed);
+	}
+}
+
+fn is_isobmff(bytes: &[u8]) -> bool {
+	bytes.len() >= 12
+		&& matches!(
+			&bytes[4..8],
+			b"ftyp" | b"moov" | b"mdat" | b"free" | b"skip" | b"wide"
+		)
+}
+
+fn frame_delay(seconds: f64) -> Duration {
+	let millis = if seconds.is_finite() {
+		(seconds * 1000.0).round() as u64
+	} else {
+		50
+	};
+	Duration::from_millis(millis.clamp(20, 10_000))
+}
+
+fn decode_animation(
+	bytes: &[u8],
+	budget: &FrameBudget,
+	first: impl Fn(&egui::ColorImage) + Send,
+) -> Option<ui::GifFrames> {
 	if bytes.len() > MAX_ANIMATED_ENCODED {
 		return None;
 	}
+	if is_isobmff(bytes) {
+		return std::thread::scope(|scope| {
+			scope
+				.spawn(move || decode_motion_video(bytes, budget, first))
+				.join()
+				.ok()
+				.flatten()
+		});
+	}
+	let started = Instant::now();
+	let mut fit = budget.fit;
+	let mut shrinks = budget.shrinks;
+	let mut posted = false;
+	'decode: loop {
+		let mut frames: ui::GifFrames = Vec::new();
+		let mut total = 0;
+		let mut stride = 1;
+		for (index, frame) in animation_frames(bytes)?.enumerate() {
+			// A partial clip would loop with a visible jump; keep the still first frame instead.
+			// The deadline waits for two frames so one slow resize of a short GIF still animates.
+			if index == 600 || (frames.len() >= 2 && started.elapsed() > Duration::from_secs(3)) {
+				return None;
+			}
+			let frame = frame.ok()?;
+			let (numerator, denominator) = frame.delay().numer_denom_ms();
+			let delay = Duration::from_millis(
+				(u64::from(numerator) / u64::from(denominator.max(1))).clamp(20, 10_000),
+			);
+			if !index.is_multiple_of(stride) {
+				frames.last_mut()?.0 += delay;
+				continue;
+			}
+			let image = resize_to(frame.into_buffer(), fit);
+			let frame_bytes = image.width() as usize * image.height() as usize * 4;
+			// accept_frames also keeps one playback texture the size of this frame.
+			if total + 2 * frame_bytes > budget.bytes && shrinks > 0 {
+				shrinks -= 1;
+				fit = ((fit as f32 * 0.707) as u32).max(1);
+				posted = false;
+				continue 'decode;
+			}
+			if frames.len() >= budget.count || total + 2 * frame_bytes > budget.bytes {
+				frames = frames
+					.chunks(2)
+					.map(|pair| {
+						(
+							pair.iter().map(|(delay, _)| *delay).sum(),
+							pair[0].1.clone(),
+						)
+					})
+					.collect();
+				total = frames.iter().map(|(_, image)| image.pixels.len() * 4).sum();
+				stride *= 2;
+			}
+			let image = Arc::new(egui::ColorImage::from_rgba_unmultiplied(
+				[image.width() as usize, image.height() as usize],
+				image.as_raw(),
+			));
+			if !posted {
+				first(&image);
+				posted = true;
+			}
+			total += frame_bytes;
+			frames.push((delay, image));
+		}
+		return Some(frames);
+	}
+}
+
+fn animation_frames(bytes: &[u8]) -> Option<image::Frames<'_>> {
+	use image::{AnimationDecoder, ImageDecoder};
 	let mut limits = image::Limits::default();
-	limits.max_image_width = Some(2048);
-	limits.max_image_height = Some(2048);
-	// GIF decoding can hold a persistent canvas, a frame and a composited canvas.
-	limits.max_alloc = Some(3 * 2048 * 2048 * 4);
-	let decoded = match image::guess_format(bytes).ok()? {
+	limits.max_image_width = Some(ANIMATION_CANVAS);
+	limits.max_image_height = Some(ANIMATION_CANVAS);
+	limits.max_alloc = Some(ANIMATION_ALLOC);
+	Some(match image::guess_format(bytes).ok()? {
 		image::ImageFormat::Gif => {
 			let mut decoder = image::codecs::gif::GifDecoder::new(Cursor::new(bytes)).ok()?;
 			decoder.set_limits(limits).ok()?;
@@ -908,51 +1327,7 @@ fn decode_animation(bytes: &[u8], edge: u32) -> Option<ui::GifFrames> {
 			decoder.apng().ok()?.into_frames()
 		}
 		_ => return None,
-	};
-	let mut frames: ui::GifFrames = Vec::new();
-	let mut stride = 1;
-	let started = Instant::now();
-	for (index, frame) in decoded.take(601).enumerate() {
-		if index == 600 || started.elapsed() > Duration::from_secs(3) {
-			return None;
-		}
-		let frame = frame.ok()?;
-		let (numerator, denominator) = frame.delay().numer_denom_ms();
-		let delay = Duration::from_millis(
-			(u64::from(numerator) / u64::from(denominator.max(1))).clamp(20, 10_000),
-		);
-		if index % stride != 0 {
-			frames.last_mut()?.0 += delay;
-			continue;
-		}
-		let buffer = frame.into_buffer();
-		let (width, height) =
-			ui::fit_edge(buffer.width(), buffer.height(), edge.min(ui::EMBED_EDGE));
-		let image = image::DynamicImage::ImageRgba8(buffer)
-			.thumbnail(width, height)
-			.into_rgba8();
-		let frame_bytes = (image.width() as usize) * (image.height() as usize) * 4;
-		if frames.len() >= 80 || frames.len() * frame_bytes >= 12 * 1024 * 1024 {
-			frames = frames
-				.chunks(2)
-				.map(|pair| {
-					(
-						pair.iter().map(|(delay, _)| *delay).sum(),
-						pair[0].1.clone(),
-					)
-				})
-				.collect();
-			stride *= 2;
-		}
-		frames.push((
-			delay,
-			Arc::new(egui::ColorImage::from_rgba_unmultiplied(
-				[image.width() as usize, image.height() as usize],
-				image.as_raw(),
-			)),
-		));
-	}
-	Some(frames)
+	})
 }
 
 struct Disk {
@@ -1115,14 +1490,16 @@ mod tests {
 			96, 248, 207, 240, 31, 0, 4, 1, 1, 255, 98, 231, 233, 156, 0, 0, 0, 0, 73, 69, 78, 68,
 			174, 66, 96, 130,
 		];
-		let frames = super::decode_animation(&bytes, 160).unwrap();
+		let frames = super::decode_animation(&bytes, &FrameBudget::legacy(160), |_| {}).unwrap();
 		assert_eq!(frames.len(), 2);
 		assert_eq!(frames[0].0, std::time::Duration::from_millis(100));
 		assert_eq!(frames[1].0, std::time::Duration::from_millis(200));
 		assert_eq!(frames[0].1.size, [1, 1]);
 		assert_eq!(frames[0].1.pixels[0], eframe::egui::Color32::RED);
 		assert_eq!(frames[1].1.pixels[0], eframe::egui::Color32::GREEN);
-		assert!(super::decode_animation(&bytes[..100], 160).is_none());
+		assert!(
+			super::decode_animation(&bytes[..100], &FrameBudget::legacy(160), |_| {}).is_none()
+		);
 	}
 	#[test]
 	fn sticker_urls_and_decode_budgets_are_scoped() {
@@ -1153,7 +1530,14 @@ mod tests {
 		] {
 			assert!(super::cdn_url(key).is_none(), "{key}");
 		}
-		assert!(super::decode_animation(&vec![0; super::MAX_ANIMATED_ENCODED + 1], 160).is_none());
+		assert!(
+			super::decode_animation(
+				&vec![0; super::MAX_ANIMATED_ENCODED + 1],
+				&FrameBudget::legacy(160),
+				|_| {}
+			)
+			.is_none()
+		);
 	}
 
 	#[test]
@@ -1162,7 +1546,9 @@ mod tests {
 		let png = super::render_lottie(source).expect("supported Lottie preview");
 		assert!(png.len() <= super::MAX_ENCODED);
 		assert_eq!(
-			super::decode(&png, ui::EMBED_EDGE).unwrap().size,
+			super::decode(&png, &Budget::legacy(ui::EMBED_EDGE))
+				.unwrap()
+				.size,
 			[160, 160]
 		);
 		assert!(super::render_lottie(&vec![b' '; super::MAX_LOTTIE_ENCODED + 1]).is_none());
@@ -1234,7 +1620,7 @@ mod tests {
 					.unwrap();
 			}
 		}
-		let frames = super::decode_animation(&bytes, 128).unwrap();
+		let frames = super::decode_animation(&bytes, &FrameBudget::legacy(128), |_| {}).unwrap();
 		assert_eq!(frames.len(), 2);
 		assert!(frames.iter().all(|(delay, image)| {
 			*delay == Duration::from_millis(100) && image.size == [128, 128]
@@ -1259,7 +1645,7 @@ mod tests {
 					.unwrap();
 			}
 		}
-		let frames = super::decode_animation(&bytes, 160).unwrap();
+		let frames = super::decode_animation(&bytes, &FrameBudget::legacy(160), |_| {}).unwrap();
 		assert!(frames.len() > 1 && frames.len() <= 80);
 		assert_eq!(
 			frames
@@ -1296,13 +1682,20 @@ mod tests {
 					.unwrap();
 			}
 		}
-		let frames = super::decode_animation(&bytes, 160).unwrap();
+		let frames = super::decode_animation(&bytes, &FrameBudget::legacy(160), |_| {}).unwrap();
 		assert_eq!(frames.len(), 2);
 		assert_eq!(frames[0].0, std::time::Duration::from_millis(100));
 		assert_eq!(frames[0].1.size, [160, 80]);
 		assert_ne!(frames[0].1.pixels[0], frames[1].1.pixels[0]);
-		assert!(super::decode_animation(b"not a GIF", 160).is_none());
-		assert!(super::decode_animation(&vec![0; super::MAX_ENCODED + 1], 160).is_none());
+		assert!(super::decode_animation(b"not a GIF", &FrameBudget::legacy(160), |_| {}).is_none());
+		assert!(
+			super::decode_animation(
+				&vec![0; super::MAX_ENCODED + 1],
+				&FrameBudget::legacy(160),
+				|_| {}
+			)
+			.is_none()
+		);
 	}
 
 	#[test]
@@ -1496,12 +1889,12 @@ mod tests {
 		}
 		assert!(embed_url(
 			"https://cdn.discordapp.com/guilds/1/users/2/avatars/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png?size=2048",
-			ui::LARGE_EDGE,
+			2048,
 		).is_some());
 		assert!(
 			embed_url(
 				"https://cdn.discordapp.com/guilds/1/users/2/avatars/invalid.png",
-				ui::LARGE_EDGE,
+				2048,
 			)
 			.is_none()
 		);
@@ -1530,19 +1923,25 @@ mod tests {
 			)
 			.is_some()
 		);
-		let large_key = "large:https://cdn.discordapp.com/attachments/1/2/image.png?ex=abc&is=def&hm=synthetic&width=4096&height=1024";
-		let transformed = cdn_url(large_key).unwrap();
-		assert!(transformed.ends_with("format=png&width=2048&height=512"));
-		assert_ne!(disk_key(large_key).unwrap(), disk_key(embed_key).unwrap());
-		assert!(decode(&png(1025, 1), 512).is_none());
-		assert_eq!(decode(&png(1024, 512), 512).unwrap().size, [512, 256]);
-		assert_eq!(decode(&png(1024, 512), 2048).unwrap().size, [1024, 512]);
-		assert!(decode(&png(4097, 1), 2048).is_none());
-		assert!(decode(&vec![0; MAX_ENCODED + 1], 128).is_none());
-		assert!(decode(b"not an image", 128).is_none());
-		assert!(decode(&png(257, 1), 128).is_none());
+		let media_key = "media:vs:2048x512:https://cdn.discordapp.com/attachments/1/2/image.png?ex=abc&is=def&hm=synthetic";
+		let transformed = cdn_url(media_key).unwrap();
+		assert!(transformed.starts_with("https://media.discordapp.net/attachments/1/2/image.png?"));
+		assert!(transformed.ends_with("format=webp&quality=lossless&width=2048&height=512"));
+		assert_ne!(disk_key(media_key).unwrap(), disk_key(embed_key).unwrap());
+		let legacy = Budget::legacy;
+		assert!(decode(&png(1025, 1), &legacy(512)).is_none());
+		assert_eq!(
+			decode(&png(1024, 512), &legacy(512)).unwrap().size,
+			[512, 256]
+		);
+		let media = budget("media:vs:2048x1024:https://cdn.discordapp.com/attachments/1/2/a.png");
+		assert_eq!(decode(&png(1024, 512), &media).unwrap().size, [1024, 512]);
+		assert!(decode(&png(4097, 1), &media).is_none());
+		assert!(decode(&vec![0; MAX_ENCODED + 1], &legacy(128)).is_none());
+		assert!(decode(b"not an image", &legacy(128)).is_none());
+		assert!(decode(&png(257, 1), &legacy(128)).is_none());
 		let bytes = png(256, 256);
-		assert_eq!(decode(&bytes, 128).unwrap().size, [64, 64]);
+		assert_eq!(decode(&bytes, &legacy(128)).unwrap().size, [64, 64]);
 		let root = std::env::temp_dir().join(format!(
 			"serein-avatar-test-{}-{}",
 			std::process::id(),

@@ -3,8 +3,8 @@
 use model::{Attachment, Id, Message};
 
 const CORNER: u8 = 8;
-const MAX_WIDTH: f32 = 420.0;
-const MAX_HEIGHT: f32 = 320.0;
+const MAX_WIDTH: f32 = crate::avatars::media::MEDIA_MAX_WIDTH;
+const MAX_HEIGHT: f32 = crate::avatars::media::MEDIA_MAX_HEIGHT;
 const BAR_HEIGHT: f32 = 60.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -691,12 +691,20 @@ impl Drop for VideoUi {
 	}
 }
 fn stage_size(attachment: &Attachment, width: f32) -> egui::Vec2 {
-	let ratio = if attachment.media.width > 0 && attachment.media.height > 0 {
-		attachment.media.width as f32 / attachment.media.height as f32
+	let width = width.clamp(1.0, MAX_WIDTH);
+	let (native_width, native_height) = if attachment.media.width > 0 && attachment.media.height > 0
+	{
+		(
+			attachment.media.width as f32,
+			attachment.media.height as f32,
+		)
 	} else {
-		16.0 / 9.0
+		(16.0, 9.0)
 	};
-	egui::vec2(width, (width / ratio.clamp(0.5, 3.0)).min(MAX_HEIGHT))
+	let scale = (width / native_width)
+		.min(MAX_HEIGHT / native_height)
+		.min(1.0);
+	(egui::vec2(native_width, native_height) * scale).max(egui::vec2(1.0, 1.0))
 }
 /// Stage plus the spacing after each attachment; all controls are overlays or menu actions.
 pub(super) fn estimated_height(attachment: &Attachment, width: f32) -> f32 {

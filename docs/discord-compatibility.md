@@ -1,5 +1,22 @@
 # Discord compatibility — checked 2026-09-10
 
+## Message pictures and gifv - September 23, 2026
+
+A single chat image fits inside 550 by 350 points, the 11 to 7 mosaic cap used by the official client.
+The image keeps its aspect ratio. Opening it draws the file at its own pixel size when that fits the window.
+Scroll zoom enlarges it. A larger file fits the window first.
+
+A still message picture requests an unofficial media-proxy WebP with `quality=lossless`, sized to the texture.
+An animated GIF or WebP requests a sized proxy GIF first.
+`quality=lossless` and `animated=true` are unofficial.
+A rejected request stays a placeholder.
+Tenor and Klipy previews stay on their original URL.
+
+A gifv embed with an allowed MP4, MOV, or M4V URL fetches that file and plays the frames through the platform video decoder.
+A WebM URL stays on the poster or GIF path, because this decoder does not read WebM.
+If the clip does not decode to at least two frames, the embed falls back to its GIF or poster.
+Live acceptance of the proxy query is unverified.
+
 ## Slash commands - September 22, 2026
 
 Typing `/` opens a native, searchable command picker with built-in/application filters,

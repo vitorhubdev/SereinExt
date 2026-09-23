@@ -273,9 +273,9 @@ fn video_controls_still_handle_primary_clicks() {
 	let message = test_support::message(1, Id(2));
 	for state in [VideoState::Playing, VideoState::Paused] {
 		for (control, pos) in [
-			egui::pos2(200.0, 193.0),
-			egui::pos2(21.0, 213.0),
-			egui::pos2(345.0, 213.0),
+			egui::pos2(200.0, 264.0),
+			egui::pos2(21.0, 286.0),
+			egui::pos2(480.0, 286.0),
 		]
 		.into_iter()
 		.enumerate()

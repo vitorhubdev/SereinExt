@@ -163,7 +163,13 @@ impl JoinDialog {
 							Some(media) => {
 								let mut icon_ui =
 									ui.new_child(egui::UiBuilder::new().max_rect(icon));
-								avatars.show_embed(&mut icon_ui, media, icon.size(), state.demo);
+								avatars.show_media(
+									&mut icon_ui,
+									media,
+									icon.size(),
+									state.demo,
+									crate::avatars::Surface::Inline,
+								);
 							}
 							None => {
 								ui.painter().rect_filled(icon, 16, colors.raised);

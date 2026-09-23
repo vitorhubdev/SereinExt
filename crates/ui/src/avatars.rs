@@ -1,10 +1,14 @@
 //! Visible-avatar requests and a small texture working set. Disk/network work lives outside egui.
+pub(crate) mod media;
+
 use egui::{ColorImage, TextureHandle};
 use model::User;
 use std::{
 	collections::{HashMap, HashSet},
 	time::{Duration, Instant},
 };
+
+pub(crate) use media::{Quality, Surface};
 
 pub type GifFrames = Vec<(Duration, std::sync::Arc<ColorImage>)>;
 const ANIMATIONS: usize = 128;
@@ -25,9 +29,8 @@ const EMOJI_TEXTURES: usize = 1024;
 const EMOJI_TEXTURE_BYTES: usize = 16 * 1024 * 1024;
 const TEXTURES: usize = 512;
 const TEXTURE_BYTES: usize = 64 * 1024 * 1024;
-/// Longest edge requested for thumbnails and for the full-screen viewer.
+/// Longest edge for string-keyed artwork: stickers, picker previews, banners and activity art.
 pub const EMBED_EDGE: u32 = 512;
-pub const LARGE_EDGE: u32 = 2048;
 const REQUESTS: usize = 128;
 const RETRY: Duration = Duration::from_secs(5);
 
@@ -54,26 +57,85 @@ pub(crate) struct Avatars {
 	pub revision: u64,
 	attempts: HashMap<String, (Instant, bool)>,
 	requests: Vec<String>,
+	media: media::MediaLibrary,
 }
-/// Scale `width`×`height` so the longer side is at most `edge`, never upscaling.
-pub fn fit_edge(width: u32, height: u32, edge: u32) -> (u32, u32) {
-	let longest = u64::from(width.max(height)).max(u64::from(edge));
-	(
-		(u64::from(width) * u64::from(edge) / longest).max(1) as u32,
-		(u64::from(height) * u64::from(edge) / longest).max(1) as u32,
-	)
+
+impl Animation {
+	fn advance(&mut self, ctx: &egui::Context) -> Option<TextureHandle> {
+		let total_nanos = self.total.as_nanos();
+		if total_nanos == 0 {
+			return None;
+		}
+		let now = Instant::now();
+		let elapsed_nanos = (self.started.elapsed().as_nanos() % total_nanos) as u64;
+		let mut elapsed = Duration::from_nanos(elapsed_nanos);
+		let mut target_index = 0;
+		let mut frame_remaining = Duration::ZERO;
+		for (index, (delay, _)) in self.frames.iter().enumerate() {
+			if elapsed < *delay {
+				target_index = index;
+				frame_remaining = *delay - elapsed;
+				break;
+			}
+			elapsed -= *delay;
+		}
+
+		if self.frame != target_index {
+			if now < self.next_upload {
+				ctx.request_repaint_after(self.next_upload - now);
+				return self.texture.clone();
+			}
+			let image = &self.frames[target_index].1;
+			if let Some(texture) = &mut self.texture {
+				texture.set(image.clone(), egui::TextureOptions::LINEAR);
+			} else {
+				self.texture = Some(ctx.load_texture(
+					"service-animation",
+					image.clone(),
+					egui::TextureOptions::LINEAR,
+				));
+			}
+			self.frame = target_index;
+			self.next_upload = now + ANIMATION_INTERVAL;
+		}
+
+		ctx.request_repaint_after(frame_remaining.max(Duration::from_millis(1)));
+		self.texture.clone()
+	}
+}
+
+fn paint_texture(
+	ui: &egui::Ui,
+	texture: &TextureHandle,
+	rect: egui::Rect,
+	radius: u8,
+	cover: bool,
+	tint: egui::Color32,
+) -> egui::Rect {
+	let source = texture.size_vec2();
+	let image = egui::Image::new(texture).tint(tint);
+	if cover {
+		let scale = (rect.width() / source.x).max(rect.height() / source.y);
+		let uv_size = rect.size() / (source * scale);
+		image
+			.uv(egui::Rect::from_center_size(egui::pos2(0.5, 0.5), uv_size))
+			.corner_radius(egui::CornerRadius {
+				nw: radius,
+				ne: radius,
+				sw: 0,
+				se: 0,
+			})
+			.paint_at(ui, rect);
+		rect
+	} else {
+		let scale = (rect.width() / source.x).min(rect.height() / source.y);
+		let fitted = egui::Rect::from_center_size(rect.center(), source * scale);
+		image.corner_radius(radius).paint_at(ui, fitted);
+		fitted
+	}
 }
 
 fn is_animated_profile_or_avatar_key(key: &str) -> bool {
-	if let Some(source) = key.strip_prefix("anim:") {
-		let path = source.split('?').next().unwrap_or(source);
-		if path.ends_with(".gif")
-			&& (path.contains("/avatars/") || path.contains("/banners/"))
-			&& path.contains("/a_")
-		{
-			return true;
-		}
-	}
 	if let Some(value) = key.strip_prefix("banner-") {
 		return value
 			.split_once('-')
@@ -113,6 +175,7 @@ impl Avatars {
 			.get(key)
 			.or_else(|| self.emoji_textures.get(key))
 			.map(|(_, texture)| texture.id())
+			.or_else(|| self.media.texture_id(&media::Rendition::parse(key)?))
 	}
 	pub fn set_animation(&mut self, enabled: bool) {
 		if self.animate_gifs == enabled {
@@ -120,6 +183,7 @@ impl Avatars {
 		}
 		self.animate_gifs = enabled;
 		self.no_animations.clear();
+		self.media.set_animation(enabled);
 		if !enabled {
 			self.animations.clear();
 			self.textures.retain(|key, (_, texture)| {
@@ -135,6 +199,14 @@ impl Avatars {
 		}
 	}
 	pub fn accept_animation(&mut self, key: String, frames: GifFrames) {
+		if key.starts_with("media:") {
+			if self.animate_gifs
+				&& let Some(rendition) = media::Rendition::parse(&key)
+			{
+				self.media.accept_frames(rendition, frames);
+			}
+			return;
+		}
 		if !self.animate_gifs
 			|| !self.textures.contains_key(&key)
 			|| frames.len() < 2
@@ -159,8 +231,8 @@ impl Avatars {
 		if bytes > ANIMATION_BYTES
 			|| frames.iter().any(|(delay, image)| {
 				*delay < Duration::from_millis(20)
-					|| image.size[0] > LARGE_EDGE as usize
-					|| image.size[1] > LARGE_EDGE as usize
+					|| image.size[0] > EMBED_EDGE as usize
+					|| image.size[1] > EMBED_EDGE as usize
 			}) {
 			return;
 		}
@@ -190,7 +262,9 @@ impl Avatars {
 			},
 		);
 	}
+	/// Drained once per frame after the UI pass.
 	pub fn take_requests(&mut self) -> Vec<String> {
+		self.media.end_frame();
 		std::mem::take(&mut self.requests)
 	}
 	fn request(&mut self, key: String) {
@@ -210,12 +284,18 @@ impl Avatars {
 		}
 	}
 	pub fn accept(&mut self, ctx: &egui::Context, key: String, image: Option<ColorImage>) {
+		if key.starts_with("media:") {
+			if let Some(rendition) = media::Rendition::parse(&key)
+				&& self.media.accept_still(ctx, rendition, image)
+			{
+				self.revision += 1;
+			}
+			return;
+		}
 		if !self.attempts.contains_key(&key) {
 			return;
 		}
-		let limit = if key.starts_with("large:") {
-			LARGE_EDGE as usize
-		} else if key.starts_with("anim:")
+		let limit = if key.starts_with("anim:")
 			|| key.starts_with("embed:")
 			|| key.starts_with("gif:")
 			|| key.starts_with("spotify-")
@@ -599,45 +679,7 @@ impl Avatars {
 			&& (hovered || self.avatar_animation || !is_animated_profile_or_avatar_key(key))
 			&& let Some(animation) = self.animations.get_mut(key)
 		{
-			let total_nanos = animation.total.as_nanos();
-			if total_nanos == 0 {
-				return None;
-			}
-			let now = Instant::now();
-			let elapsed_nanos = (animation.started.elapsed().as_nanos() % total_nanos) as u64;
-			let mut elapsed = Duration::from_nanos(elapsed_nanos);
-			let mut target_index = 0;
-			let mut frame_remaining = Duration::ZERO;
-			for (index, (delay, _)) in animation.frames.iter().enumerate() {
-				if elapsed < *delay {
-					target_index = index;
-					frame_remaining = *delay - elapsed;
-					break;
-				}
-				elapsed -= *delay;
-			}
-
-			if animation.frame != target_index {
-				if now < animation.next_upload {
-					ctx.request_repaint_after(animation.next_upload - now);
-					return animation.texture.clone();
-				}
-				let image = &animation.frames[target_index].1;
-				if let Some(texture) = &mut animation.texture {
-					texture.set(image.clone(), egui::TextureOptions::LINEAR);
-				} else {
-					animation.texture = Some(ctx.load_texture(
-						"service-animation",
-						image.clone(),
-						egui::TextureOptions::LINEAR,
-					));
-				}
-				animation.frame = target_index;
-				animation.next_upload = now + ANIMATION_INTERVAL;
-			}
-
-			ctx.request_repaint_after(frame_remaining.max(Duration::from_millis(1)));
-			return animation.texture.clone();
+			return animation.advance(ctx);
 		}
 		None
 	}
@@ -697,28 +739,8 @@ impl Avatars {
 		};
 		self.clock += 1;
 		entry.0 = self.clock;
-		// paint_at stretches to its rectangle; fit actual pixels inside the stable layout slot.
 		let texture = animated_texture.as_ref().unwrap_or(&entry.1);
-		let source = texture.size_vec2();
-		if cover {
-			let scale = (rect.width() / source.x).max(rect.height() / source.y);
-			let uv_size = rect.size() / (source * scale);
-			egui::Image::new(texture)
-				.uv(egui::Rect::from_center_size(egui::pos2(0.5, 0.5), uv_size))
-				.corner_radius(egui::CornerRadius {
-					nw: radius,
-					ne: radius,
-					sw: 0,
-					se: 0,
-				})
-				.paint_at(ui, rect);
-		} else {
-			let scale = (rect.width() / source.x).min(rect.height() / source.y);
-			let fitted = egui::Rect::from_center_size(rect.center(), source * scale);
-			egui::Image::new(texture)
-				.corner_radius(radius)
-				.paint_at(ui, fitted);
-		}
+		paint_texture(ui, texture, rect, radius, cover, egui::Color32::WHITE);
 		true
 	}
 	pub fn show_group(
@@ -942,6 +964,46 @@ impl Avatars {
 		size: egui::Vec2,
 		demo: bool,
 	) -> egui::Response {
+		let poster = embed.image.as_ref().or(embed.thumbnail.as_ref());
+		let video = self
+			.animate_gifs
+			.then_some(embed.video.as_ref())
+			.flatten()
+			.and_then(|video| {
+				let url = video
+					.url
+					.as_deref()
+					.filter(|url| media::is_motion_video(url))
+					.or(video
+						.proxy_url
+						.as_deref()
+						.filter(|url| media::is_motion_video(url)))
+					.filter(|url| self.media.playable(url))?;
+				Some(model::EmbedMedia {
+					url: Some(url.to_owned()),
+					proxy_url: video
+						.proxy_url
+						.clone()
+						.filter(|proxy| media::is_motion_video(proxy)),
+					width: if video.width > 0 {
+						video.width
+					} else {
+						poster.map(|poster| poster.width).unwrap_or(0)
+					},
+					height: if video.height > 0 {
+						video.height
+					} else {
+						poster.map(|poster| poster.height).unwrap_or(0)
+					},
+					placeholder: if video.placeholder.is_empty() {
+						poster
+							.map(|poster| poster.placeholder.clone())
+							.unwrap_or_default()
+					} else {
+						video.placeholder.clone()
+					},
+				})
+			});
 		let original = gif
 			.filter(|gif| self.animate_gifs && gif.url.ends_with(".gif"))
 			.map(|gif| model::EmbedMedia {
@@ -949,10 +1011,13 @@ impl Avatars {
 				proxy_url: None,
 				width: gif.width,
 				height: gif.height,
-				..Default::default()
+				placeholder: poster
+					.map(|poster| poster.placeholder.clone())
+					.unwrap_or_default(),
 			});
-		let media = original
+		let media = video
 			.as_ref()
+			.or(original.as_ref())
 			.or(embed.image.as_ref())
 			.or(embed.thumbnail.as_ref());
 		self.show_media(
@@ -960,220 +1025,9 @@ impl Avatars {
 			media.unwrap_or(&model::EmbedMedia::default()),
 			size,
 			demo,
-			false,
-			false,
+			Surface::Inline,
 		)
-	}
-
-	pub fn show_embed(
-		&mut self,
-		ui: &mut egui::Ui,
-		media: &model::EmbedMedia,
-		max_size: egui::Vec2,
-		demo: bool,
-	) -> egui::Response {
-		self.show_media(ui, media, max_size, demo, false, false)
-	}
-	pub fn show_large(
-		&mut self,
-		ui: &mut egui::Ui,
-		media: &model::EmbedMedia,
-		max_size: egui::Vec2,
-		demo: bool,
-	) -> egui::Response {
-		self.show_media(ui, media, max_size, demo, true, false)
-	}
-	pub fn show_banner(
-		&mut self,
-		ui: &mut egui::Ui,
-		media: &model::EmbedMedia,
-		size: egui::Vec2,
-		demo: bool,
-	) -> egui::Response {
-		self.show_media(ui, media, size, demo, false, true)
-	}
-	#[allow(clippy::too_many_arguments)]
-	fn show_media(
-		&mut self,
-		ui: &mut egui::Ui,
-		media: &model::EmbedMedia,
-		max_size: egui::Vec2,
-		demo: bool,
-		large: bool,
-		cover: bool,
-	) -> egui::Response {
-		// Reserve geometry from bounded metadata so image arrivals do not move the reading anchor.
-		let max_size = egui::vec2(
-			max_size
-				.x
-				.min(ui.available_width())
-				.clamp(1.0, if large { 4096.0 } else { 512.0 }),
-			max_size.y.clamp(1.0, if large { 4096.0 } else { 512.0 }),
-		);
-		let original = if media.width > 0 && media.height > 0 {
-			egui::vec2(
-				media.width.min(16384) as f32,
-				media.height.min(16384) as f32,
-			)
-		} else {
-			egui::vec2(320.0, 180.0)
-		};
-		let scale = (max_size.x / original.x)
-			.min(max_size.y / original.y)
-			.min(if large { f32::INFINITY } else { 1.0 });
-		let size = if cover {
-			max_size
-		} else {
-			(original * scale).max(egui::vec2(1.0, 1.0))
-		};
-		let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
-		if ui.is_rect_visible(rect) {
-			let original_gif = media.url.as_deref().filter(|url| {
-				self.animate_gifs
-					&& (model::valid_gif_url(url)
-						|| url.starts_with("https://cdn.discordapp.com/")
-						|| url.starts_with("https://media.discordapp.net/"))
-					&& url
-						.split('?')
-						.next()
-						.is_some_and(|path| path.ends_with(".gif"))
-			});
-			let source = original_gif
-				.or(media.proxy_url.as_deref())
-				.or(media.url.as_deref())
-				.filter(|source| source.len() <= 2048);
-			let animated = source.is_some_and(|source| {
-				self.animate_gifs
-					&& source
-						.split('?')
-						.next()
-						.and_then(|path| path.rsplit_once('.'))
-						.is_some_and(|(_, ext)| {
-							ext.eq_ignore_ascii_case("gif") || ext.eq_ignore_ascii_case("webp")
-						})
-			});
-			// Parse once for both renditions; borrow query pairs so signatures and their order
-			// keep the same URL encoding without an owned string/vector for every parameter.
-			let parsed = source
-				.filter(|_| original_gif.is_none() && media.width > 0 && media.height > 0)
-				.and_then(|source| url::Url::parse(source).ok());
-			let sized = |edge: u32, prefix: &str| {
-				source.map(|source| {
-					if let Some(parsed) = &parsed {
-						let mut url = parsed.clone();
-						let (width, height) = fit_edge(media.width, media.height, edge);
-						url.set_query(None);
-						url.query_pairs_mut()
-							.extend_pairs(
-								parsed
-									.query_pairs()
-									.filter(|(key, _)| key != "width" && key != "height"),
-							)
-							.append_pair("width", &width.to_string())
-							.append_pair("height", &height.to_string());
-						format!("{prefix}:{url}")
-					} else {
-						format!("{prefix}:{source}")
-					}
-				})
-			};
-			let key = sized(EMBED_EDGE, if animated { "anim" } else { "embed" });
-			// The viewer wants real pixels: request a larger rendition and show the thumbnail
-			// already in memory until it arrives. A GIF/WebP suffix alone does not mean the
-			// decoded image animates: single-frame files need the larger rendition too.
-			let still = key.as_ref().is_some_and(|key| {
-				self.textures.contains_key(key) && !self.animations.contains_key(key)
-			});
-			let large = (large && (!animated || still))
-				.then(|| sized(LARGE_EDGE, "large"))
-				.flatten();
-			#[cfg(any(test, feature = "demo"))]
-			if demo
-				&& let Some(key) = &key
-				&& !self.textures.contains_key(key)
-			{
-				let mut image = ColorImage::filled([320, 180], egui::Color32::from_rgb(40, 50, 70));
-				for y in 0..180 {
-					for x in 0..320 {
-						image.pixels[y * 320 + x] = if x < 8 || y < 8 || x >= 312 || y >= 172 {
-							egui::Color32::WHITE
-						} else if x % 40 < 4 || y % 40 < 4 {
-							egui::Color32::from_rgb(80, 180, 160)
-						} else {
-							egui::Color32::from_rgb(40, 50, 70)
-						};
-					}
-				}
-				self.attempts.insert(key.clone(), (Instant::now(), false));
-				self.accept(ui.ctx(), key.clone(), Some(image));
-			}
-			let radius = if cover { 8 } else { 5 };
-			let painted_large = large
-				.as_deref()
-				.is_some_and(|key| self.paint_fitted(ui, key, rect, radius, cover));
-			if !painted_large
-				&& !demo && let Some(key) = large.as_ref()
-			{
-				self.request(key.clone());
-			}
-			let painted = painted_large
-				|| key
-					.as_deref()
-					.is_some_and(|key| self.paint_fitted(ui, key, rect, radius, cover));
-			if !painted {
-				let colors = crate::design::palette(ui);
-				// Discord's ThumbHash stands in for the pixels until the real rendition lands.
-				let placeholder =
-					self.paint_placeholder(ui, &media.placeholder, rect, radius, cover);
-				if !placeholder {
-					ui.painter().rect_filled(rect, 5, colors.canvas);
-				}
-				#[cfg(any(test, feature = "demo"))]
-				if demo && !placeholder {
-					// Original native landscape, never a service request or bundled third-party image.
-					let ridge = vec![
-						rect.left_bottom(),
-						rect.left_center(),
-						rect.center_top() + egui::vec2(0.0, rect.height() * 0.35),
-						rect.right_bottom(),
-					];
-					ui.painter().add(egui::Shape::convex_polygon(
-						ridge,
-						colors.accent.gamma_multiply(0.4),
-						egui::Stroke::NONE,
-					));
-					ui.painter().circle_filled(
-						rect.min + size * egui::vec2(0.8, 0.25),
-						size.y * 0.08,
-						colors.accent,
-					);
-				}
-				if !demo && let Some(key) = key.as_ref() {
-					self.request(key.clone());
-				}
-				if !placeholder && size.x >= 100.0 && size.y >= 32.0 {
-					ui.painter().text(
-						rect.center(),
-						egui::Align2::CENTER_CENTER,
-						if demo {
-							"Synthetic preview"
-						} else if key.as_ref().is_some_and(|key| {
-							self.attempts.get(key).is_some_and(|(_, failed)| *failed)
-						}) {
-							"Preview unavailable"
-						} else {
-							"Image preview"
-						},
-						egui::FontId::proportional(11.0),
-						colors.muted,
-					);
-				}
-			}
-		}
-		response.widget_info(|| {
-			egui::WidgetInfo::labeled(egui::Role::Image, ui.is_enabled(), "Embedded image")
-		});
-		response
+		.response
 	}
 	pub(crate) fn paint_user(
 		&mut self,
@@ -1424,7 +1278,7 @@ mod tests {
 			..Default::default()
 		};
 		let mut output = ctx.run_ui(Default::default(), |ui| {
-			images.show_embed(ui, &media, egui::vec2(320.0, 320.0), false);
+			images.show_media(ui, &media, egui::vec2(320.0, 320.0), false, Surface::Inline);
 		});
 		output.textures_delta.clear();
 		let key = "thumb:d507121d0467878f77578748878797875878909508";
@@ -1432,7 +1286,11 @@ mod tests {
 		assert_eq!(images.textures[key].1.size(), [23, 32]);
 		// The real rendition is still requested; the placeholder only fills the wait.
 		let requests = images.take_requests();
-		assert!(requests.iter().any(|request| request.starts_with("embed:")));
+		assert!(
+			requests
+				.iter()
+				.any(|request| request.starts_with("media:is:"))
+		);
 		assert!(!requests.iter().any(|request| request.starts_with("thumb:")));
 		// Garbage never becomes a texture and is not retried every frame.
 		let broken = model::EmbedMedia {
@@ -1441,7 +1299,13 @@ mod tests {
 		};
 		for _ in 0..2 {
 			let mut output = ctx.run_ui(Default::default(), |ui| {
-				images.show_embed(ui, &broken, egui::vec2(320.0, 320.0), false);
+				images.show_media(
+					ui,
+					&broken,
+					egui::vec2(320.0, 320.0),
+					false,
+					Surface::Inline,
+				);
 			});
 			output.textures_delta.clear();
 		}
@@ -1661,21 +1525,18 @@ mod tests {
 			height: 1024,
 			..Default::default()
 		};
-		let canonical = "https://cdn.discordapp.com/attachments/1/2/a.png?ex=abc&is=def&hm=a%2Fb%2Bc+d&tag=x&tag=y&empty=&quality=lossless";
-		let keys = media_requests(&media, false, true);
+		let canonical = "https://cdn.discordapp.com/attachments/1/2/a.png?ex=abc&is=def&hm=a%2Fb%2Bc+d&tag=x&tag=y&empty=";
+		let keys = media_requests(&media, false, Surface::Viewer);
+		assert_eq!(keys, [format!("media:vs:128x32:{canonical}")]);
 		assert_eq!(
-			keys,
-			[
-				format!("large:{canonical}&width=2048&height=512"),
-				format!("embed:{canonical}&width=512&height=128"),
-			]
+			media_requests(&media, false, Surface::Inline),
+			[format!("media:is:128x32:{canonical}")]
 		);
 		let renewed = model::EmbedMedia {
 			url: Some(source.replace("ex=abc", "ex=renewed")),
 			..media.clone()
 		};
-		assert_ne!(keys, media_requests(&renewed, false, true));
-		// Unknown dimensions preserve the exact source, including its existing sizing.
+		assert_ne!(keys, media_requests(&renewed, false, Surface::Viewer));
 		for (width, height) in [(0, 1024), (4096, 0)] {
 			let unknown = model::EmbedMedia {
 				width,
@@ -1683,8 +1544,8 @@ mod tests {
 				..media.clone()
 			};
 			assert_eq!(
-				media_requests(&unknown, false, true),
-				[format!("large:{source}"), format!("embed:{source}"),]
+				media_requests(&unknown, false, Surface::Viewer),
+				[format!("media:vs:e128:{canonical}")]
 			);
 		}
 		let small = model::EmbedMedia {
@@ -1693,21 +1554,18 @@ mod tests {
 			..media
 		};
 		assert_eq!(
-			media_requests(&small, false, true),
-			[
-				format!("large:{canonical}&width=64&height=32"),
-				format!("embed:{canonical}&width=64&height=32"),
-			]
+			media_requests(&small, false, Surface::Viewer),
+			[format!("media:vs:64x32:{canonical}")]
 		);
 	}
 
-	fn media_requests(media: &model::EmbedMedia, animate: bool, large: bool) -> Vec<String> {
+	fn media_requests(media: &model::EmbedMedia, animate: bool, surface: Surface) -> Vec<String> {
 		let ctx = egui::Context::default();
 		let mut images = Avatars::default();
 		images.set_animation(animate);
 		let mut frame = || {
 			ctx.run_ui(Default::default(), |ui| {
-				images.show_media(ui, media, egui::vec2(100.0, 80.0), false, large, false);
+				images.show_media(ui, media, egui::vec2(100.0, 80.0), false, surface);
 			})
 			.drop_without_applying_deltas();
 			images.take_requests()
@@ -1732,29 +1590,26 @@ mod tests {
 			..Default::default()
 		};
 		assert_eq!(
-			media_requests(&media, true, true),
-			[format!("anim:{original}")]
+			media_requests(&media, true, Surface::Viewer),
+			[format!("media:va:128x64:{original}")]
 		);
 		assert_eq!(
-			media_requests(&media, false, true),
-			[
-				format!("large:{proxy}&width=1024&height=512"),
-				format!("embed:{proxy}&width=512&height=256"),
-			]
+			media_requests(&media, false, Surface::Viewer),
+			[format!("media:vs:128x64:{proxy}")]
 		);
 		// A non-provider original never overrides the service proxy.
 		media.url = Some("https://example.test/clip.gif".into());
 		assert_eq!(
-			media_requests(&media, true, true),
-			[format!("anim:{proxy}&width=512&height=256"),]
+			media_requests(&media, true, Surface::Viewer),
+			[format!("media:va:128x64:{proxy}")]
 		);
 		media.proxy_url = Some(proxy.replace(".WeBp", ".GIF"));
 		assert_eq!(
-			media_requests(&media, true, true),
+			media_requests(&media, true, Surface::Viewer),
 			[format!(
-				"anim:{}&width=512&height=256",
+				"media:va:128x64:{}",
 				media.proxy_url.as_deref().unwrap()
-			),]
+			)]
 		);
 		// Preserve fragments/credentials/ports for the download worker's rejection.
 		for source in [
@@ -1763,32 +1618,33 @@ mod tests {
 		] {
 			media.proxy_url = Some(source.into());
 			assert_eq!(
-				media_requests(&media, false, false),
-				[format!(
-					"embed:{}&width=512&height=256#fragment",
-					source.strip_suffix("#fragment").unwrap()
-				),]
+				media_requests(&media, false, Surface::Inline),
+				[format!("media:is:128x64:{source}")]
 			);
 		}
 		media.proxy_url = Some("not a URL".into());
-		assert_eq!(media_requests(&media, false, false), ["embed:not a URL"]);
+		assert_eq!(
+			media_requests(&media, false, Surface::Inline),
+			["media:is:128x64:not a URL"]
+		);
 		media.proxy_url = Some(format!("https://example.test/{}", "a".repeat(2027)));
 		assert_eq!(media.proxy_url.as_ref().unwrap().len(), 2048);
+		let bound = 2048 + "media:is:4096x4096:".len();
 		media.width = 0;
-		assert_eq!(media_requests(&media, false, false)[0].len(), 2054);
+		assert!(media_requests(&media, false, Surface::Inline)[0].len() <= bound);
 		media.width = 1024;
 		assert!(
-			media_requests(&media, false, false).is_empty(),
-			"Expanded keys keep the request length bound"
+			media_requests(&media, false, Surface::Inline)[0].len() <= bound,
+			"Sized keys keep the request length bound"
 		);
 		media.proxy_url.as_mut().unwrap().push('a');
 		assert!(
-			media_requests(&media, false, true).is_empty(),
+			media_requests(&media, false, Surface::Viewer).is_empty(),
 			"An oversized proxy must not fall back to the original"
 		);
 		media.url = None;
 		media.proxy_url = None;
-		assert!(media_requests(&media, true, true).is_empty());
+		assert!(media_requests(&media, true, Surface::Viewer).is_empty());
 	}
 
 	#[test]
@@ -1801,29 +1657,51 @@ mod tests {
 			height: 2048,
 			..Default::default()
 		};
-		ctx.run_ui(Default::default(), |ui| {
-			images.show_large(ui, &media, egui::vec2(100.0, 80.0), false);
-		})
-		.drop_without_applying_deltas();
-		let keys = images.take_requests();
-		assert_eq!(keys.len(), 2);
-		for (key, size) in [(&keys[1], [2, 1]), (&keys[0], [4, 2])] {
-			images.accept(
-				&ctx,
-				key.clone(),
-				Some(ColorImage::filled(size, egui::Color32::WHITE)),
-			);
-			let texture = images.texture_id(key).unwrap();
+		let frame = |images: &mut Avatars, surface: Surface, size: egui::Vec2| {
+			let mut quality = None;
 			let output = ctx.run_ui(Default::default(), |ui| {
-				images.show_large(ui, &media, egui::vec2(100.0, 80.0), false);
+				quality = Some(images.show_media(ui, &media, size, false, surface).quality);
 			});
-			assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
-				egui::Shape::Rect(rect) if rect.fill_texture_id() == texture)));
-			output.drop_without_applying_deltas();
-			assert!(images.take_requests().is_empty());
-		}
-		assert_eq!(images.textures.len(), 2);
-		assert_eq!(images.bytes, (2 + 8) * 4);
+			(output, quality)
+		};
+		let (output, quality) = frame(&mut images, Surface::Inline, egui::vec2(40.0, 40.0));
+		output.drop_without_applying_deltas();
+		assert_eq!(quality, Some(Quality::Placeholder { failed: false }));
+		let chat = images.take_requests();
+		assert_eq!(
+			chat,
+			[format!("media:is:64x32:{}", media.url.as_ref().unwrap())]
+		);
+		images.accept(
+			&ctx,
+			chat[0].clone(),
+			Some(ColorImage::filled([2, 1], egui::Color32::WHITE)),
+		);
+		let chat_texture = images.texture_id(&chat[0]).unwrap();
+		let (output, quality) = frame(&mut images, Surface::Viewer, egui::vec2(100.0, 80.0));
+		assert_eq!(quality, Some(Quality::Upgrading));
+		assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
+			egui::Shape::Rect(rect) if rect.fill_texture_id() == chat_texture)));
+		output.drop_without_applying_deltas();
+		let viewer = images.take_requests();
+		assert_eq!(
+			viewer,
+			[format!("media:vs:128x64:{}", media.url.as_ref().unwrap())]
+		);
+		images.accept(
+			&ctx,
+			viewer[0].clone(),
+			Some(ColorImage::filled([4, 2], egui::Color32::WHITE)),
+		);
+		let texture = images.texture_id(&viewer[0]).unwrap();
+		let (output, quality) = frame(&mut images, Surface::Viewer, egui::vec2(100.0, 80.0));
+		assert_eq!(quality, Some(Quality::Full));
+		assert!(output.shapes.iter().any(|shape| matches!(&shape.shape,
+			egui::Shape::Rect(rect) if rect.fill_texture_id() == texture)));
+		output.drop_without_applying_deltas();
+		assert!(images.take_requests().is_empty());
+		assert!(images.textures.is_empty());
+		assert_eq!(images.media.bytes(), (2 + 8) * 4);
 	}
 
 	#[test]
@@ -1840,7 +1718,14 @@ mod tests {
 		let mut rect = egui::Rect::NOTHING;
 		ctx.run_ui(Default::default(), |ui| {
 			rect = images
-				.show_large(ui, &avatar_media, egui::vec2(100.0, 80.0), false)
+				.show_media(
+					ui,
+					&avatar_media,
+					egui::vec2(100.0, 80.0),
+					false,
+					Surface::Viewer,
+				)
+				.response
 				.rect;
 		})
 		.drop_without_applying_deltas();
@@ -1848,10 +1733,11 @@ mod tests {
 		assert_eq!(
 			keys,
 			vec![
-				"anim:https://cdn.discordapp.com/avatars/123/a_0123456789abcdef0123456789abcdef.gif?size=2048"
+				"media:va:128x128:https://cdn.discordapp.com/avatars/123/a_0123456789abcdef0123456789abcdef.gif"
 			]
 		);
 		let key = keys[0].clone();
+		let rendition = media::Rendition::parse(&key).unwrap();
 		let first = ColorImage::filled([2, 2], egui::Color32::RED);
 		images.accept(&ctx, key.clone(), Some(first.clone()));
 		images.accept_animation(
@@ -1864,8 +1750,7 @@ mod tests {
 				),
 			],
 		);
-		assert!(images.animations.contains_key(&key));
-		images.animations.get_mut(&key).unwrap().started =
+		images.media.animation(&rendition).unwrap().started =
 			Instant::now() - Duration::from_millis(1500);
 		ctx.run_ui(
 			egui::RawInput {
@@ -1874,21 +1759,99 @@ mod tests {
 				..Default::default()
 			},
 			|ui| {
-				images.show_large(ui, &avatar_media, egui::vec2(100.0, 80.0), false);
+				images.show_media(
+					ui,
+					&avatar_media,
+					egui::vec2(100.0, 80.0),
+					false,
+					Surface::Viewer,
+				);
 			},
 		)
 		.drop_without_applying_deltas();
-		assert_eq!(images.animations[&key].frame, 1);
+		assert_eq!(images.media.animation(&rendition).unwrap().frame, 1);
+	}
+
+	#[test]
+	fn gifv_falls_back_to_its_poster_when_the_clip_cannot_decode() {
+		let ctx = egui::Context::default();
+		let mut images = Avatars::default();
+		images.set_animation(true);
+		let poster = "https://media.discordapp.net/external/a/https/static.klipy.com/poster.png";
+		let embed = model::Embed {
+			kind: "gifv".into(),
+			thumbnail: Some(model::EmbedMedia {
+				url: Some(poster.into()),
+				width: 64,
+				height: 32,
+				..Default::default()
+			}),
+			video: Some(model::EmbedMedia {
+				url: Some("https://static.klipy.com/clip.mp4".into()),
+				width: 64,
+				height: 32,
+				..Default::default()
+			}),
+			..Default::default()
+		};
+		let frame = |images: &mut Avatars| {
+			ctx.run_ui(Default::default(), |ui| {
+				images.show_gif_embed(ui, &embed, None, egui::vec2(320.0, 320.0), false);
+			})
+			.drop_without_applying_deltas();
+			images.take_requests()
+		};
+		let clip = frame(&mut images);
+		assert_eq!(
+			clip,
+			["media:ia:64x32:https://static.klipy.com/clip.mp4".to_owned()]
+		);
+		images.accept(&ctx, clip[0].clone(), None);
+		let fallback = frame(&mut images);
+		assert_eq!(fallback, [format!("media:is:64x32:{poster}")]);
+		// The rejected clip is never requested again.
+		assert!(!frame(&mut images).iter().any(|key| key.ends_with(".mp4")));
+	}
+
+	#[test]
+	fn closing_the_viewer_releases_its_pixels_on_the_next_frame() {
+		let ctx = egui::Context::default();
+		let mut images = Avatars::default();
+		let media = model::EmbedMedia {
+			url: Some("https://cdn.discordapp.com/attachments/1/2/a.png".into()),
+			width: 64,
+			height: 32,
+			..Default::default()
+		};
+		let frame = |images: &mut Avatars, viewer: bool| {
+			ctx.run_ui(Default::default(), |ui| {
+				if viewer {
+					images.show_media(ui, &media, egui::vec2(100.0, 80.0), false, Surface::Viewer);
+				}
+			})
+			.drop_without_applying_deltas();
+			images.take_requests()
+		};
+		let key = frame(&mut images, true).pop().unwrap();
+		images.accept(
+			&ctx,
+			key,
+			Some(ColorImage::filled([64, 32], egui::Color32::WHITE)),
+		);
+		frame(&mut images, true);
+		assert_eq!(images.media.bytes(), 64 * 32 * 4);
+		frame(&mut images, false);
+		assert_eq!(images.media.bytes(), 0);
 	}
 
 	/// Offline settled media frames; no window, GPU, network, or account access.
 	#[test]
 	#[ignore = "release media workload; one warmup and five measured batches"]
 	fn media_frame_benchmark() {
-		for (scenario, large, animate) in [
-			("thumbnail", false, false),
-			("viewer", true, false),
-			("animated", true, true),
+		for (scenario, surface, animate) in [
+			("thumbnail", Surface::Inline, false),
+			("viewer", Surface::Viewer, false),
+			("animated", Surface::Viewer, true),
 		] {
 			let ctx = egui::Context::default();
 			let mut images = Avatars::default();
@@ -1917,14 +1880,17 @@ mod tests {
 					|ui| {
 						ui.horizontal(|ui| {
 							for media in &media {
-								std::hint::black_box(images.show_media(
-									ui,
-									media,
-									egui::vec2(48.0, 32.0),
-									false,
-									large,
-									false,
-								));
+								std::hint::black_box(
+									images
+										.show_media(
+											ui,
+											media,
+											egui::vec2(48.0, 32.0),
+											false,
+											surface,
+										)
+										.quality,
+								);
 							}
 						});
 					},
@@ -1933,7 +1899,7 @@ mod tests {
 			};
 			frame(&mut images);
 			let requests = images.take_requests();
-			assert_eq!(requests.len(), if large && !animate { 24 } else { 12 });
+			assert_eq!(requests.len(), 12);
 			for key in requests {
 				images.accept(
 					&ctx,
@@ -1962,7 +1928,7 @@ mod tests {
 	fn media_pixels_keep_aspect_without_moving_the_loading_slot() {
 		for dimensions in [[120, 40], [40, 120], [80, 80]] {
 			for metadata in [(640, 240), (0, 0), (240, 640)] {
-				for large in [false, true] {
+				for surface in [Surface::Inline, Surface::Viewer] {
 					let ctx = egui::Context::default();
 					let mut images = Avatars::default();
 					let media = model::EmbedMedia {
@@ -1974,7 +1940,8 @@ mod tests {
 					let mut slot = egui::Rect::NOTHING;
 					let output = ctx.run_ui(Default::default(), |ui| {
 						slot = images
-							.show_media(ui, &media, egui::vec2(280.0, 180.0), false, large, false)
+							.show_media(ui, &media, egui::vec2(280.0, 180.0), false, surface)
+							.response
 							.rect;
 					});
 					output.drop_without_applying_deltas();
@@ -1989,14 +1956,8 @@ mod tests {
 						assert_eq!(
 							slot,
 							images
-								.show_media(
-									ui,
-									&media,
-									egui::vec2(280.0, 180.0),
-									false,
-									large,
-									false
-								)
+								.show_media(ui, &media, egui::vec2(280.0, 180.0), false, surface)
+								.response
 								.rect
 						);
 					});

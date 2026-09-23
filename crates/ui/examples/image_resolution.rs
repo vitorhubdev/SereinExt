@@ -51,8 +51,12 @@ fn main() {
 		let key = view
 			.take_avatar_requests()
 			.into_iter()
-			.find(|key| key.starts_with("anim:") && key.contains("still.WeBp"))
+			.find(|key| key.starts_with("media:va:") && key.contains("still.WeBp"))
 			.expect("viewer requests the animation candidate");
+		assert!(
+			key.contains(":1024x512:"),
+			"the viewer asks for the rung covering its physical size: {key}"
+		);
 		let image = Arc::new(ColorImage::filled([160, 80], Color32::WHITE));
 		view.accept_avatar(&ctx, key.clone(), Some(image.as_ref().clone()));
 		view.accept_gif_animation(
@@ -60,21 +64,13 @@ fn main() {
 			vec![(Duration::from_millis(100), image); if animated { 2 } else { 1 }],
 		);
 		frame(&ctx, &mut view, &mut state);
-		let large = view
-			.take_avatar_requests()
-			.into_iter()
-			.find(|key| key.starts_with("large:") && key.contains("still.WeBp"));
-		assert_eq!(large.is_some(), !animated, "only still images upgrade");
-		if let Some(key) = large {
-			assert!(key.ends_with("width=2048&height=1024"));
-			view.accept_avatar(
-				&ctx,
-				key,
-				Some(ColorImage::filled([2048, 1024], Color32::WHITE)),
-			);
-			frame(&ctx, &mut view, &mut state);
-			assert!(view.take_avatar_requests().is_empty());
-		}
+		assert!(
+			!view
+				.take_avatar_requests()
+				.iter()
+				.any(|key| key.starts_with("media:v")),
+			"a single frame settles as a still at the same size; frames settle as playback"
+		);
 	}
-	println!("Still WebP upgrades to 2048px; animated WebP keeps playback.");
+	println!("Viewer WebP asks for a 1024px rendition once; a single frame settles as a still.");
 }

@@ -7515,7 +7515,7 @@ mod tests {
 			images
 				.take_requests()
 				.iter()
-				.all(|key| !key.starts_with("embed:")),
+				.all(|key| !key.starts_with("media:")),
 			"Hidden attachments must not request media; the visible author avatar is independent"
 		);
 		view.revealed
@@ -7526,9 +7526,8 @@ mod tests {
 		assert!(shown.contains("SPOILER_hidden.png"));
 		assert!(shown.contains("Open in browser"));
 		let requests = images.take_requests();
-		assert_eq!(requests.len(), 2);
-		assert!(requests.iter().any(|key| key.starts_with("embed:")));
-		assert!(requests.iter().any(|key| key.starts_with("large:")));
+		assert!(!requests.is_empty() && requests.iter().all(|key| key.starts_with("media:")));
+		assert!(requests.iter().any(|key| key.contains(":320x120:")));
 		let previous_key = layout_key(&message);
 		message.attachments[0].description = Some("Changed attachment".into());
 		assert_ne!(previous_key, layout_key(&message));

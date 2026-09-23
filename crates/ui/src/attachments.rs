@@ -2,7 +2,7 @@
 #[cfg(test)]
 mod context_tests;
 use crate::{
-	avatars::Avatars,
+	avatars::{Avatars, Quality, Surface},
 	design,
 	icons::{self, Icon},
 	markdown::external_url,
@@ -313,12 +313,15 @@ pub(crate) fn show_subset(
 					ui.horizontal_top(|ui| {
 						for attachment in row {
 							ui.push_id(("attachment", attachment.id), |ui| {
-								let image = images.show_embed(
-									ui,
-									&attachment.media,
-									artwork_size(attachment, size),
-									demo,
-								);
+								let image = images
+									.show_media(
+										ui,
+										&attachment.media,
+										artwork_size(attachment, size),
+										demo,
+										Surface::Inline,
+									)
+									.response;
 								let response =
 									ui.interact(image.rect, image.id.with("media"), Sense::click());
 								response.widget_info(|| {
@@ -406,10 +409,19 @@ fn artwork_size(attachment: &Attachment, gallery: egui::Vec2) -> egui::Vec2 {
 
 pub(crate) fn image_layout(count: usize, width: f32) -> (usize, egui::Vec2) {
 	let columns = if count > 1 && width >= 280.0 { 2 } else { 1 };
-	let width = ((width.min(420.0) - (columns - 1) as f32 * 6.0) / columns as f32).max(1.0);
+	let width = ((width.min(crate::avatars::media::MEDIA_MAX_WIDTH) - (columns - 1) as f32 * 6.0)
+		/ columns as f32)
+		.max(1.0);
 	(
 		columns,
-		egui::vec2(width, if count > 1 { 180.0 } else { 280.0 }),
+		egui::vec2(
+			width,
+			if count > 1 {
+				180.0
+			} else {
+				crate::avatars::media::MEDIA_MAX_HEIGHT
+			},
+		),
 	)
 }
 
@@ -617,6 +629,72 @@ pub(crate) fn glass_button(
 	response.on_hover_text(label)
 }
 
+fn quality_pill(ui: &egui::Ui, stage: Rect, quality: Quality) {
+	let id = egui::Id::unique("attachment-viewer-quality");
+	let state = match quality {
+		Quality::Full => None,
+		Quality::Upgrading => Some(("Loading full quality", true)),
+		Quality::Placeholder { failed: false } => Some(("Loading image", true)),
+		Quality::Placeholder { failed: true } | Quality::Degraded => {
+			Some(("Full quality unavailable", false))
+		}
+	};
+	let opacity = ui.ctx().animate_bool_with_time(id, state.is_some(), 0.15);
+	match state {
+		Some(state) => ui.data_mut(|data| {
+			data.insert_temp(id, state);
+		}),
+		None if opacity == 0.0 => return,
+		None => {}
+	}
+	let (text, loading) = ui
+		.data(|data| data.get_temp::<(&'static str, bool)>(id))
+		.unwrap_or(("Loading full quality", false));
+	let painter = ui.painter();
+	let galley = painter.layout_no_wrap(
+		text.into(),
+		egui::FontId::proportional(13.0),
+		Color32::from_gray(230).gamma_multiply(opacity),
+	);
+	let size = galley.size() + egui::vec2(28.0, 14.0);
+	let pill = Rect::from_center_size(
+		egui::pos2(stage.center().x, stage.bottom() - 16.0 - size.y / 2.0),
+		size,
+	);
+	painter.rect_filled(
+		pill,
+		size.y / 2.0,
+		Color32::from_black_alpha(150).gamma_multiply(opacity),
+	);
+	painter.galley(
+		pill.center() - galley.size() / 2.0,
+		galley,
+		Color32::from_gray(230),
+	);
+	if loading {
+		let track = Rect::from_min_max(
+			egui::pos2(pill.left() + size.y / 2.0, pill.bottom() - 3.0),
+			egui::pos2(pill.right() - size.y / 2.0, pill.bottom() - 1.0),
+		);
+		let sweep = track.width() * 0.3;
+		let phase = (ui.input(|input| input.time) % 1.2 / 1.2) as f32;
+		let left = track.left() - sweep + (track.width() + sweep) * phase;
+		let bar = Rect::from_min_max(
+			egui::pos2(left.max(track.left()), track.top()),
+			egui::pos2((left + sweep).min(track.right()), track.bottom()),
+		);
+		if bar.is_positive() {
+			painter.rect_filled(
+				bar,
+				1,
+				Color32::from_white_alpha(160).gamma_multiply(opacity),
+			);
+		}
+		ui.ctx()
+			.request_repaint_after(std::time::Duration::from_millis(33));
+	}
+}
+
 /// Full-window media viewer. Returns the attachment to keep showing, or `None` once closed by
 /// the close control, Escape, or a click anywhere outside the image and its controls.
 pub fn viewer(
@@ -689,7 +767,9 @@ pub fn viewer(
 			} else {
 				egui::vec2(320.0, 180.0)
 			};
-			let scale = (stage.width() / original.x).min(stage.height() / original.y);
+			let scale = (stage.width() / original.x)
+				.min(stage.height() / original.y)
+				.min(1.0);
 			let fitted = (original * scale).max(egui::vec2(1.0, 1.0));
 			let image_rect = Rect::from_center_size(stage.center(), fitted);
 			if let Some(pointer) = ui.input(|i| i.pointer.hover_pos())
@@ -707,14 +787,16 @@ pub fn viewer(
 			let limit = ((fitted * zoom - stage.size()) * 0.5).max(egui::Vec2::ZERO);
 			pan = pan.clamp(-limit, limit);
 			let zoomed = Rect::from_center_size(stage.center() + pan, fitted * zoom);
-			{
+			let quality = {
 				// Zoomed geometry must not enlarge and recenter the modal or its controls.
 				let mut image_ui = ui.new_child(egui::UiBuilder::new().max_rect(zoomed).layout(
 					egui::Layout::centered_and_justified(egui::Direction::TopDown),
 				));
 				let ui = &mut image_ui;
 				ui.set_clip_rect(stage.intersect(ui.clip_rect()));
-				let image = images.show_large(ui, &attachment.media, fitted * zoom, demo);
+				let shown =
+					images.show_media(ui, &attachment.media, fitted * zoom, demo, Surface::Viewer);
+				let image = shown.response;
 				let response = ui
 					.interact(image.rect, image.id.with("media"), Sense::click_and_drag())
 					.on_hover_cursor(if zoom > 1.0 {
@@ -742,7 +824,9 @@ pub fn viewer(
 				} else {
 					media_context_menu(&response, attachment, download, opening, demo);
 				}
-			}
+				shown.quality
+			};
+			quality_pill(ui, stage, quality);
 			// Top bar: position counter on the left, actions on the right.
 			let bar = Rect::from_min_size(full.min, egui::vec2(full.width(), TOP));
 			if count > 1 {
@@ -913,7 +997,14 @@ pub fn viewer(
 						for thumb in &gallery {
 							ui.push_id(("thumb", thumb.id), |ui| {
 								let response = images
-									.show_banner(ui, &thumb.media, egui::Vec2::splat(THUMB), demo)
+									.show_media(
+										ui,
+										&thumb.media,
+										egui::Vec2::splat(THUMB),
+										demo,
+										Surface::Banner,
+									)
+									.response
 									.interact(Sense::click())
 									.on_hover_text(&thumb.filename);
 								let rect = response.rect;

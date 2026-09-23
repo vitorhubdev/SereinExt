@@ -552,22 +552,31 @@ until completion; capacity defers new requests rather than evicting pending work
 Failed entries expire five seconds after failure, permitting an on-demand retry.
 
 Current image limits include the GIF and larger-viewer features added after September 10.
-One worker decodes serially while up to four credential-free downloads overlap, with
-128 bounded keys waiting and two decoded results queued. Ordinary encoded bodies are
-capped at 2 MiB, animation bodies at 8 MiB and larger-viewer bodies at 16 MiB; four large
-downloads can therefore hold 64 MiB of encoded payload, separately from decoder memory.
+One worker decodes serially while up to eight credential-free downloads overlap.
+The UI tracks 128 requests. The worker holds at most 1,024 keys, and viewer keys run before inline keys.
+Ordinary encoded bodies are capped at 2 MiB. Animation bodies are capped at 16 MiB.
+A still message picture accepts at most 32 MiB encoded.
+Eight overlapping downloads can hold one body each, separately from decoder memory.
 The completed encoded source is released before waiting to deliver its decoded result.
 Avatar/icon decoding accepts at most 512 KiB encoded, 256×256 source, 1 MiB decoder
 allocations and 128×128 output. Previews/banners use 1024×1024 source, 8 MiB decoder
-allocations and a 512-pixel output edge. Larger-viewer images allow 4096×4096 source,
-96 MiB decoder allocations and a 2048-pixel output edge (16 MiB RGBA per image).
-GIF/WebP animations retain at most 80 frames with a 160-pixel edge, about 8 MiB per clip.
+allocations and a 512-pixel output edge. A still message picture allows an 8192 canvas and 128 MiB of decoder allocations.
+The size ladder is 32, 64, 128, 256, 368, 512, 720, 1024, 1440, 2048, 2880, and 4096.
+The requested rung is never longer than the file.
+Inline stills keep 384 images and 96 MiB.
+Inline animations keep 96 clips and 128 MiB.
+One inline clip keeps 240 frames and 40 MiB.
+The viewer lane keeps 128 MiB and drops those pixels on the first frame the viewer is not painted.
+One viewer clip keeps 240 frames and 96 MiB.
+An animation that exceeds 600 frames or 3 seconds of decoding stays on its first frame.
+A gifv clip the platform decoder rejects is not retried; the embed shows its GIF or poster.
+GIF, WebP, and ISO-BMFF clips share that frame budget.
 Animation source dimensions are capped at 2048×2048, with a 48 MiB decoder allocation
 budget for the persistent RGBA canvas, current frame and composited output canvas.
 Resized retained frames, encoded input and library overhead are additional.
-Two queued large stills can retain 32 MiB of decoded pixels; active decoding, image
-conversion and framework/driver allocations are additional. Shared textures are bounded
-by 256 entries / 64 MiB, with a separate four-animation / 16 MiB retained-pixel budget.
+Active decoding, image conversion, and framework or driver allocations are additional.
+Avatar and emoji textures stay on their existing caches.
+Message pictures use the still, animation, and viewer ceilings above.
 Animation texture uploads are spaced at least 34 ms apart (under 30 FPS), with
 source timing preserved by skipping frames; unfocused windows do not advance clips.
 These are component ceilings, not measured whole-process RSS. Disk eviction retains only
