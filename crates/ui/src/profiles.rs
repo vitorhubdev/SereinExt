@@ -1024,6 +1024,9 @@ pub fn show(
 	} else {
 		presence(state, user.id, guild)
 	};
+	let clients = (!user.webhook)
+		.then(|| state.client_platforms_for(user.id))
+		.flatten();
 	let dm_channel = state
 		.channels
 		.iter()
@@ -1376,6 +1379,28 @@ pub fn show(
 								)
 								.truncate(),
 							);
+							if let Some(clients) = clients {
+								ui.add_space(2.0);
+								ui.horizontal_wrapped(|ui| {
+									ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
+									for (platform, status) in [
+										("Desktop", clients.desktop),
+										("Mobile", clients.mobile),
+										("Web", clients.web),
+									] {
+										let Some(status) = status else { continue };
+										egui::Frame::new()
+											.fill(theme.chip)
+											.corner_radius(6)
+											.inner_margin(egui::Margin::symmetric(6, 2))
+											.show(ui, |ui| {
+												ui.label(RichText::new(platform).size(11.0));
+											})
+											.response
+											.on_hover_text(format!("{platform} · {}", status.label()));
+									}
+								});
+							}
 							if !text_badges.is_empty() {
 								ui.add_space(2.0);
 								ui.horizontal_wrapped(|ui| {

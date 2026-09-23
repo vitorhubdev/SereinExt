@@ -13,6 +13,46 @@ pub struct PresenceUpdate {
 	pub status: Patch<String>,
 	pub custom_status: Patch<String>,
 	pub activities: Patch<Vec<RichActivity>>,
+	pub clients: Patch<model::ClientPlatforms>,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum ClientState {
+	Online,
+	Idle,
+	Dnd,
+	Offline,
+	#[serde(other)]
+	Other,
+}
+impl ClientState {
+	fn model(self) -> Option<model::ClientPresence> {
+		match self {
+			Self::Online => Some(model::ClientPresence::Online),
+			Self::Idle => Some(model::ClientPresence::Idle),
+			Self::Dnd => Some(model::ClientPresence::DoNotDisturb),
+			Self::Offline | Self::Other => None,
+		}
+	}
+}
+#[derive(Deserialize)]
+struct ClientStatus {
+	#[serde(default)]
+	desktop: Option<ClientState>,
+	#[serde(default)]
+	mobile: Option<ClientState>,
+	#[serde(default)]
+	web: Option<ClientState>,
+}
+impl ClientStatus {
+	fn model(self) -> model::ClientPlatforms {
+		model::ClientPlatforms {
+			desktop: self.desktop.and_then(ClientState::model),
+			mobile: self.mobile.and_then(ClientState::model),
+			web: self.web.and_then(ClientState::model),
+		}
+	}
 }
 
 #[derive(Deserialize)]
@@ -295,6 +335,8 @@ struct PresenceDto {
 	#[serde(default)]
 	status: Patch<String>,
 	#[serde(default)]
+	client_status: Patch<ClientStatus>,
+	#[serde(default)]
 	activities: Patch<Activities>,
 }
 
@@ -317,6 +359,14 @@ pub fn decode(bytes: &[u8]) -> Result<PresenceUpdate, DecodeError> {
 		Patch::Absent => Patch::Absent,
 		_ => Patch::Null,
 	};
+	let clients = match presence.client_status {
+		Patch::Absent => Patch::Absent,
+		Patch::Null => Patch::Null,
+		Patch::Value(value) => {
+			let value = value.model();
+			if value.is_empty() { Patch::Null } else { Patch::Value(value) }
+		}
+	};
 	let (custom_status, activities) = match presence.activities {
 		Patch::Absent => (Patch::Absent, Patch::Absent),
 		Patch::Null => (Patch::Null, Patch::Null),
@@ -330,6 +380,7 @@ pub fn decode(bytes: &[u8]) -> Result<PresenceUpdate, DecodeError> {
 		status,
 		custom_status,
 		activities,
+		clients,
 	})
 }
 
@@ -901,5 +952,15 @@ mod tests {
 				.user,
 			Id(u64::MAX)
 		);
+	}
+	#[test]
+	fn client_status_retains_only_known_platform_states() {
+		let update = decode(br#"{"user":{"id":"2"},"status":"online","client_status":{"desktop":"online","mobile":"idle","web":"dnd"}}"#).unwrap();
+		let Patch::Value(clients) = update.clients else { panic!("client status must be retained") };
+		assert_eq!(clients.desktop, Some(model::ClientPresence::Online));
+		assert_eq!(clients.mobile, Some(model::ClientPresence::Idle));
+		assert_eq!(clients.web, Some(model::ClientPresence::DoNotDisturb));
+		let update = decode(br#"{"user":{"id":"2"},"client_status":{"desktop":"future","mobile":"offline"}}"#).unwrap();
+		assert_eq!(update.clients, Patch::Null);
 	}
 }

@@ -1,5 +1,5 @@
 use crate::{Freshness, Id, State};
-use model::{MemberPresence, Patch, RichActivity};
+use model::{ClientPlatforms, MemberPresence, Patch, RichActivity};
 
 pub const MAX_DIRECT_PRESENCES: usize = 256;
 pub const MAX_DIRECT_PRESENCE_BYTES: usize = 512 * 1024;
@@ -12,6 +12,7 @@ pub struct Update {
 	pub status: Patch<String>,
 	pub custom_status: Patch<String>,
 	pub activities: Patch<Vec<RichActivity>>,
+	pub clients: Patch<ClientPlatforms>,
 }
 impl Update {
 	pub fn heap_bytes(&self) -> usize {
@@ -32,6 +33,7 @@ impl Update {
 		{
 			newer.activities = Patch::Null;
 			newer.custom_status = Patch::Null;
+			newer.clients = Patch::Null;
 		}
 		if !matches!(newer.status, Patch::Absent) {
 			self.status = newer.status;
@@ -41,6 +43,21 @@ impl Update {
 		}
 		if !matches!(newer.activities, Patch::Absent) {
 			self.activities = newer.activities;
+		}
+		if !matches!(newer.clients, Patch::Absent) {
+			self.clients = newer.clients;
+		}
+	}
+	pub fn resolve_clients(&self, previous: Option<ClientPlatforms>) -> Option<ClientPlatforms> {
+		if matches!(&self.status, Patch::Null)
+			|| matches!(&self.status, Patch::Value(status) if status == "offline")
+		{
+			return None;
+		}
+		match &self.clients {
+			Patch::Absent => previous,
+			Patch::Null => None,
+			Patch::Value(value) => (!value.is_empty()).then_some(*value),
 		}
 	}
 	pub fn resolve(&self, previous: Option<&MemberPresence>) -> MemberPresence {
@@ -157,6 +174,9 @@ impl State {
 	}
 
 	fn known_presence_user(&self, user: Id) -> bool {
+		if self.user.as_ref().is_some_and(|own| own.id == user) {
+			return true;
+		}
 		if self.friend_username(user).is_some() && self.user_blocked(user) == Some(false) {
 			return true;
 		}
@@ -172,6 +192,24 @@ impl State {
 			return None;
 		}
 		self.direct_presences.iter().find(|p| p.user == user)
+	}
+	pub fn client_platforms_for(&self, user: Id) -> Option<ClientPlatforms> {
+		if !self.gateway_connected || !self.known_presence_user(user) {
+			return None;
+		}
+		self.direct_clients
+			.iter()
+			.find(|(id, _)| *id == user)
+			.map(|(_, clients)| *clients)
+	}
+	fn set_direct_clients(&mut self, user: Id, clients: Option<ClientPlatforms>) {
+		self.direct_clients.retain(|(id, _)| *id != user);
+		if let Some(clients) = clients.filter(|clients| !clients.is_empty()) {
+			if self.direct_clients.len() >= MAX_DIRECT_PRESENCES {
+				self.direct_clients.remove(0);
+			}
+			self.direct_clients.push((user, clients));
+		}
 	}
 	pub(crate) fn apply_direct_presence(&mut self, updates: &[Update]) {
 		if !self.gateway_connected || updates.len() > 100 {
@@ -202,28 +240,35 @@ impl State {
 			if !resolved.valid() || resolved.heap_bytes() > MAX_DIRECT_PRESENCE_BYTES {
 				continue;
 			}
-			if index.is_some_and(|i| self.direct_presences[i] == resolved) {
-				continue;
+			let previous_clients = self
+				.direct_clients
+				.iter()
+				.find(|(id, _)| *id == update.user)
+				.map(|(_, clients)| *clients);
+			let next_clients = update.resolve_clients(previous_clients);
+			if !index.is_some_and(|i| self.direct_presences[i] == resolved) {
+				membership_changed |=
+					index.is_some_and(|i| online(&self.direct_presences[i])) != online(&resolved);
+				if let Some(index) = index {
+					retained_bytes -= self.direct_presences.remove(index).heap_bytes();
+				}
+				// ponytail: at most 256 records; FIFO eviction avoids a second cache index.
+				while !self.direct_presences.is_empty()
+					&& (self.direct_presences.len() >= MAX_DIRECT_PRESENCES
+						|| retained_bytes
+							+ resolved.heap_bytes()
+							+ MAX_DIRECT_PRESENCES * size_of::<MemberPresence>()
+							> MAX_DIRECT_PRESENCE_BYTES)
+				{
+					let evicted = self.direct_presences.remove(0);
+					membership_changed |= online(&evicted);
+					retained_bytes -= evicted.heap_bytes();
+					self.direct_clients.retain(|(id, _)| *id != evicted.user);
+				}
+				retained_bytes += resolved.heap_bytes();
+				self.direct_presences.push(resolved);
 			}
-			membership_changed |=
-				index.is_some_and(|i| online(&self.direct_presences[i])) != online(&resolved);
-			if let Some(index) = index {
-				retained_bytes -= self.direct_presences.remove(index).heap_bytes();
-			}
-			// ponytail: at most 256 records; FIFO eviction avoids a second cache index.
-			while !self.direct_presences.is_empty()
-				&& (self.direct_presences.len() >= MAX_DIRECT_PRESENCES
-					|| retained_bytes
-						+ resolved.heap_bytes()
-						+ MAX_DIRECT_PRESENCES * size_of::<MemberPresence>()
-						> MAX_DIRECT_PRESENCE_BYTES)
-			{
-				let evicted = self.direct_presences.remove(0);
-				membership_changed |= online(&evicted);
-				retained_bytes -= evicted.heap_bytes();
-			}
-			retained_bytes += resolved.heap_bytes();
-			self.direct_presences.push(resolved);
+			self.set_direct_clients(update.user, next_clients);
 		}
 		if membership_changed {
 			self.direct_presence_epoch = self.direct_presence_epoch.wrapping_add(1);
@@ -287,6 +332,8 @@ impl State {
 				retained
 			})
 			.collect();
+		self.direct_clients
+			.retain(|(user, _)| self.direct_presences.iter().any(|p| p.user == *user));
 		if membership_changed {
 			self.direct_presence_epoch = self.direct_presence_epoch.wrapping_add(1);
 		}
@@ -296,6 +343,7 @@ impl State {
 			self.direct_presence_epoch = self.direct_presence_epoch.wrapping_add(1);
 		}
 		self.direct_presences.clear();
+		self.direct_clients.clear();
 		self.direct_presence_bytes = None;
 	}
 	pub(crate) fn apply_member_presence(
@@ -865,6 +913,7 @@ mod tests {
 			status,
 			activities,
 			custom_status: Patch::Absent,
+			clients: Patch::Absent,
 		}
 	}
 	fn activity() -> RichActivity {
@@ -1175,5 +1224,31 @@ mod tests {
 		assert!(state.presence_for(Id(300)).is_none());
 		assert!(!state.direct_presences.iter().any(|p| p.user == Id(300)));
 		assert!(state.direct_presence_epoch() > epoch);
+	}
+	#[test]
+	fn client_platforms_are_scoped_to_known_users_and_clear_offline() {
+		let mut state = direct_state();
+		state.apply_direct_presence(&[Update {
+			user: Id(50),
+			status: Patch::Value("online".into()),
+			custom_status: Patch::Absent,
+			activities: Patch::Absent,
+			clients: Patch::Value(ClientPlatforms {
+				desktop: Some(model::ClientPresence::Online),
+				mobile: Some(model::ClientPresence::Idle),
+				web: None,
+			}),
+		}]);
+		let clients = state.client_platforms_for(Id(50)).expect("own account platform state");
+		assert_eq!(clients.desktop, Some(model::ClientPresence::Online));
+		assert_eq!(clients.mobile, Some(model::ClientPresence::Idle));
+		state.apply_direct_presence(&[Update {
+			user: Id(50),
+			status: Patch::Value("offline".into()),
+			custom_status: Patch::Absent,
+			activities: Patch::Absent,
+			clients: Patch::Absent,
+		}]);
+		assert!(state.client_platforms_for(Id(50)).is_none());
 	}
 }

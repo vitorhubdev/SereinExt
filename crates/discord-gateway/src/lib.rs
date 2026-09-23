@@ -1406,7 +1406,7 @@ async fn run_inner(
 										let (guilds, channels) = ready.navigation().map_err(|_| Failure::ProtocolAt("Gateway login: invalid or oversized channel/thread navigation"))?;
 										let (read_entries,read_version,partial)=ready.read_state.take().map_or((None,None,false),|snapshot|(Some(snapshot.entries.into_iter().filter(|e|e.kind==0).map(|e|(e.id,e.last_message_id,e.mention_count)).collect()),snapshot.version,snapshot.partial));
 										if guilds.len() + channels.len() > MAX_NAV { return Err(Failure::CapacityAt("Account navigation exceeds 131,072 entries; connection stopped")); }
-										direct_presence.bootstrap_users=friends.as_ref().into_iter().flatten().map(|(u,_)|u.id).chain(channels.iter().filter(|c|c.guild.is_none() && matches!(c.kind,1|3)).flat_map(|c|c.recipients.iter().map(|u|u.id))).take(client_core::presence::MAX_DIRECT_PRESENCES).collect();
+										direct_presence.bootstrap_users=std::iter::once(ready.user.id).chain(friends.as_ref().into_iter().flatten().map(|(u,_)|u.id)).chain(channels.iter().filter(|c|c.guild.is_none() && matches!(c.kind,1|3)).flat_map(|c|c.recipients.iter().map(|u|u.id))).take(client_core::presence::MAX_DIRECT_PRESENCES).collect();
 										calls.allowed=channels.iter().filter(|c|(c.guild.is_none() && channel_events::private_call(c.kind,c.recipients.len())) || (c.guild.is_some() && c.kind==2)).map(|c|(c.id,c.guild)).collect();
 										if was_ready { emit(Event::Resync)?; }
 										emit(Event::Interaction(client_core::interactions::Event::Session(state.session.clone().ok_or(Failure::Protocol)?)))?;

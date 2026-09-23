@@ -623,6 +623,41 @@ fn valid_presence_text(text: &str) -> bool {
 		&& !text.chars().any(char::is_control)
 }
 
+/// Per-client presence retained from Discord's client_status object without session IDs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClientPresence {
+	Online,
+	Idle,
+	DoNotDisturb,
+}
+impl ClientPresence {
+	pub fn wire(self) -> &'static str {
+		match self {
+			Self::Online => "online",
+			Self::Idle => "idle",
+			Self::DoNotDisturb => "dnd",
+		}
+	}
+	pub fn label(self) -> &'static str {
+		match self {
+			Self::Online => "Online",
+			Self::Idle => "Idle",
+			Self::DoNotDisturb => "Do Not Disturb",
+		}
+	}
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ClientPlatforms {
+	pub desktop: Option<ClientPresence>,
+	pub mobile: Option<ClientPresence>,
+	pub web: Option<ClientPresence>,
+}
+impl ClientPlatforms {
+	pub fn is_empty(self) -> bool {
+		self.desktop.is_none() && self.mobile.is_none() && self.web.is_none()
+	}
+}
+
 /// Complete, bounded presence values for an already-loaded user.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MemberPresence {

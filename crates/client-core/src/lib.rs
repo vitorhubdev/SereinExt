@@ -665,6 +665,8 @@ pub struct State {
 	pub member_search: [member_search::View; 2],
 	pub member_search_nonce: u64,
 	pub direct_presences: Vec<MemberPresence>,
+	/// Compact per-user client platforms from presence updates; no session IDs are retained.
+	pub direct_clients: Vec<(Id, model::ClientPlatforms)>,
 	pub local_game_activity: Option<model::RichActivity>,
 	#[doc(hidden)]
 	pub direct_presence_bytes: Option<(usize, usize)>,
@@ -870,6 +872,7 @@ impl Default for State {
 			member_search: Default::default(),
 			member_search_nonce: 0,
 			direct_presences: vec![],
+			direct_clients: vec![],
 			local_game_activity: Default::default(),
 			direct_presence_bytes: None,
 			direct_presence_epoch: 0,
