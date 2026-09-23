@@ -360,7 +360,7 @@ fn main() -> eframe::Result {
 		..Default::default()
 	};
 	eframe::run_native(
-		"Serein",
+		"SereinExt",
 		options,
 		Box::new(move |cc| {
 			let desktop = Desktop::new(cc, demo, frame_sample, transparency_available)?;
@@ -3706,7 +3706,7 @@ impl Desktop {
 					})
 					.show(ui, |ui| {
 						ui.horizontal(|ui| {
-							ui.label(ui::design::semibold(ui, "Serein", 16.0).color(p.muted));
+							ui.label(ui::design::semibold(ui, "SereinExt", 16.0).color(p.muted));
 							ui.with_layout(
 								egui::Layout::right_to_left(egui::Align::Center),
 								|ui| {
@@ -3821,7 +3821,7 @@ impl Desktop {
 								p.accent_text,
 							);
 							ui.add_space(8.0);
-							ui.label(ui::design::semibold(ui, "Serein", 16.0).color(p.text_strong));
+							ui.label(ui::design::semibold(ui, "SereinExt", 16.0).color(p.text_strong));
 							ui.add_space(8.0);
 							// Painted rather than framed: the pill must hug the text, not the row height.
 							let stage = ui.painter().layout_no_wrap(

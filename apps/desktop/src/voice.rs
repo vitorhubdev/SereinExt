@@ -129,12 +129,22 @@ impl CallCues {
 			*slot = participant.user.0;
 		}
 		// ponytail: membership scans are capped at 64 IDs; no per-frame set allocation.
-		let departed = self.peers.replace(peers).is_some_and(|previous| {
+		let previous = self.peers.replace(peers);
+		let joined_peer = previous.is_some_and(|previous| {
+			peers
+				.iter()
+				.any(|user| *user != 0 && !previous.contains(user))
+		});
+		let departed = previous.is_some_and(|previous| {
 			previous
 				.iter()
 				.any(|user| *user != 0 && !peers.contains(user))
 		});
-		cue.or(departed.then_some(Sound::UserLeave))
+		// The initial ready cue belongs to this device. Once a baseline exists, announce
+		// remote membership transitions too; this avoids treating the first snapshot as
+		// a room full of fresh joins.
+		cue.or(joined_peer.then_some(Sound::UserJoin))
+			.or(departed.then_some(Sound::UserLeave))
 	}
 }
 /// Remote cameras kept as textures at once; matches the transport's source limit.
@@ -1366,7 +1376,7 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn call_cues_join_once_and_track_remote_departures_without_reconnect_noise() {
+	fn call_cues_track_remote_joins_and_departures_without_reconnect_noise() {
 		let participant = |id| voice::Participant {
 			user: Id(id),
 			muted: false,
@@ -1405,8 +1415,11 @@ mod tests {
 		);
 		assert_eq!(cues.poll(false, false, owner.user, &[]), None);
 		assert_eq!(cues.poll(true, true, owner.user, &[owner]), None);
-		// Remote joins only update the baseline; the requested join cue is for this device.
-		assert_eq!(cues.poll(true, true, owner.user, &[owner, peer]), None);
+		// A peer entering after the baseline is a real join transition.
+		assert_eq!(
+			cues.poll(true, true, owner.user, &[owner, peer]),
+			Some(Sound::UserJoin)
+		);
 		assert_eq!(
 			cues.poll(true, true, owner.user, &[owner]),
 			Some(Sound::UserLeave)

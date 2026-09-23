@@ -18,7 +18,7 @@ mod delta;
 #[path = "updater_install.rs"]
 mod install;
 
-const RELEASES: &str = "https://api.github.com/repos/ViceVerse-cz/Serein/releases";
+const RELEASES: &str = "https://api.github.com/repos/vitorhubdev/SereinExt/releases";
 const MAX_METADATA: usize = 2 * 1024 * 1024;
 const MAX_DOWNLOAD: u64 = 512 * 1024 * 1024;
 const CHECK_INTERVAL: Duration = Duration::from_secs(60 * 60);
@@ -191,22 +191,22 @@ impl Updater {
 						match result {
 							Ok(Outcome::Checked(package)) => {
 								self.status = package.as_ref().map_or_else(
-									|| "Serein is up to date on this channel.".into(),
+									|| "SereinExt is up to date on this channel.".into(),
 									|p| {
 										if install::flatpak_session() {
 											format!(
-												"Serein {} is available. Update with `flatpak update` or your Software center.",
+												"SereinExt {} is available. Update with `flatpak update` or your Software center.",
 												p.version,
 											)
 										} else if let Some(cmd) =
 											install::linux_package_manager_update_command()
 										{
 											format!(
-												"Serein {} is available. Run `{cmd}` to update.",
+												"SereinExt {} is available. Run `{cmd}` to update.",
 												p.version,
 											)
 										} else {
-											format!("Serein {} is available.", p.version)
+											format!("SereinExt {} is available.", p.version)
 										}
 									},
 								);
@@ -225,7 +225,7 @@ impl Updater {
 								self.armed = true;
 								self.close_requested = true;
 								self.status =
-									"Update ready. Close Serein to install and restart.".into();
+									"Update ready. Close SereinExt to install and restart.".into();
 							}
 							Err(error) => {
 								self.auto_download = false;
@@ -289,7 +289,7 @@ impl Updater {
 					.expect("a supported platform's checked package has a downloadable archive")
 					.size;
 				self.auto_download = false;
-				self.status = format!("Downloading Serein {}…", package.version);
+				self.status = format!("Downloading SereinExt {}…", package.version);
 				self.start(runtime, ctx, total, move |cancel, progress| {
 					download_package(package, cancel, progress)
 				});
@@ -579,7 +579,7 @@ fn select_release(
 			return Err("The release asset metadata is invalid.".into());
 		}
 		let expected = format!(
-			"https://github.com/ViceVerse-cz/Serein/releases/download/{}/{name}",
+			"https://github.com/vitorhubdev/SereinExt/releases/download/{}/{name}",
 			release.tag_name
 		);
 		if asset.browser_download_url != expected {

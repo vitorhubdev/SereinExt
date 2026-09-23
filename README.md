@@ -1,18 +1,19 @@
-# Serein
+# SereinExt
 
 <p align="center">
-  <a href="https://github.com/ViceVerse-cz/rustcord">
-    <img src="docs/preview.png" alt="Serein Native Discord Client" width="900" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" />
+  <a href="https://github.com/vitorhubdev/SereinExt">
+    <img src="docs/preview.png" alt="SereinExt — modified Serein fork" width="900" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);" />
   </a>
 </p>
 
 <p align="center">
-  <strong>A lightweight, native Discord desktop client written in Rust, powered by egui and wgpu.</strong>
+  <strong>SereinExt — a modified fork of Serein, focused on fixes, usability and additional client features.</strong>
 </p>
 
-<h3 align="center">
-  <a href="https://discord.gg/UqTDGCENaN">💬 Join our Discord server for updates</a>
-</h3>
+> [!IMPORTANT]
+> **SereinExt is an independent modified fork of [ViceVerse-cz/Serein](https://github.com/ViceVerse-cz/Serein).**
+> Upstream remains credited as the original project. SereinExt versions and changes are maintained in this repository and may intentionally diverge from upstream.
+
 
 <p align="center">
   <a href="#downloads--installation"><strong>📦 Downloads</strong></a> &nbsp;•&nbsp;
@@ -25,8 +26,7 @@
 </p>
 
 <p align="center">
-  <a href="https://discord.gg/UqTDGCENaN"><img src="https://img.shields.io/badge/Discord-Join%20our%20Discord%20server%20for%20updates-5865F2?logo=discord&logoColor=white" alt="Discord" /></a>
-  <a href="https://github.com/ViceVerse-cz/rustcord/releases"><img src="https://img.shields.io/github/v/release/ViceVerse-cz/rustcord?label=release&color=blue" alt="GitHub Release" /></a>
+  <a href="https://github.com/vitorhubdev/SereinExt/tags"><img src="https://img.shields.io/github/v/tag/vitorhubdev/SereinExt?label=tag&color=blue" alt="SereinExt tag" /></a>
   <a href="Cargo.toml"><img src="https://img.shields.io/badge/rust-1.98.1_pinned-blue.svg?logo=rust" alt="Rust 1.98.1 Pinned" /></a>
   <a href="crates/ui"><img src="https://img.shields.io/badge/ui-egui%20%2F%20wgpu-orange.svg" alt="UI egui/wgpu" /></a>
   <a href="docs/platform-support.md"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-informational.svg" alt="Platform Support" /></a>
@@ -37,13 +37,13 @@
 
 > [!WARNING]
 > **Unofficial and not endorsed by Discord.**
-> Serein communicates directly with Discord's public gateway and REST endpoints for your existing account. Automating normal accounts outside the official OAuth2/bot API violates Discord's Terms of Service and carries risk of account termination. Technical interoperability does not imply platform approval. Review the [compatibility matrix](docs/discord-compatibility.md) and [authentication guide](docs/authentication.md) before use.
+> SereinExt is a modified Serein fork and communicates directly with Discord's public gateway and REST endpoints for your existing account. Automating normal accounts outside the official OAuth2/bot API violates Discord's Terms of Service and carries risk of account termination. Technical interoperability does not imply platform approval. Review the [compatibility matrix](docs/discord-compatibility.md) and [authentication guide](docs/authentication.md) before use.
 
 ---
 
 ## Downloads & Installation
 
-Pre-compiled releases for macOS, Linux, and Windows are published on GitHub [Releases](https://github.com/ViceVerse-cz/rustcord/releases).
+SereinExt is currently distributed through **version tags first**. Version **1.0.1** starts the modified fork line; a GitHub Release will only be published when the fork is declared ready. The upstream installation notes below are retained for compatibility/reference and may not describe a SereinExt binary yet.
 
 | Platform | Format | Architectures | Details |
 |---|---|---|---|
