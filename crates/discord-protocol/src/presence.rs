@@ -879,6 +879,7 @@ mod tests {
 					status: None,
 					custom_status: snapshot.custom_status(),
 					activities: snapshot.activities.1,
+					clients: model::ClientPlatforms::default(),
 				}
 				.valid()
 			);
