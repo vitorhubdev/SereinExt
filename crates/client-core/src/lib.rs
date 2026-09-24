@@ -1325,6 +1325,7 @@ impl State {
 						status: None,
 						custom_status: None,
 						activities: vec![],
+						clients: model::ClientPlatforms::default(),
 						user,
 					}))
 				})
@@ -5145,6 +5146,7 @@ mod tests {
 				status: None,
 				custom_status: None,
 				activities: vec![],
+				clients: model::ClientPlatforms::default(),
 			}))],
 			total: 250,
 			lazy: true,
@@ -5175,6 +5177,7 @@ mod tests {
 			status: None,
 			custom_status: None,
 			activities: vec![],
+			clients: model::ClientPlatforms::default(),
 		}));
 		apply(
 			&mut state,
