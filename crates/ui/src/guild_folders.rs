@@ -1,7 +1,7 @@
 use crate::{
 	MessagingUi, design,
 	icons::{self, Icon},
-	notifications::{badge, rail_indicator},
+	notifications::{badge, guild_voice_active, rail_indicator, voice_badge},
 };
 use client_core::{Command, State};
 use egui::{Color32, Sense};
@@ -374,7 +374,17 @@ impl MessagingUi {
 									colors.base,
 								);
 							}
-							design::rail_name(&response, &guild.name);
+							if guild_voice_active(state, id) {
+								voice_badge(ui, response.rect);
+							}
+							design::rail_name(
+								&response,
+								if guild_voice_active(state, id) {
+									format!("{} · Voice active", guild.name)
+								} else {
+									guild.name.clone()
+								},
+							);
 							if response.clicked() {
 								self.guild = Some(id);
 								if let Some(command) = state.select_guild(id) {
@@ -446,6 +456,14 @@ impl MessagingUi {
 									count,
 									colors.base,
 								);
+							}
+							if !open
+								&& folder
+									.guild_ids
+									.iter()
+									.any(|guild| guild_voice_active(state, *guild))
+							{
+								voice_badge(ui, rect);
 							}
 							let name = folder.name.as_deref().unwrap_or("Server folder");
 							response.widget_info(|| {
