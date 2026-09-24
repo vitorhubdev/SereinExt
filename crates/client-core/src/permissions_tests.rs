@@ -1463,6 +1463,8 @@ fn history_freshness_does_not_disable_authorized_sending() {
 	state.gateway_connected = true;
 	state.freshness = Freshness::Stale;
 	assert!(state.can_send(Id(20)));
+	state.freshness = Freshness::Unavailable;
+	assert!(!state.can_send(Id(20)) && !state.can_attach(Id(20)));
 	state.freshness = Freshness::Loading;
 	state.permissions.guilds.clear();
 	assert!(!state.can_send(Id(20)) && !state.can_attach(Id(20)));
