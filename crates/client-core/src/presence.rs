@@ -696,6 +696,7 @@ mod tests {
 					status: None,
 					custom_status: Some(custom),
 					activities: vec![],
+					clients: ClientPlatforms::default(),
 				}]
 			},
 			{
