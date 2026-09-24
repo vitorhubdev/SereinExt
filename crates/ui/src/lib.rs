@@ -6626,6 +6626,7 @@ mod composer_tests {
 						status: Some("online".into()),
 						custom_status: custom_status.map(str::to_owned),
 						activities: vec![],
+						clients: model::ClientPlatforms::default(),
 					}],
 				},
 			});
