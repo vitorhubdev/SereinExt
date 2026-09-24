@@ -685,6 +685,7 @@ mod tests {
 					status: Some(status),
 					custom_status: None,
 					activities: vec![],
+					clients: ClientPlatforms::default(),
 				}]
 			},
 			{
@@ -930,6 +931,7 @@ mod tests {
 			status: row.status.clone(),
 			custom_status: row.custom_status.clone(),
 			activities: vec![activity],
+			clients: row.clients,
 		};
 		let projected = projected_row_bytes(row, &update);
 		row.activities = update.activities.clone();
