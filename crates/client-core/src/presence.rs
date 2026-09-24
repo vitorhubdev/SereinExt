@@ -1217,21 +1217,47 @@ mod tests {
 	#[test]
 	fn client_platforms_are_scoped_to_known_users_and_clear_offline() {
 		let mut state = direct_state();
+		let initial = ClientPlatforms {
+			desktop: Some(model::ClientPresence::Online),
+			mobile: Some(model::ClientPresence::Idle),
+			web: None,
+			vr: None,
+		};
 		state.apply_direct_presence(&[Update {
 			user: Id(50),
 			status: Patch::Value("online".into()),
 			custom_status: Patch::Absent,
 			activities: Patch::Absent,
-			clients: Patch::Value(ClientPlatforms {
-				desktop: Some(model::ClientPresence::Online),
-				mobile: Some(model::ClientPresence::Idle),
-				web: None,
-				vr: None,
-			}),
+			clients: Patch::Value(initial),
 		}]);
-		let clients = state.client_platforms_for(Id(50)).expect("own account platform state");
-		assert_eq!(clients.desktop, Some(model::ClientPresence::Online));
-		assert_eq!(clients.mobile, Some(model::ClientPresence::Idle));
+		assert_eq!(state.client_platforms_for(Id(50)), Some(initial));
+
+		// A status/activity-only patch must not erase the last known device set.
+		state.apply_direct_presence(&[Update {
+			user: Id(50),
+			status: Patch::Value("idle".into()),
+			custom_status: Patch::Absent,
+			activities: Patch::Absent,
+			clients: Patch::Absent,
+		}]);
+		assert_eq!(state.client_platforms_for(Id(50)), Some(initial));
+
+		let replaced = ClientPlatforms {
+			desktop: None,
+			mobile: Some(model::ClientPresence::DoNotDisturb),
+			web: Some(model::ClientPresence::Online),
+			vr: Some(model::ClientPresence::Idle),
+		};
+		state.apply_direct_presence(&[Update {
+			user: Id(50),
+			status: Patch::Value("dnd".into()),
+			custom_status: Patch::Absent,
+			activities: Patch::Absent,
+			clients: Patch::Value(replaced),
+		}]);
+		assert_eq!(state.client_platforms_for(Id(50)), Some(replaced));
+
+		// Offline is authoritative and clears stale device indicators even when omitted.
 		state.apply_direct_presence(&[Update {
 			user: Id(50),
 			status: Patch::Value("offline".into()),
