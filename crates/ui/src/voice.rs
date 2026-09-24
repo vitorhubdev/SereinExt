@@ -269,20 +269,43 @@ impl MessagingUi {
 			},
 		);
 		let marks = channel_marks::trailing(access);
+		let participant_count = state
+			.voice
+			.roster
+			.iter()
+			.filter(|entry| entry.channel == channel.id)
+			.take(99)
+			.count();
+		let activity_width = if participant_count > 0 { 34.0 } else { 0.0 };
 		let elapsed_width = if elapsed.is_some() { 64.0 } else { 0.0 };
 		let name = ui.painter().layout(
 			channel.name.clone(),
 			egui::FontId::new(15.0, design::medium_family(ui.ctx())),
 			text_color,
-			(row.width() - 40.0 - elapsed_width - marks).max(10.0),
+			(row.width() - 40.0 - elapsed_width - activity_width - marks).max(10.0),
 		);
 		let name_rect = egui::Rect::from_min_size(
 			egui::pos2(row.left() + 34.0, row.center().y - name.size().y * 0.5),
-			egui::vec2(row.width() - 40.0 - elapsed_width - marks, name.size().y),
+			egui::vec2(
+				row.width() - 40.0 - elapsed_width - activity_width - marks,
+				name.size().y,
+			),
 		);
 		ui.painter()
 			.with_clip_rect(name_rect)
 			.galley(name_rect.min, name, text_color);
+		if participant_count > 0 {
+			let right = row.right() - 8.0 - marks - elapsed_width;
+			let center = egui::pos2(right - 12.0, row.center().y);
+			ui.painter().circle_filled(center - egui::vec2(9.0, 0.0), 3.5, colors.positive);
+			ui.painter().text(
+				center,
+				egui::Align2::LEFT_CENTER,
+				participant_count.to_string(),
+				egui::FontId::new(11.0, design::medium_family(ui.ctx())),
+				colors.positive,
+			);
+		}
 		if let Some(elapsed) = &elapsed {
 			ui.painter().text(
 				row.right_center() - egui::vec2(8.0 + marks, 0.0),
@@ -305,7 +328,13 @@ impl MessagingUi {
 					"{} voice channel{}{}",
 					channel.name,
 					channel_marks::label(access),
-					if connected { ", connected" } else { "" }
+					if connected {
+						", connected"
+					} else if participant_count > 0 {
+						", active"
+					} else {
+						""
+					}
 				),
 			)
 		});
