@@ -801,7 +801,7 @@ impl MessagingUi {
 		}
 	}
 
-	pub(super) fn take_voice_fullscreen_request(&mut self) -> Option<bool> {
+	pub fn take_voice_fullscreen_request(&mut self) -> Option<bool> {
 		self.voice_stream_fullscreen_request.take()
 	}
 
