@@ -670,10 +670,14 @@ pub struct ClientPlatforms {
 	pub desktop: Option<ClientPresence>,
 	pub mobile: Option<ClientPresence>,
 	pub web: Option<ClientPresence>,
+	pub vr: Option<ClientPresence>,
 }
 impl ClientPlatforms {
 	pub fn is_empty(self) -> bool {
-		self.desktop.is_none() && self.mobile.is_none() && self.web.is_none()
+		self.desktop.is_none()
+			&& self.mobile.is_none()
+			&& self.web.is_none()
+			&& self.vr.is_none()
 	}
 }
 
@@ -684,6 +688,7 @@ pub struct MemberPresence {
 	pub status: Option<String>,
 	pub custom_status: Option<String>,
 	pub activities: Vec<RichActivity>,
+	pub clients: ClientPlatforms,
 }
 
 impl MemberPresence {
@@ -722,6 +727,7 @@ pub struct Member {
 	/// Custom status text with any unicode emoji; bounded, never a rich activity.
 	pub custom_status: Option<String>,
 	pub activities: Vec<RichActivity>,
+	pub clients: ClientPlatforms,
 }
 impl Member {
 	pub fn valid(&self) -> bool {
@@ -859,6 +865,7 @@ mod presence_tests {
 			status: None,
 			custom_status: None,
 			activities: vec![activity.clone(); MAX_RICH_ACTIVITIES],
+			clients: ClientPlatforms::default(),
 		};
 		assert!(presence.valid());
 		assert_eq!(
