@@ -168,6 +168,13 @@ pub fn loaded_status(result: &Result<Option<SessionSecret>, CredentialError>) ->
 mod tests {
 	use super::*;
 	#[test]
+	fn no_store_status_is_session_only_guidance() {
+		let status = loaded_status(&Err(CredentialError::NoStore));
+		assert!(status.contains("No OS keyring"));
+		assert!(status.contains("sign in each launch"));
+	}
+
+	#[test]
 	fn saved_lookup_finishes_times_out_and_ignores_late_results() {
 		let (send, commands) = mpsc::sync_channel(4);
 		let (events, receive) = mpsc::sync_channel(4);
