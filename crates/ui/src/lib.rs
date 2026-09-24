@@ -6263,6 +6263,7 @@ mod composer_tests {
 									status: Some("online".into()),
 									custom_status: Some(format!("Activity {id}")),
 									activities: vec![],
+									clients: model::ClientPlatforms::default(),
 								}))
 							})
 							.collect(),
@@ -6393,6 +6394,7 @@ mod composer_tests {
 							.map(str::to_owned),
 							custom_status: None,
 							activities: vec![],
+							clients: model::ClientPlatforms::default(),
 						}))
 					})
 					.collect(),
@@ -6549,6 +6551,7 @@ mod composer_tests {
 				status: Some("online".into()),
 				custom_status: Some("Initial synthetic status".into()),
 				activities: vec![],
+				clients: model::ClientPlatforms::default(),
 			}))],
 		});
 		state.profile = Some(client_core::profile::ProfileView {
@@ -6692,6 +6695,7 @@ mod composer_tests {
 					status: Some("online".into()),
 					custom_status: None,
 					activities: vec![],
+					clients: model::ClientPlatforms::default(),
 				}))],
 			});
 			let mut messaging = MessagingUi {
@@ -6734,6 +6738,7 @@ mod composer_tests {
 							status: Some("online".into()),
 							custom_status: None,
 							activities,
+							clients: model::ClientPlatforms::default(),
 						}],
 					}
 				} else {
@@ -6742,6 +6747,7 @@ mod composer_tests {
 						status: model::Patch::Value("online".into()),
 						activities: model::Patch::Value(activities),
 						custom_status: model::Patch::Absent,
+						clients: model::Patch::Absent,
 					}])
 				};
 				state.apply(client_core::Envelope {
