@@ -48,18 +48,6 @@ impl Update {
 			self.clients = newer.clients;
 		}
 	}
-	pub fn resolve_clients(&self, previous: Option<ClientPlatforms>) -> Option<ClientPlatforms> {
-		if matches!(&self.status, Patch::Null)
-			|| matches!(&self.status, Patch::Value(status) if status == "offline")
-		{
-			return None;
-		}
-		match &self.clients {
-			Patch::Absent => previous,
-			Patch::Null => None,
-			Patch::Value(value) => (!value.is_empty()).then_some(*value),
-		}
-	}
 	pub fn resolve(&self, previous: Option<&MemberPresence>) -> MemberPresence {
 		let text = |patch: &Patch<String>, old: Option<&String>| match patch {
 			Patch::Absent => old.cloned(),
@@ -68,6 +56,15 @@ impl Update {
 		};
 		let status = text(&self.status, previous.and_then(|p| p.status.as_ref()));
 		let offline = matches!(self.status, Patch::Null) || status.as_deref() == Some("offline");
+		let clients = if offline {
+			ClientPlatforms::default()
+		} else {
+			match &self.clients {
+				Patch::Absent => previous.map_or_default(|p| p.clients),
+				Patch::Null => ClientPlatforms::default(),
+				Patch::Value(value) => *value,
+			}
+		};
 		MemberPresence {
 			user: self.user,
 			custom_status: if offline {
@@ -87,6 +84,7 @@ impl Update {
 					Patch::Value(activities) => activities.clone(),
 				}
 			},
+			clients,
 			status,
 		}
 	}
@@ -108,6 +106,7 @@ pub fn projected_row_bytes(row: &model::Member, update: &MemberPresence) -> usiz
 	if row.status == update.status
 		&& row.custom_status == update.custom_status
 		&& row.activities == update.activities
+		&& row.clients == update.clients
 	{
 		return row.bytes();
 	}
@@ -197,19 +196,11 @@ impl State {
 		if !self.gateway_connected || !self.known_presence_user(user) {
 			return None;
 		}
-		self.direct_clients
+		self.direct_presences
 			.iter()
-			.find(|(id, _)| *id == user)
-			.map(|(_, clients)| *clients)
-	}
-	fn set_direct_clients(&mut self, user: Id, clients: Option<ClientPlatforms>) {
-		self.direct_clients.retain(|(id, _)| *id != user);
-		if let Some(clients) = clients.filter(|clients| !clients.is_empty()) {
-			if self.direct_clients.len() >= MAX_DIRECT_PRESENCES {
-				self.direct_clients.remove(0);
-			}
-			self.direct_clients.push((user, clients));
-		}
+			.find(|presence| presence.user == user)
+			.map(|presence| presence.clients)
+			.filter(|clients| !clients.is_empty())
 	}
 	pub(crate) fn apply_direct_presence(&mut self, updates: &[Update]) {
 		if !self.gateway_connected || updates.len() > 100 {
@@ -240,12 +231,6 @@ impl State {
 			if !resolved.valid() || resolved.heap_bytes() > MAX_DIRECT_PRESENCE_BYTES {
 				continue;
 			}
-			let previous_clients = self
-				.direct_clients
-				.iter()
-				.find(|(id, _)| *id == update.user)
-				.map(|(_, clients)| *clients);
-			let next_clients = update.resolve_clients(previous_clients);
 			if !index.is_some_and(|i| self.direct_presences[i] == resolved) {
 				membership_changed |=
 					index.is_some_and(|i| online(&self.direct_presences[i])) != online(&resolved);
@@ -263,12 +248,10 @@ impl State {
 					let evicted = self.direct_presences.remove(0);
 					membership_changed |= online(&evicted);
 					retained_bytes -= evicted.heap_bytes();
-					self.direct_clients.retain(|(id, _)| *id != evicted.user);
 				}
 				retained_bytes += resolved.heap_bytes();
 				self.direct_presences.push(resolved);
 			}
-			self.set_direct_clients(update.user, next_clients);
 		}
 		if membership_changed {
 			self.direct_presence_epoch = self.direct_presence_epoch.wrapping_add(1);
@@ -301,6 +284,7 @@ impl State {
 					if row.status == presence.status
 						&& row.custom_status == presence.custom_status
 						&& row.activities == presence.activities
+						&& row.clients == presence.clients
 					{
 						continue;
 					}
@@ -317,6 +301,7 @@ impl State {
 				row.status = presence.and_then(|p| p.status.clone());
 				row.custom_status = presence.and_then(|p| p.custom_status.clone());
 				row.activities = presence.map_or_else(Vec::new, |p| p.activities.clone());
+				row.clients = presence.map_or_default(|p| p.clients);
 			}
 		}
 	}
@@ -332,8 +317,6 @@ impl State {
 				retained
 			})
 			.collect();
-		self.direct_clients
-			.retain(|(user, _)| self.direct_presences.iter().any(|p| p.user == *user));
 		if membership_changed {
 			self.direct_presence_epoch = self.direct_presence_epoch.wrapping_add(1);
 		}
@@ -343,7 +326,6 @@ impl State {
 			self.direct_presence_epoch = self.direct_presence_epoch.wrapping_add(1);
 		}
 		self.direct_presences.clear();
-		self.direct_clients.clear();
 		self.direct_presence_bytes = None;
 	}
 	pub(crate) fn apply_member_presence(
@@ -406,11 +388,13 @@ impl State {
 			if let Some(update) = updates.iter().find(|update| update.user == row.user.id)
 				&& (row.status != update.status
 					|| row.custom_status != update.custom_status
-					|| row.activities != update.activities)
+					|| row.activities != update.activities
+					|| row.clients != update.clients)
 			{
 				row.status = update.status.clone();
 				row.custom_status = update.custom_status.clone();
 				row.activities = update.activities.clone();
+				row.clients = update.clients;
 				changed = true;
 			}
 		}
@@ -477,6 +461,7 @@ mod tests {
 						status: Some("online".into()),
 						custom_status: None,
 						activities: vec![],
+						clients: ClientPlatforms::default(),
 					})),
 					None,
 				],
@@ -514,6 +499,7 @@ mod tests {
 			status: status.map(str::to_owned),
 			custom_status: custom.map(str::to_owned),
 			activities: vec![],
+			clients: ClientPlatforms::default(),
 		}
 	}
 
@@ -1237,6 +1223,7 @@ mod tests {
 				desktop: Some(model::ClientPresence::Online),
 				mobile: Some(model::ClientPresence::Idle),
 				web: None,
+				vr: None,
 			}),
 		}]);
 		let clients = state.client_platforms_for(Id(50)).expect("own account platform state");
