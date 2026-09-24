@@ -55,6 +55,10 @@ fn direct_call(state: &State) -> Option<Id> {
 		.map(|call| call.channel)
 }
 
+pub(super) fn guild_voice_active(state: &State, guild: Id) -> bool {
+	state.voice.roster.iter().any(|entry| entry.guild == guild)
+}
+
 fn home_request_label(friends: u32, messages: u32) -> String {
 	let mut parts = vec!["Direct Messages".to_owned()];
 	if friends > 0 {
@@ -123,8 +127,8 @@ pub(super) fn rail_indicator(
 	ui.painter()
 		.rect_filled(pill, 4, design::palette(ui).text_strong);
 }
-/// Green speaker badge on the rail avatar of the conversation you are calling in.
-fn call_badge(ui: &egui::Ui, rect: egui::Rect) {
+/// Green speaker badge for a conversation/server with active voice presence.
+pub(super) fn voice_badge(ui: &egui::Ui, rect: egui::Rect) {
 	let colors = design::palette(ui);
 	// Inset from the corner so neither the ring nor the glyph meets the list's clip rect.
 	let center = rect.right_top() + egui::vec2(-10.0, 10.0);
@@ -270,7 +274,7 @@ impl MessagingUi {
 							let unread = state.channel_unread(channel) == Some(true) || count > 0;
 							indicator(ui, response.rect, unread, count);
 							if in_call {
-								call_badge(ui, response.rect);
+								voice_badge(ui, response.rect);
 							}
 							response.widget_info(|| {
 								egui::WidgetInfo::labeled(
