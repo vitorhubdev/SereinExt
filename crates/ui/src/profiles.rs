@@ -1782,6 +1782,20 @@ pub fn synthetic(user: &User, guild: Option<Id>) -> model::UserProfile {
 mod tests {
 	use super::*;
 	#[test]
+	fn mobile_platform_changes_presence_description() {
+		let desktop = model::ClientPlatforms {
+			desktop: Some(model::ClientPresence::Online),
+			..Default::default()
+		};
+		assert_eq!(presence_description("online", desktop), "Online");
+		let mobile = model::ClientPlatforms {
+			mobile: Some(model::ClientPresence::Idle),
+			..desktop
+		};
+		assert_eq!(presence_description("online", mobile), "Online · Mobile Idle");
+	}
+
+	#[test]
 	fn rich_activity_card_keeps_compact_text_badge_and_elapsed_time() {
 		assert_eq!(activity_elapsed(1_000, 131_000).as_deref(), Some("2:10"));
 		assert_eq!(
@@ -2183,6 +2197,7 @@ mod tests {
 				status: Some("idle".into()),
 				custom_status: Some("Server status".into()),
 				activities: vec![],
+				clients: model::ClientPlatforms::default(),
 			}))],
 		});
 		state.direct_presences.push(model::MemberPresence {
@@ -2190,6 +2205,7 @@ mod tests {
 			status: Some("online".into()),
 			custom_status: Some("Direct status".into()),
 			activities: vec![],
+			clients: model::ClientPlatforms::default(),
 		});
 		assert_eq!(
 			presence(&state, user.id, Some(Id(10))).1,
@@ -2198,7 +2214,10 @@ mod tests {
 		assert_eq!(presence(&state, user.id, None).1, Some("Direct status"));
 		state.gateway_connected = false;
 		state.demo = false;
-		assert_eq!(presence(&state, user.id, None), (None, None, [].as_slice()));
+		assert_eq!(
+			presence(&state, user.id, None),
+			(None, None, [].as_slice(), model::ClientPlatforms::default())
+		);
 		// Known guild presence survives a reconnect; losing the list clears it.
 		assert_eq!(
 			presence(&state, user.id, Some(Id(10))).1,
@@ -2207,7 +2226,7 @@ mod tests {
 		state.members.as_mut().unwrap().freshness = model::Freshness::Unavailable;
 		assert_eq!(
 			presence(&state, user.id, Some(Id(10))),
-			(None, None, [].as_slice())
+			(None, None, [].as_slice(), model::ClientPlatforms::default())
 		);
 	}
 
