@@ -428,6 +428,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 						status: Some("online".into()),
 						custom_status: Some("Building a quieter place".into()),
 						activities: vec![],
+						clients: model::ClientPlatforms {
+							mobile: Some(model::ClientPresence::Online),
+							..Default::default()
+						},
 					}))],
 				});
 			} else if page == "dm-tags" {
