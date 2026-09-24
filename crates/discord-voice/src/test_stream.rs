@@ -8,6 +8,24 @@ use tokio::net::TcpListener;
 
 type TestSocket = WebSocketStream<TcpStream>;
 
+#[test]
+fn transient_udp_receive_errors_are_classified() {
+	for kind in [
+		std::io::ErrorKind::ConnectionReset,
+		std::io::ErrorKind::ConnectionRefused,
+		std::io::ErrorKind::Interrupted,
+	] {
+		assert!(transient_receive(&std::io::Error::from(kind)));
+	}
+	assert!(!transient_receive(&std::io::Error::from(
+		std::io::ErrorKind::InvalidData,
+	)));
+	assert_eq!(
+		transient_receive(&std::io::Error::from_raw_os_error(10040)),
+		cfg!(windows),
+	);
+}
+
 async fn event(ws: &mut TestSocket, value: Value) {
 	ws.send(Message::Text(value.to_string().into()))
 		.await
