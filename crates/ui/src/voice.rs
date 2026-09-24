@@ -7,10 +7,7 @@ use client_core::{
 	voice::{Participant, Phase, RosterEntry},
 };
 use egui::RichText;
-use model::{
-	Id,
-	voice_settings::{InputProfile, NoiseSuppression},
-};
+use model::{Id, voice_settings::NoiseSuppression};
 
 /// Local mutes share the 64 per-user volume slots sent to the mixer.
 const MAX_USER_MUTES: usize = 64;
@@ -1537,7 +1534,7 @@ impl MessagingUi {
 					);
 					ui.label(design::medium(
 						ui,
-						if input { "Microphone" } else { "Speakers" },
+						if input { "Input device" } else { "Output device" },
 						15.0,
 					))
 				})
@@ -1557,7 +1554,7 @@ impl MessagingUi {
 				gain_slider(ui, &mut self.voice_gain.output_percent, "Speaker volume");
 			}
 			ui.horizontal_wrapped(|ui| {
-				if ui.small_button("Refresh devices").clicked() {
+				if ui.small_button("Rescan devices").clicked() {
 					self.voice_refresh_devices = true;
 				}
 				if ui.small_button("Reset levels").clicked() {
@@ -1571,7 +1568,7 @@ impl MessagingUi {
 				if design::switch(
 					ui,
 					"Noise suppression",
-					Some("Choose an algorithm in all voice settings."),
+					Some("Recommended filter for keyboard, fan and room noise."),
 					&mut suppression,
 				)
 				.changed()
@@ -1909,6 +1906,10 @@ impl MessagingUi {
 	}
 
 	fn voice_audio_controls(&mut self, ui: &mut egui::Ui) {
+		design::hint(
+			ui,
+			"System default follows your operating-system choice. Select a device only when you want SereinExt to stay pinned to it.",
+		);
 		// Both settings surfaces use this path. Queue discovery once, without opening streams.
 		if ui.is_enabled() && self.voice_device_status.is_empty() {
 			self.voice_device_status = "Looking for audio devices...";
@@ -1931,7 +1932,7 @@ impl MessagingUi {
 					);
 					ui.label(design::medium(
 						ui,
-						if input { "Microphone" } else { "Speakers" },
+						if input { "Input device" } else { "Output device" },
 						15.0,
 					))
 				})
@@ -1961,7 +1962,7 @@ impl MessagingUi {
 		gain_controls(ui, &mut self.voice_gain);
 		ui.horizontal(|ui| {
 			ui.spacing_mut().item_spacing.x = 4.0;
-			if design::text_action(ui, "Refresh devices").clicked() {
+			if design::text_action(ui, "Rescan devices").clicked() {
 				self.voice_refresh_devices = true;
 			}
 			if self.voice_gain != crate::VoiceGain::default()
@@ -1977,6 +1978,19 @@ impl MessagingUi {
 				);
 			}
 		});
+		let input_missing = self.voice_input.as_ref().is_some_and(|selected| {
+			!self.voice_inputs.iter().any(|(id, _)| id == selected)
+		});
+		let output_missing = self.voice_output.as_ref().is_some_and(|selected| {
+			!self.voice_outputs.iter().any(|(id, _)| id == selected)
+		});
+		if input_missing || output_missing {
+			design::notice(
+				ui,
+				design::Level::Warning,
+				"One selected audio device is unavailable. Choose System default or rescan devices.",
+			);
+		}
 		if self.voice_microphone_unavailable {
 			design::notice(
 				ui,
@@ -1988,149 +2002,167 @@ impl MessagingUi {
 
 	fn voice_processing_controls(&mut self, ui: &mut egui::Ui) {
 		let colors = design::palette(ui);
+		let effective = self.voice_processing.effective();
+
 		design::section(
 			ui,
-			"Input profile",
-			Some("Applies to calls and your local microphone test."),
+			"Noise suppression",
+			Some("Choose how aggressively SereinExt removes background noise. Standard is recommended for most calls."),
 		);
-		for (profile, label, detail) in [
-			(
-				InputProfile::VoiceIsolation,
-				"Voice Isolation",
-				"RNNoise suppression, echo cancellation and automatic gain for speech.",
-			),
-			(
-				InputProfile::Studio,
-				"Studio",
-				"Open microphone without suppression, echo cancellation or automatic gain.",
-			),
-			(
-				InputProfile::Custom,
-				"Custom",
-				"Choose your noise suppression, sensitivity and processing.",
-			),
-		] {
-			if design::radio_row(
-				ui,
-				self.voice_processing.profile == profile,
-				label,
-				Some(detail),
-			)
-			.clicked()
-			{
-				self.voice_processing.profile = profile;
+		let choices = [
+			(NoiseSuppression::Off, "Off"),
+			(NoiseSuppression::RnNoise, "Standard"),
+			(NoiseSuppression::WebRtc, "Strong"),
+		];
+		let mut suppression = effective.suppression;
+		design::row(
+			ui,
+			"Mode",
+			Some(match effective.suppression {
+				NoiseSuppression::Off => "No noise filtering. Best for music or already-processed microphones.",
+				NoiseSuppression::RnNoise => "Balanced voice isolation for keyboard, fan and room noise.",
+				NoiseSuppression::WebRtc => "More aggressive filtering for noisy rooms; may sound less natural.",
+			}),
+			|ui| {
+				egui::ComboBox::from_id_salt("voice-noise-suppression-simple")
+					.selected_text(
+						choices
+							.iter()
+							.find(|(value, _)| *value == suppression)
+							.map_or("Standard", |(_, label)| *label),
+					)
+					.width(ui.available_width().min(180.0))
+					.show_ui(ui, |ui| {
+						for (value, label) in choices {
+							ui.selectable_value(&mut suppression, value, label);
+						}
+					});
+			},
+		);
+		if suppression != effective.suppression {
+			let processing = self.voice_processing.edit();
+			processing.suppression = suppression;
+			if suppression == NoiseSuppression::WebRtc {
+				processing.suppression_level = processing.suppression_level.max(2);
 			}
 		}
-		if self.voice_processing.profile == InputProfile::Custom {
-			design::card_divider(ui);
-			let processing = &mut self.voice_processing.custom;
-			let mut sensitivity = processing.sensitivity_db.is_some();
-			if design::switch(
-				ui,
-				"Input threshold",
-				Some(if sensitivity {
-					"Only transmit sound above this level. Lower values pick up quieter speech."
-				} else {
-					"Open microphone. Mute and push to talk still apply."
-				}),
-				&mut sensitivity,
-			)
-			.changed()
-			{
-				processing.sensitivity_db = sensitivity.then_some(-55);
-			}
-			if let Some(db) = &mut processing.sensitivity_db {
-				ui.add_space(4.0);
-				design::slider(ui, db, -80..=0, " dBFS");
-			}
-			if let Some(level) = self.voice_preview_level {
-				ui.add(
-					egui::ProgressBar::new(((level + 80.0) / 80.0).clamp(0.0, 1.0))
-						.text(format!("Input level: {level:.0} dBFS"))
-						.fill(
-							if processing
-								.sensitivity_db
-								.is_none_or(|threshold| level >= f32::from(threshold))
-							{
-								colors.positive
-							} else {
-								colors.warning
-							},
-						),
-				);
-			} else {
-				design::hint(
-					ui,
-					"Start the microphone test or join a call to see your input level.",
-				);
-			}
-			design::card_divider(ui);
-			let choices = [
-				(NoiseSuppression::Off, "Off"),
-				(NoiseSuppression::RnNoise, "RNNoise"),
-				(NoiseSuppression::WebRtc, "WebRTC"),
-			];
-			design::row(
-				ui,
-				"Noise suppression",
-				Some("Removes keyboard, fan and room noise from your microphone."),
-				|ui| {
-					egui::ComboBox::from_id_salt("voice-noise-suppression")
-						.selected_text(
-							choices
-								.iter()
-								.find(|(value, _)| *value == processing.suppression)
-								.map_or("Off", |(_, label)| *label),
-						)
-						.width(ui.available_width().min(160.0))
-						.show_ui(ui, |ui| {
-							for (value, label) in choices {
-								ui.selectable_value(&mut processing.suppression, value, label);
-							}
-						});
-				},
-			);
-			if processing.suppression == NoiseSuppression::WebRtc {
-				ui.add_space(6.0);
-				let strength = ["Low", "Moderate", "High", "Very high"];
-				design::row(ui, "Suppression strength", None, |ui| {
-					egui::ComboBox::from_id_salt("voice-suppression-strength")
-						.selected_text(strength[usize::from(processing.suppression_level.min(3))])
-						.width(ui.available_width().min(160.0))
-						.show_ui(ui, |ui| {
-							for (index, label) in strength.iter().enumerate() {
-								ui.selectable_value(
-									&mut processing.suppression_level,
-									index as u8,
-									*label,
-								);
-							}
-						});
-				});
-			}
-			design::card_divider(ui);
-			design::switch(
-				ui,
-				"Echo cancellation",
-				Some("Reduce speaker audio picked up by your microphone."),
-				&mut processing.echo_cancellation,
-			);
-			design::card_divider(ui);
-			design::switch(
-				ui,
-				"Automatic gain control",
-				Some("Adjust microphone loudness automatically."),
-				&mut processing.automatic_gain,
-			);
+
+		design::card_divider(ui);
+		let effective = self.voice_processing.effective();
+		let mut echo = effective.echo_cancellation;
+		if design::switch(
+			ui,
+			"Echo cancellation",
+			Some("Recommended when speakers can be picked up by your microphone."),
+			&mut echo,
+		)
+		.changed()
+		{
+			self.voice_processing.edit().echo_cancellation = echo;
 		}
+		let effective = self.voice_processing.effective();
+		let mut gain = effective.automatic_gain;
+		if design::switch(
+			ui,
+			"Automatic microphone volume",
+			Some("Keeps speech at a more consistent loudness without changing your output volume."),
+			&mut gain,
+		)
+		.changed()
+		{
+			self.voice_processing.edit().automatic_gain = gain;
+		}
+
 		design::card_divider(ui);
 		design::switch(
 			ui,
 			"Push to talk",
-			Some("Hold your configured shortcut when you want to speak."),
+			Some("When enabled, your microphone transmits only while the configured shortcut is held."),
 			&mut self.voice_push_to_talk,
 		)
 		.on_hover_text("Mute and deafen always take priority.");
+
+		design::card_divider(ui);
+		egui::CollapsingHeader::new("Advanced input settings")
+			.default_open(false)
+			.show(ui, |ui| {
+				let effective = self.voice_processing.effective();
+				let mut sensitivity = effective.sensitivity_db.is_some();
+				if design::switch(
+					ui,
+					"Voice activity threshold",
+					Some(if sensitivity {
+						"Only transmit sound above the threshold."
+					} else {
+						"Open voice activity; mute and push to talk still apply."
+					}),
+					&mut sensitivity,
+				)
+				.changed()
+				{
+					self.voice_processing.edit().sensitivity_db =
+						sensitivity.then_some(effective.sensitivity_db.unwrap_or(-55));
+				}
+				if sensitivity {
+					let mut threshold = self
+						.voice_processing
+						.effective()
+						.sensitivity_db
+						.unwrap_or(-55);
+					let before = threshold;
+					design::slider(ui, &mut threshold, -80..=0, " dBFS");
+					if threshold != before {
+						self.voice_processing.edit().sensitivity_db = Some(threshold);
+					}
+				}
+				if let Some(level) = self.voice_preview_level {
+					ui.add(
+						egui::ProgressBar::new(((level + 80.0) / 80.0).clamp(0.0, 1.0))
+							.text(format!("Input level: {level:.0} dBFS"))
+							.fill(colors.positive),
+					);
+				}
+				if self.voice_processing.effective().suppression == NoiseSuppression::WebRtc {
+					design::card_divider(ui);
+					let labels = ["Low", "Moderate", "High", "Very high"];
+					let mut strength = self
+						.voice_processing
+						.effective()
+						.suppression_level
+						.min(3);
+					design::row(
+						ui,
+						"Strong suppression level",
+						Some("Higher levels remove more noise but can affect natural voice detail."),
+						|ui| {
+							egui::ComboBox::from_id_salt("voice-suppression-strength")
+								.selected_text(labels[usize::from(strength)])
+								.width(ui.available_width().min(160.0))
+								.show_ui(ui, |ui| {
+									for (index, label) in labels.iter().enumerate() {
+										ui.selectable_value(&mut strength, index as u8, *label);
+									}
+								});
+						},
+					);
+					if strength != self.voice_processing.effective().suppression_level {
+						self.voice_processing.edit().suppression_level = strength;
+					}
+				}
+				design::card_divider(ui);
+				ui.horizontal_wrapped(|ui| {
+					if design::text_action(ui, "Recommended defaults").clicked() {
+						self.voice_processing = Default::default();
+					}
+					if design::text_action(ui, "Raw microphone").clicked() {
+						let processing = self.voice_processing.edit();
+						processing.suppression = NoiseSuppression::Off;
+						processing.echo_cancellation = false;
+						processing.automatic_gain = false;
+						processing.sensitivity_db = None;
+					}
+				});
+			});
 	}
 
 	/// Whether the local mute/deafen controls may emit commands for the active call.
@@ -3509,11 +3541,11 @@ fn device_combo(
 	selected: &mut Option<String>,
 ) -> egui::Response {
 	let label = match selected.as_ref() {
-		None => "System default",
+		None => "System default (recommended)",
 		Some(id) => devices
 			.iter()
 			.find(|(key, _)| key == id)
-			.map_or("Device unavailable", |(_, label)| label.as_str()),
+			.map_or("Device unavailable — choose another", |(_, label)| label.as_str()),
 	};
 	egui::ComboBox::from_id_salt(id)
 		.selected_text(label)
@@ -3522,7 +3554,7 @@ fn device_combo(
 		.height(220.0)
 		.show_ui(ui, |ui| {
 			ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-			ui.selectable_value(selected, None, "System default");
+			ui.selectable_value(selected, None, "System default (recommended)");
 			for (id, label) in devices.iter().take(32) {
 				ui.selectable_value(selected, Some(id.clone()), label)
 					.on_hover_text(label);
@@ -3758,7 +3790,7 @@ mod tests {
 			}
 		};
 		let mut messaging = MessagingUi::default();
-		for label in ["Choose camera", "System default", "USB Camera (preview)"] {
+		for label in ["Choose camera", "System default (recommended)", "USB Camera (preview)"] {
 			frame(&mut messaging, vec![]);
 			let text = frame(&mut messaging, vec![]);
 			let pos = text
@@ -4090,7 +4122,7 @@ mod tests {
 				&ctx,
 				&mut messaging,
 				demo,
-				position(&text, "System default"),
+				position(&text, "System default (recommended)"),
 			);
 			let text = frame(&ctx, &mut messaging, demo, vec![]);
 			if demo {
@@ -4102,7 +4134,7 @@ mod tests {
 					&ctx,
 					&mut messaging,
 					demo,
-					position(&text, "Refresh devices"),
+					position(&text, "Rescan devices"),
 				);
 				let text = frame(&ctx, &mut messaging, demo, vec![]);
 				click(&ctx, &mut messaging, demo, position(&text, "Reset levels"));
