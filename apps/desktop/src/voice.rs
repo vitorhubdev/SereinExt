@@ -110,15 +110,15 @@ impl CallCues {
 		owner: Id,
 		participants: &[voice::Participant],
 	) -> Option<Sound> {
-		let joined = !self.joined && ready;
 		self.joined |= ready;
 		if !self.joined {
 			return None;
 		}
-		let cue = joined.then_some(Sound::UserJoin);
 		if !gateway_connected {
+			// RESUME/READY can replay the whole voice roster. Drop only the comparison
+			// baseline so reconnect never sounds like a room full of fresh joins.
 			self.peers = None;
-			return cue;
+			return None;
 		}
 		let mut peers = [0; voice::MAX_PARTICIPANTS];
 		for (slot, participant) in peers.iter_mut().zip(
@@ -140,10 +140,10 @@ impl CallCues {
 				.iter()
 				.any(|user| *user != 0 && !peers.contains(user))
 		});
-		// The initial ready cue belongs to this device. Once a baseline exists, announce
-		// remote membership transitions too; this avoids treating the first snapshot as
-		// a room full of fresh joins.
-		cue.or(joined_peer.then_some(Sound::UserJoin))
+		// The first complete roster is a silent baseline. Only later identity transitions
+		// are audible; joining the call ourselves must never masquerade as another user.
+		joined_peer
+			.then_some(Sound::UserJoin)
 			.or(departed.then_some(Sound::UserLeave))
 	}
 }
@@ -1391,7 +1391,8 @@ mod tests {
 		assert_eq!(cues.poll(false, true, owner.user, &[owner, peer]), None);
 		assert_eq!(
 			cues.poll(true, true, owner.user, &[owner, peer]),
-			Some(Sound::UserJoin)
+			None,
+			"the first complete roster is a silent baseline"
 		);
 		let mut muted_peer = peer;
 		muted_peer.muted = true;
@@ -1413,7 +1414,11 @@ mod tests {
 			None
 		);
 		assert_eq!(cues.poll(false, false, owner.user, &[]), None);
-		assert_eq!(cues.poll(true, true, owner.user, &[owner]), None);
+		assert_eq!(
+			cues.poll(true, true, owner.user, &[owner]),
+			None,
+			"reconnect establishes a fresh silent roster baseline"
+		);
 		// A peer entering after the baseline is a real join transition.
 		assert_eq!(
 			cues.poll(true, true, owner.user, &[owner, peer]),
@@ -1426,8 +1431,8 @@ mod tests {
 		assert_eq!(cues.poll(true, true, owner.user, &[owner]), None);
 		assert_eq!(
 			CallCues::default().poll(true, true, owner.user, &[owner]),
-			Some(Sound::UserJoin),
-			"a new explicitly started call has its own join cue"
+			None,
+			"joining the call ourselves is never announced as a remote user join"
 		);
 	}
 
