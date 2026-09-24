@@ -33,6 +33,13 @@ impl ClientState {
 			Self::Offline | Self::Other => None,
 		}
 	}
+	fn from_model(status: model::ClientPresence) -> Self {
+		match status {
+			model::ClientPresence::Online => Self::Online,
+			model::ClientPresence::Idle => Self::Idle,
+			model::ClientPresence::DoNotDisturb => Self::Dnd,
+		}
+	}
 }
 impl<'de> Deserialize<'de> for ClientState {
 	fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
@@ -58,21 +65,34 @@ impl<'de> Deserialize<'de> for ClientState {
 		d.deserialize_str(State)
 	}
 }
-#[derive(Deserialize)]
-struct ClientStatus {
+#[derive(Clone, Copy, Deserialize, Default)]
+pub(crate) struct ClientStatus {
 	#[serde(default)]
 	desktop: Option<ClientState>,
 	#[serde(default)]
 	mobile: Option<ClientState>,
 	#[serde(default)]
 	web: Option<ClientState>,
+	#[serde(default)]
+	vr: Option<ClientState>,
 }
 impl ClientStatus {
-	fn model(self) -> model::ClientPlatforms {
+	pub(crate) fn platforms(&self) -> model::ClientPlatforms {
 		model::ClientPlatforms {
 			desktop: self.desktop.and_then(ClientState::model),
 			mobile: self.mobile.and_then(ClientState::model),
 			web: self.web.and_then(ClientState::model),
+			vr: self.vr.and_then(ClientState::model),
+		}
+	}
+}
+impl From<model::ClientPlatforms> for ClientStatus {
+	fn from(platforms: model::ClientPlatforms) -> Self {
+		Self {
+			desktop: platforms.desktop.map(ClientState::from_model),
+			mobile: platforms.mobile.map(ClientState::from_model),
+			web: platforms.web.map(ClientState::from_model),
+			vr: platforms.vr.map(ClientState::from_model),
 		}
 	}
 }
@@ -385,7 +405,7 @@ pub fn decode(bytes: &[u8]) -> Result<PresenceUpdate, DecodeError> {
 		Patch::Absent => Patch::Absent,
 		Patch::Null => Patch::Null,
 		Patch::Value(value) => {
-			let value = value.model();
+			let value = value.platforms();
 			if value.is_empty() { Patch::Null } else { Patch::Value(value) }
 		}
 	};
@@ -977,11 +997,12 @@ mod tests {
 	}
 	#[test]
 	fn client_status_retains_only_known_platform_states() {
-		let update = decode(br#"{"user":{"id":"2"},"status":"online","client_status":{"desktop":"online","mobile":"idle","web":"dnd"}}"#).unwrap();
+		let update = decode(br#"{"user":{"id":"2"},"status":"online","client_status":{"desktop":"online","mobile":"idle","web":"dnd","vr":"online"}}"#).unwrap();
 		let Patch::Value(clients) = update.clients else { panic!("client status must be retained") };
 		assert_eq!(clients.desktop, Some(model::ClientPresence::Online));
 		assert_eq!(clients.mobile, Some(model::ClientPresence::Idle));
 		assert_eq!(clients.web, Some(model::ClientPresence::DoNotDisturb));
+		assert_eq!(clients.vr, Some(model::ClientPresence::Online));
 		let update = decode(br#"{"user":{"id":"2"},"client_status":{"desktop":"future","mobile":"offline"}}"#).unwrap();
 		assert_eq!(update.clients, Patch::Null);
 	}
