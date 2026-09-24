@@ -173,6 +173,15 @@ impl GifMode {
 
 const CUSTOM_LIMIT: usize = model::MAX_GUILD_EMOJIS;
 
+/// Display the current conversation's server first without reallocating or mutating account order.
+fn prioritized_guild_index(display: usize, active: Option<usize>) -> usize {
+	match active {
+		Some(active) if display == 0 => active,
+		Some(active) if display <= active => display - 1,
+		_ => display,
+	}
+}
+
 /// Case-insensitive substring test against an already lowercased `needle`. ASCII names
 /// (Discord permits only `[A-Za-z0-9_]`) compare in place; only non-ASCII server names allocate.
 fn contains_ignore_case(haystack: &str, needle: &str) -> bool {
@@ -1031,6 +1040,10 @@ impl Picker {
 										self.query.clear();
 										self.filter();
 									}
+									let active_guild = state
+										.channel(channel)
+										.and_then(|channel| channel.guild)
+										.and_then(|guild| state.guilds.iter().position(|item| item.id == guild));
 									egui::ScrollArea::vertical()
 										.id_salt("emoji-server-rail")
 										.scroll_bar_visibility(
@@ -1038,7 +1051,8 @@ impl Picker {
 										)
 										.max_height(ui.available_height())
 										.show_rows(ui, 32.0, state.guilds.len(), |ui, rows| {
-											for index in rows {
+											for display in rows {
+												let index = prioritized_guild_index(display, active_guild);
 												let guild = &state.guilds[index];
 												let active = self.server == Some(guild.id);
 												let response = ui
@@ -2016,6 +2030,22 @@ fn cell(
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn current_server_is_first_without_changing_the_remaining_order() {
+		assert_eq!(
+			(0..5)
+				.map(|index| prioritized_guild_index(index, Some(3)))
+				.collect::<Vec<_>>(),
+			[3, 0, 1, 2, 4]
+		);
+		assert_eq!(
+			(0..4)
+				.map(|index| prioritized_guild_index(index, None))
+				.collect::<Vec<_>>(),
+			[0, 1, 2, 3]
+		);
+	}
 
 	#[test]
 	#[ignore = "release picker frame benchmark; ten warmup frames and one warmup/five measured batches"]
