@@ -396,6 +396,8 @@ pub struct MessagingUi {
 	composer_edit: Option<(Id, Id)>,
 	edit_sent: bool,
 	deleting: Option<(Id, Id)>,
+	/// One confirmed delete action over at most five messages authored by this account.
+	deleting_batch: Option<(Id, Vec<Id>)>,
 	ime_active: bool,
 	mention_menu: mentions::Menu,
 	slash_commands: slash_commands::Menu,
@@ -882,6 +884,15 @@ impl MessagingUi {
 			.is_some_and(|(c, id)| c == channel && ids.contains(&id))
 		{
 			self.deleting = None;
+		}
+		self.timeline.batch_delete.retain(|id| !ids.contains(id));
+		if let Some((batch_channel, selected)) = &mut self.deleting_batch
+			&& *batch_channel == channel
+		{
+			selected.retain(|id| !ids.contains(id));
+			if selected.is_empty() {
+				self.deleting_batch = None;
+			}
 		}
 		let Some((edit_channel, message, _)) = &self.editing else {
 			return;
@@ -3801,6 +3812,15 @@ impl MessagingUi {
 						{
 							commands.push(command);
 						}
+						if self.timeline.batch_delete_requested {
+							self.timeline.batch_delete_requested = false;
+							if let Some(channel) = state.selected {
+								let ids: Vec<_> = self.timeline.batch_delete.iter().copied().collect();
+								if !ids.is_empty() && ids.len() <= 5 {
+									self.deleting_batch = Some((channel, ids));
+								}
+							}
+						}
 						if let Some(id) = self.timeline.remove_preserved.take() {
 							state.discard_preserved_deleted(id);
 						}
@@ -4275,6 +4295,51 @@ impl MessagingUi {
 				}
 				Some(dialog::Choice::Cancelled) => self.deleting = None,
 				None => {}
+			}
+		}
+		if let Some((channel, ids)) = self.deleting_batch.clone() {
+			let own = state.user.as_ref().map(|user| user.id);
+			let allowed = !ids.is_empty()
+				&& ids.len() <= 5
+				&& ids.iter().all(|id| {
+					state.timeline.get(*id).is_some_and(|message| {
+						message.channel == channel
+							&& Some(message.author.id) == own
+							&& state.can_delete(channel, *id)
+					})
+				});
+			let conversation = state
+				.channel(channel)
+				.map_or("this conversation", |c| c.name.as_str());
+			let mut confirm = dialog::Confirm::new(
+				"delete-message-batch",
+				format!("Delete {} messages?", ids.len()),
+				format!(
+					"This permanently removes the selected messages from {conversation} for everyone. Only messages authored by your account are included."
+				),
+			)
+			.danger()
+			.confirm_label("Delete selected")
+			.cancel_label("Keep Messages")
+			.enabled(allowed);
+			if !allowed {
+				confirm = confirm.note(
+					dialog::Level::Warning,
+					"One or more selected messages can no longer be deleted. Review the selection.",
+				);
+			}
+			match confirm.show(&ctx) {
+				Some(dialog::Choice::Confirmed) if allowed => {
+					for id in ids {
+						if let Some(command) = state.prepare_delete(channel, id) {
+							commands.push(command);
+						}
+					}
+					self.timeline.batch_delete.clear();
+					self.deleting_batch = None;
+				}
+				Some(dialog::Choice::Cancelled) => self.deleting_batch = None,
+				_ => {}
 			}
 		}
 		self.show_call_switch(&ctx, state, &mut commands);
