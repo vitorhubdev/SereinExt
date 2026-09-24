@@ -886,13 +886,18 @@ impl MessagingUi {
 			self.deleting = None;
 		}
 		self.timeline.batch_delete.retain(|id| !ids.contains(id));
-		if let Some((batch_channel, selected)) = &mut self.deleting_batch
-			&& *batch_channel == channel
-		{
-			selected.retain(|id| !ids.contains(id));
-			if selected.is_empty() {
-				self.deleting_batch = None;
+		let clear_batch = if let Some((batch_channel, selected)) = &mut self.deleting_batch {
+			if *batch_channel == channel {
+				selected.retain(|id| !ids.contains(id));
+				selected.is_empty()
+			} else {
+				false
 			}
+		} else {
+			false
+		};
+		if clear_batch {
+			self.deleting_batch = None;
 		}
 		let Some((edit_channel, message, _)) = &self.editing else {
 			return;
