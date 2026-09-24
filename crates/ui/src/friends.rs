@@ -794,6 +794,7 @@ mod tests {
 					status: Patch::Value(if index < 7 { "online" } else { "offline" }.into()),
 					custom_status: Patch::Null,
 					activities: Patch::Null,
+					clients: Patch::Absent,
 				})
 				.collect();
 			let owner = state.user.clone().unwrap();
@@ -864,6 +865,7 @@ mod tests {
 						ends_at: None,
 						started_at: None,
 					}]),
+					clients: Patch::Absent,
 				}]),
 			);
 			assert!(!friends.sync_list(&state));
@@ -886,6 +888,7 @@ mod tests {
 					status,
 					custom_status: Patch::Absent,
 					activities: Patch::Absent,
+					clients: Patch::Absent,
 				}]),
 			);
 			assert!(friends.sync_list(&state));
@@ -971,6 +974,7 @@ mod tests {
 						ends_at: None,
 						started_at: None,
 					}]),
+					clients: Patch::Absent,
 				}]),
 			);
 			assert!(!view.friends.sync_list(&state));
