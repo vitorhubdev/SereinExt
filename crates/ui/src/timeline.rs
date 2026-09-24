@@ -3250,9 +3250,17 @@ impl TimelineView {
 		}
 		if !self.batch_delete.is_empty() {
 			let height = 38.0;
+			let bottom_inset = if typing.is_some() {
+				crate::typing::OVERLAY_HEIGHT + 10.0
+			} else {
+				10.0
+			};
 			let rect = egui::Rect::from_min_size(
-				egui::pos2(area.left() + 16.0, area.bottom() - height - 10.0),
-				egui::vec2((area.width() - 32.0).max(220.0), height),
+				egui::pos2(
+					area.left() + 16.0,
+					(area.bottom() - height - bottom_inset).max(area.top()),
+				),
+				egui::vec2((area.width() - 32.0).max(1.0), height),
 			);
 			overlay_bar(
 				ui,
