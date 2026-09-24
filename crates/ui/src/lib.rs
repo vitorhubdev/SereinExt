@@ -1203,7 +1203,7 @@ impl MessagingUi {
 								.as_deref()
 								.filter(|nick| !nick.is_empty())
 								.unwrap_or_else(|| state.user_display_name(&member.user));
-							let (status, custom, activities) =
+							let (status, custom, activities, clients) =
 								profiles::member_presence(state, member, guild);
 							let subtitle = profiles::subtitle(custom, activities);
 							let online =
@@ -1252,10 +1252,11 @@ impl MessagingUi {
 									&mut self.user_action,
 								);
 								if let Some(status) = status {
-									design::presence_dot(
+									profiles::presence_badge(
 										ui,
 										avatar.rect,
-										profiles::presence_color(status),
+										status,
+										clients,
 										colors.sidebar,
 									);
 								}
@@ -1780,13 +1781,14 @@ impl MessagingUi {
 										)),
 									);
 								}
-								if dm
-									&& let Some(status) = profiles::presence(state, user.id, None).0
-								{
-									design::presence_dot(
+								let (status, _, _, clients) =
+									profiles::presence(state, user.id, None);
+								if dm && let Some(status) = status {
+									profiles::presence_badge(
 										ui,
 										avatar.rect,
-										profiles::presence_color(status),
+										status,
+										clients,
 										colors.sidebar,
 									);
 								}
@@ -1981,7 +1983,7 @@ impl MessagingUi {
 								.filter(|_| dm)
 								.and_then(|c| c.recipients.first())
 								.and_then(|user| {
-									let (_, custom, activities) =
+									let (_, custom, activities, _) =
 										profiles::presence(state, user.id, None);
 									profiles::subtitle(custom, activities)
 								});
