@@ -74,6 +74,16 @@ pub struct TimelineView {
 	pub(super) mark_unread: Option<Id>,
 	pub(super) auto_read_attempt: Option<Id>,
 	at_current_latest: bool,
+	/// The unread banner was raised during this visit; its divider survives acknowledgement.
+	unread_session: bool,
+	/// Newest live-edge message the reader had on screen during this visit.
+	seen_latest: Option<Id>,
+	/// Channel left this frame and the latest message actually seen there.
+	pub(super) leave_read: Option<(Id, Id)>,
+	/// The reader dismissed the unread banner while this was the channel's latest message.
+	unread_dismissed: Option<Option<Id>>,
+	/// The unread banner asked to acknowledge this channel up to its latest message.
+	pub(super) mark_channel_read: Option<Id>,
 	pub(super) reaction_picker: Option<(Id, egui::Rect, egui::Id)>,
 	pub(super) reaction: Option<(Id, Option<model::ReactionEmoji>)>,
 	pub(super) reaction_users: Option<(Id, model::ReactionEmoji, bool)>,
@@ -1025,25 +1035,16 @@ fn banner_rect(area: egui::Rect) -> egui::Rect {
 	)
 }
 
-fn history_banner(
-	ui: &mut egui::Ui,
-	rect: egui::Rect,
-	unread: bool,
-	jump: bool,
-	newer: bool,
-) -> (bool, bool) {
+/// Returns whether the reader asked to jump to unread or mark the channel read.
+fn unread_banner(ui: &mut egui::Ui, rect: egui::Rect, jump: bool) -> (bool, bool) {
 	let colors = crate::design::palette(ui);
 	let mut jump_unread = false;
-	let mut load_newer = false;
-	let text = if unread {
-		colors.accent_text
-	} else {
-		colors.text
-	};
+	let mut mark_read = false;
+	let text = colors.accent_text;
 	overlay_bar(
 		ui,
 		rect,
-		if unread { colors.accent } else { colors.raised },
+		colors.accent,
 		egui::CornerRadius {
 			nw: 0,
 			ne: 0,
@@ -1051,34 +1052,20 @@ fn history_banner(
 			se: 8,
 		},
 		|ui| {
-			ui.label(
-				crate::design::medium(
-					ui,
-					if unread {
-						"Unread messages"
-					} else {
-						"Viewing older messages"
-					},
-					13.0,
-				)
-				.color(text),
-			);
+			ui.label(crate::design::medium(ui, "Unread messages", 13.0).color(text));
 			ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+				if bar_button(ui, "Mark as read", crate::icons::Icon::Check, text).clicked() {
+					mark_read = true;
+				}
 				if jump
 					&& bar_button(ui, "Jump to unread", crate::icons::Icon::ArrowUp, text).clicked()
 				{
 					jump_unread = true;
 				}
-				if newer
-					&& bar_button(ui, "Next messages", crate::icons::Icon::ArrowDown, text)
-						.clicked()
-				{
-					load_newer = true;
-				}
 			});
 		},
 	);
-	(jump_unread, load_newer)
+	(jump_unread, mark_read)
 }
 /// Discord-style system row: muted sentence, strong clickable names, inline timestamp.
 #[allow(clippy::too_many_arguments)]
@@ -1249,6 +1236,7 @@ impl TimelineView {
 		self.auto_read_attempt = None;
 		self.mark_read = None;
 		self.mark_unread = None;
+		self.seen_latest = None;
 	}
 	pub(super) fn follow_latest(&mut self, state: &State) {
 		self.latest |= state.history_targeted
@@ -1346,6 +1334,7 @@ impl TimelineView {
 				browser_opening: self.browser_opening.take(),
 				pending_viewer: self.pending_viewer.take(),
 				jump: following,
+				leave_read: self.channel.zip(self.seen_latest),
 				..Self::default()
 			};
 		}
@@ -1400,7 +1389,10 @@ impl TimelineView {
 					.find(|m| read.is_none_or(|id| m.id > id))
 					.map(|m| m.id)
 			})
-			.filter(|_| !watching_latest || self.unread_boundary.is_some());
+			.filter(|_| !watching_latest || self.unread_boundary.is_some())
+			.or(self
+				.unread_boundary
+				.filter(|id| state.timeline.get(*id).is_some()));
 		if self.unread_boundary != boundary {
 			self.unread_boundary = boundary;
 			self.revision = u64::MAX;
@@ -1564,12 +1556,20 @@ impl TimelineView {
 			let area = ui.available_rect_before_wrap().intersect(ui.clip_rect());
 			loading_messages(ui);
 			session.bind(ui, ui.scope_id().with(("timeline", state.selected)), area);
-			if state.show_missed_banner() {
-				let (jump_unread, _) =
-					history_banner(ui, banner_rect(area), true, state.can_jump_unread(), false);
+			let latest = state
+				.selected
+				.and_then(|channel| state.channel(channel))
+				.and_then(|channel| channel.last_message);
+			if state.show_missed_banner() && self.unread_dismissed != Some(latest) {
+				let (jump_unread, mark_read) =
+					unread_banner(ui, banner_rect(area), state.can_jump_unread());
 				if jump_unread {
 					self.unread_jump = true;
 					self.browse_away();
+				}
+				if mark_read {
+					self.unread_dismissed = Some(latest);
+					self.mark_channel_read = state.selected;
 				}
 			}
 			return;
@@ -3088,6 +3088,10 @@ impl TimelineView {
 					Some(channel.id) == state.selected && channel.last_message == Some(message.id)
 				})
 			});
+		let channel_latest = state
+			.selected
+			.and_then(|channel| state.channel(channel))
+			.and_then(|channel| channel.last_message);
 		let scrolled_toward_bottom = ui.input(|input| {
 			(scroll_delta < 0.0
 				&& (session.holding()
@@ -3109,6 +3113,7 @@ impl TimelineView {
 			} else if scrolled_toward_bottom {
 				self.target_browsing = false;
 				self.hold_read_ack = false;
+				self.unread_dismissed = Some(channel_latest);
 				if state.history_targeted || state.history_after.is_some() {
 					self.latest = true;
 				}
@@ -3119,6 +3124,15 @@ impl TimelineView {
 		}
 		let was_following = self.following;
 		self.following = at_bottom && !self.target_browsing;
+		if self.following
+			&& self.at_current_latest
+			&& !state.history_targeted
+			&& state.history_after.is_none()
+			&& ui.input(|i| i.focused)
+			&& let Some(latest) = state.live_edge_latest()
+		{
+			self.seen_latest = Some(latest);
+		}
 		if self.following
 			&& !self.hold_read_ack
 			&& ui.is_enabled()
@@ -3293,7 +3307,7 @@ impl TimelineView {
 		let missed = state.show_missed_banner();
 		let opening_unread =
 			missed && state.freshness == model::Freshness::Loading && state.history_pending;
-		let show_unread = missed
+		let raise_unread = missed
 			&& (state.timeline.iter().next().is_some() || opening_unread)
 			&& (opening_unread
 				|| self.hold_read_ack
@@ -3301,29 +3315,34 @@ impl TimelineView {
 					&& self.at_current_latest
 					&& state.live_edge_latest().is_some()
 					&& ui.input(|input| input.focused)));
-		let can_jump_unread = show_unread && state.can_jump_unread();
-		// Latest-message metadata can outlive a deleted message. A complete, visible
-		// latest page has nowhere useful to jump; targeted pages still need navigation.
-		if (show_unread || can_load_newer)
+		// Once raised, the divider stays for this visit; the banner may be dismissed until
+		// a newer service-latest message arrives.
+		let dismissed = self.unread_dismissed == Some(channel_latest);
+		let kept_unread = self.unread_session && self.unread_boundary.is_some() && !dismissed;
+		let show_unread = (raise_unread || kept_unread) && !dismissed;
+		let can_jump_unread = show_unread && (state.can_jump_unread() || kept_unread);
+		// Older history needs no full-width bar: the round control already returns to present.
+		if show_unread
 			&& (!whole_conversation_visible
 				|| browsing_history
 				|| opening_unread
-				|| self.hold_read_ack)
+				|| self.hold_read_ack
+				|| kept_unread)
 		{
-			let (jump_unread, load_newer) = history_banner(
-				ui,
-				banner_rect(area),
-				show_unread,
-				can_jump_unread,
-				can_load_newer,
-			);
+			self.unread_session |= self.unread_boundary.is_some();
+			let (jump_unread, mark_read) =
+				unread_banner(ui, banner_rect(area), can_jump_unread);
 			if jump_unread {
-				self.unread_jump = true;
-				self.browse_away();
+				if state.can_jump_unread() {
+					self.unread_jump = true;
+					self.browse_away();
+				} else if let Some(boundary) = self.unread_boundary {
+					self.request_reply_target(boundary);
+				}
 			}
-			if load_newer {
-				self.load_newer = true;
-				self.browse_away();
+			if mark_read {
+				self.unread_dismissed = Some(channel_latest);
+				self.mark_channel_read = state.selected;
 			}
 		}
 		// Older pages appended to the live timeline keep their cursor after loading; that
