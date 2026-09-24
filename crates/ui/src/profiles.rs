@@ -483,12 +483,51 @@ pub(crate) fn presence_color(status: &str) -> Color32 {
 		_ => Color32::from_rgb(128, 132, 142),
 	}
 }
+fn presence_description(status: &str, clients: model::ClientPlatforms) -> String {
+	clients.mobile.map_or_else(
+		|| presence_label(status).into(),
+		|mobile| format!("{} · Mobile {}", presence_label(status), mobile.label()),
+	)
+}
+pub(crate) fn presence_badge(
+	ui: &mut egui::Ui,
+	rect: Rect,
+	status: &str,
+	clients: model::ClientPlatforms,
+	ring: Color32,
+) {
+	let radius = (rect.width() * 0.2).clamp(6.0, 10.0);
+	let center = rect.right_bottom() - Vec2::splat(radius + 0.5);
+	if clients.mobile.is_some() {
+		// Draw the handset directly so platform presence does not depend on a new atlas asset.
+		let phone = Rect::from_center_size(center, vec2(radius * 1.15, radius * 1.8));
+		ui.painter().rect_filled(phone.expand(2.0), 3.0, ring);
+		ui.painter().rect_filled(phone, 2.0, presence_color(status));
+		let screen = Rect::from_min_max(
+			phone.min + vec2(2.0, 2.0),
+			phone.max - vec2(2.0, 3.0),
+		);
+		ui.painter().rect_filled(screen, 1.0, ring);
+	} else {
+		design::presence_dot(ui, rect, presence_color(status), ring);
+	}
+	ui.allocate_rect(
+		Rect::from_center_size(center, Vec2::splat((radius + 2.0) * 2.0)),
+		egui::Sense::hover(),
+	)
+	.on_hover_text(presence_description(status, clients));
+}
 /// Keep known guild presence through range loads and reconnects; access loss clears the snapshot.
 pub(crate) fn presence(
 	state: &State,
 	user: Id,
 	guild: Option<Id>,
-) -> (Option<&str>, Option<&str>, &[model::RichActivity]) {
+) -> (
+	Option<&str>,
+	Option<&str>,
+	&[model::RichActivity],
+	model::ClientPlatforms,
+) {
 	let remote = if let Some(member) = state
 		.members
 		.as_ref()
@@ -512,17 +551,20 @@ pub(crate) fn presence(
 			member.status.as_deref(),
 			member.custom_status.as_deref(),
 			member.activities.as_slice(),
+			member.clients,
 		)
 	} else {
-		state
-			.presence_for(user)
-			.map_or((None, None, &[][..]), |presence| {
+		state.presence_for(user).map_or(
+			(None, None, &[][..], model::ClientPlatforms::default()),
+			|presence| {
 				(
 					presence.status.as_deref(),
 					presence.custom_status.as_deref(),
 					presence.activities.as_slice(),
+					presence.clients,
 				)
-			})
+			},
+		)
 	};
 	with_local_activity(state, user, remote)
 }
@@ -531,7 +573,12 @@ pub(crate) fn member_presence<'a>(
 	state: &'a State,
 	member: &'a model::Member,
 	guild: Option<Id>,
-) -> (Option<&'a str>, Option<&'a str>, &'a [model::RichActivity]) {
+) -> (
+	Option<&'a str>,
+	Option<&'a str>,
+	&'a [model::RichActivity],
+	model::ClientPlatforms,
+) {
 	let remote = if guild.is_some()
 		&& state.members.as_ref().is_some_and(|list| {
 			list.guild == guild
@@ -542,17 +589,20 @@ pub(crate) fn member_presence<'a>(
 			member.status.as_deref(),
 			member.custom_status.as_deref(),
 			member.activities.as_slice(),
+			member.clients,
 		)
 	} else {
-		state
-			.presence_for(member.user.id)
-			.map_or((None, None, &[][..]), |p| {
+		state.presence_for(member.user.id).map_or(
+			(None, None, &[][..], model::ClientPlatforms::default()),
+			|p| {
 				(
 					p.status.as_deref(),
 					p.custom_status.as_deref(),
 					p.activities.as_slice(),
+					p.clients,
 				)
-			})
+			},
+		)
 	};
 	with_local_activity(state, member.user.id, remote)
 }
@@ -560,12 +610,22 @@ pub(crate) fn member_presence<'a>(
 fn with_local_activity<'a>(
 	state: &'a State,
 	user: Id,
-	remote: (Option<&'a str>, Option<&'a str>, &'a [model::RichActivity]),
-) -> (Option<&'a str>, Option<&'a str>, &'a [model::RichActivity]) {
+	remote: (
+		Option<&'a str>,
+		Option<&'a str>,
+		&'a [model::RichActivity],
+		model::ClientPlatforms,
+	),
+) -> (
+	Option<&'a str>,
+	Option<&'a str>,
+	&'a [model::RichActivity],
+	model::ClientPlatforms,
+) {
 	if state.user.as_ref().is_some_and(|own| own.id == user)
 		&& let Some(activity) = state.local_game_activity()
 	{
-		(remote.0, remote.1, std::slice::from_ref(activity))
+		(remote.0, remote.1, std::slice::from_ref(activity), remote.3)
 	} else {
 		remote
 	}
@@ -1019,14 +1079,11 @@ pub fn show(
 		.selected
 		.and_then(|id| state.channels.iter().find(|c| c.id == id))
 		.and_then(|c| c.guild);
-	let (status, custom, activities) = if user.webhook {
-		(None, None, [].as_slice())
+	let (status, custom, activities, clients) = if user.webhook {
+		(None, None, [].as_slice(), model::ClientPlatforms::default())
 	} else {
 		presence(state, user.id, guild)
 	};
-	let clients = (!user.webhook)
-		.then(|| state.client_platforms_for(user.id))
-		.flatten();
 	let dm_channel = state
 		.channels
 		.iter()
@@ -1201,15 +1258,7 @@ pub fn show(
 				}
 			});
 			if let Some(status) = status {
-				let center = avatar_rect.right_bottom() - vec2(12.0, 12.0);
-				ui.painter().circle_filled(center, 13.0, theme.card);
-				ui.painter()
-					.circle_filled(center, 9.0, presence_color(status));
-				ui.allocate_rect(
-					Rect::from_center_size(center, Vec2::splat(20.0)),
-					egui::Sense::hover(),
-				)
-				.on_hover_text(presence_label(status));
+				presence_badge(ui, avatar_rect, status, clients, theme.card);
 			}
 			let mut header_bottom = avatar_rect.bottom();
 			let (icon_badges, text_badges): (Vec<_>, Vec<_>) = data
@@ -1379,7 +1428,7 @@ pub fn show(
 								)
 								.truncate(),
 							);
-							if let Some(clients) = clients {
+							if !clients.is_empty() {
 								ui.add_space(2.0);
 								ui.horizontal_wrapped(|ui| {
 									ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
@@ -1387,6 +1436,7 @@ pub fn show(
 										("Desktop", clients.desktop),
 										("Mobile", clients.mobile),
 										("Web", clients.web),
+										("VR", clients.vr),
 									] {
 										let Some(status) = status else { continue };
 										egui::Frame::new()
