@@ -801,6 +801,93 @@ impl MessagingUi {
 		}
 	}
 
+	pub(super) fn take_voice_fullscreen_request(&mut self) -> Option<bool> {
+		self.voice_stream_fullscreen_request.take()
+	}
+
+	fn exit_voice_stream_fullscreen(&mut self, ctx: &egui::Context) {
+		if self.voice_stream_fullscreen {
+			self.voice_stream_fullscreen = false;
+			self.voice_stream_fullscreen_request = Some(self.voice_stream_fullscreen_previous);
+			ctx.request_repaint();
+		}
+	}
+
+	/// Full-client presentation of the currently watched screen share. The native host mirrors
+	/// the viewport fullscreen state, while this overlay removes the surrounding Discord chrome.
+	pub(super) fn show_voice_stream_fullscreen(
+		&mut self,
+		ctx: &egui::Context,
+		state: &State,
+	) -> bool {
+		if !self.voice_stream_fullscreen {
+			return false;
+		}
+		let valid = state.voice.active.as_ref().is_some_and(|call| {
+			call.watching.is_some()
+				&& matches!(call.phase, Phase::Connected | Phase::Waiting)
+		}) && self.voice_stream_view.is_some();
+		if !valid || ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
+			self.exit_voice_stream_fullscreen(ctx);
+			return false;
+		}
+		let screen = ctx.content_rect();
+		let id = egui::Id::new("voice-stream-fullscreen");
+		let modal = egui::Modal::new(id)
+			.area(
+				egui::Modal::default_area(id)
+					.anchor(egui::Align2::LEFT_TOP, egui::Vec2::ZERO)
+					.fade_in(false),
+			)
+			.backdrop_color(egui::Color32::BLACK)
+			.frame(egui::Frame::NONE)
+			.show(ctx, |ui| {
+				ui.set_min_size(screen.size());
+				ui.set_max_size(screen.size());
+				ui.painter().rect_filled(ui.max_rect(), 0.0, egui::Color32::BLACK);
+				if let Some(texture) = &self.voice_stream_view {
+					let margin = 18.0;
+					let stage = ui.max_rect().shrink(margin);
+					let image = fit_rect(stage, texture.size_vec2());
+					egui::Image::from_texture((texture.id(), image.size())).paint_at(ui, image);
+				}
+				let exit = egui::Rect::from_min_size(
+					ui.max_rect().right_top() + egui::vec2(-142.0, 16.0),
+					egui::vec2(126.0, 34.0),
+				);
+				if ui
+					.put(
+						exit,
+						egui::Button::new("Exit full screen")
+							.fill(egui::Color32::from_black_alpha(180)),
+					)
+					.clicked()
+				{
+					self.exit_voice_stream_fullscreen(ui.ctx());
+				}
+				let audio = egui::Rect::from_min_size(
+					ui.max_rect().left_bottom() + egui::vec2(16.0, -50.0),
+					egui::vec2(140.0, 34.0),
+				);
+				let response = ui.put(
+					audio,
+					egui::Button::new(if self.voice_stream_volume() == 0 {
+						"Stream muted"
+					} else {
+						"Stream audio"
+					})
+					.fill(egui::Color32::from_black_alpha(180)),
+				);
+				egui::Popup::menu(&response)
+					.close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+					.show(|ui| self.stream_audio_controls(ui));
+			});
+		if modal.should_close() {
+			self.exit_voice_stream_fullscreen(ctx);
+		}
+		true
+	}
+
 	/// The screen share this device chose to watch: the latest decoded picture or a status.
 	fn stream_tile(
 		&mut self,
@@ -871,6 +958,26 @@ impl MessagingUi {
 			return;
 		}
 		name_badge(ui, content, &format!("{name}'s screen"), None);
+		let full_rect = egui::Rect::from_min_size(
+			content.right_top() + egui::vec2(-118.0, 8.0),
+			egui::vec2(110.0_f32.min(content.width().max(1.0)), 28.0),
+		);
+		if ui
+			.put(
+				full_rect,
+				egui::Button::new("Full screen")
+					.fill(egui::Color32::from_black_alpha(170))
+					.corner_radius(6),
+			)
+			.on_hover_text("Watch this screen share in full screen")
+			.clicked()
+		{
+			self.voice_stream_fullscreen_previous =
+				ui.input(|input| input.viewport().fullscreen.unwrap_or(false));
+			self.voice_stream_fullscreen = true;
+			self.voice_stream_fullscreen_request = Some(true);
+			ui.ctx().request_repaint();
+		}
 		if tile_button(
 			ui,
 			content,
