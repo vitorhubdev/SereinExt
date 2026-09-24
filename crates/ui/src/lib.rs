@@ -4033,6 +4033,17 @@ impl MessagingUi {
 				self.timeline.pending_channel_reference = None;
 			}
 		}
+		if let Some((channel, message)) = self.timeline.leave_read.take()
+			&& let Some(command) = state.prepare_mark_left_channel_read(channel, message)
+		{
+			commands.push(command);
+		}
+		if let Some(channel) = self.timeline.mark_channel_read.take() {
+			self.timeline.mark_read = None;
+			if let Some(command) = state.prepare_mark_channel_read(channel) {
+				commands.push(command);
+			}
+		}
 		if let Some(message) = self.timeline.mark_unread.take() {
 			self.timeline.mark_read = None;
 			if !settings_open && let Some(command) = state.prepare_mark_unread(message) {
