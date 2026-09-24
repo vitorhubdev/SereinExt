@@ -340,6 +340,10 @@ pub struct MessagingUi {
 	voice_stream_muted: bool,
 	/// Enlarged stage tile; cleared when it stops showing video or on Escape.
 	pub voice_focus: Option<voice::StageFocus>,
+	/// Full-client watched-stream presentation and the native fullscreen transition it requests.
+	pub(super) voice_stream_fullscreen: bool,
+	pub(super) voice_stream_fullscreen_previous: bool,
+	pub(super) voice_stream_fullscreen_request: Option<bool>,
 	/// Whether the other participants stay visible as a strip under the enlarged tile.
 	pub voice_focus_participants: bool,
 	/// Session-only visibility of the selected guild voice channel's chat.
@@ -3183,8 +3187,13 @@ impl MessagingUi {
 				}
 			}
 		}
-		// Fullscreen playback owns the whole client surface, including during native resizing.
+		// Fullscreen media owns the whole client surface, including during native resizing.
 		if self.timeline.show_fullscreen_video(ui.ctx(), state) {
+			ui.painter()
+				.rect_filled(ui.max_rect(), 0, egui::Color32::BLACK);
+			return commands;
+		}
+		if self.show_voice_stream_fullscreen(ui.ctx(), state) {
 			ui.painter()
 				.rect_filled(ui.max_rect(), 0, egui::Color32::BLACK);
 			return commands;
