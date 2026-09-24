@@ -52,6 +52,9 @@ pub struct TimelineView {
 	pub(super) edit_started: bool,
 	pub(super) reply_started: bool,
 	pub(super) quick_delete: Option<(Id, Id)>,
+	/// Up to five messages authored by the current account, selected for one confirmed delete action.
+	pub(super) batch_delete: BTreeSet<Id>,
+	pub(super) batch_delete_requested: bool,
 	pub(super) channel_reference: Option<Id>,
 	pub(super) pending_channel_reference: Option<Id>,
 	pub(super) reply_target: Option<Id>,
@@ -713,6 +716,19 @@ fn action_button(ui: &mut egui::Ui, icon: crate::icons::Icon, label: &str) -> eg
 	crate::icons::button(ui, icon, 28.0, label)
 }
 
+const MAX_BATCH_DELETE: usize = 5;
+
+fn toggle_batch_delete(selected: &mut BTreeSet<Id>, id: Id) -> bool {
+	if selected.remove(&id) {
+		return true;
+	}
+	if selected.len() >= MAX_BATCH_DELETE {
+		return false;
+	}
+	selected.insert(id);
+	true
+}
+
 enum DeletedLocalAction {
 	ToggleHighlight,
 	Remove,
@@ -747,6 +763,7 @@ fn message_actions(
 	),
 	editing: (&mut Option<(Id, Id, String)>, &mut bool),
 	deleting: &mut Option<(Id, Id)>,
+	batch_delete: &mut BTreeSet<Id>,
 	pin: (bool, bool, &mut Option<(Id, Id, bool)>),
 	thread: (bool, &mut Option<(Id, Id)>),
 	forward: (bool, &mut Option<Id>),
@@ -852,6 +869,25 @@ fn message_actions(
 			*editing = Some((message.channel, message.id, message.content.clone()));
 			*edit_started = true;
 			ui.close();
+		}
+		if own && can_delete {
+			let selected = batch_delete.contains(&message.id);
+			let room = selected || batch_delete.len() < MAX_BATCH_DELETE;
+			if ui
+				.add_enabled(
+					room,
+					egui::Button::new(if selected {
+						"Remove from delete selection"
+					} else {
+						"Select for batch delete"
+					}),
+				)
+				.on_disabled_hover_text("You can select up to 5 messages at a time.")
+				.clicked()
+			{
+				let _ = toggle_batch_delete(batch_delete, message.id);
+				ui.close();
+			}
 		}
 		if (own || can_delete)
 			&& ui
@@ -1313,6 +1349,12 @@ impl TimelineView {
 				..Self::default()
 			};
 		}
+		let own_user = state.user.as_ref().map(|user| user.id);
+		self.batch_delete.retain(|id| {
+			state.timeline.get(*id).is_some_and(|message| {
+				Some(message.author.id) == own_user && state.can_delete(message.channel, *id)
+			})
+		});
 		if !self.initial_read_checked
 			&& state.freshness == model::Freshness::Fresh
 			&& !state.history_pending
@@ -2612,7 +2654,9 @@ impl TimelineView {
 					let mentioned = mentions_viewer(message, state);
 					// Mentions mark the row in the warning colour; a private command response in
 					// the house accent, as in the official client.
-					let marked = if mentioned {
+					let marked = if self.batch_delete.contains(&id) {
+						Some(colors.accent)
+					} else if mentioned {
 						Some(colors.warning)
 					} else if message.ephemeral {
 						Some(colors.accent)
@@ -2906,6 +2950,7 @@ impl TimelineView {
 									),
 									(editing, &mut self.edit_started),
 									deleting,
+									&mut self.batch_delete,
 									(
 										state.can_pin(message.channel, id),
 										state.is_pinned(message.channel, id),
@@ -3201,6 +3246,37 @@ impl TimelineView {
 				state,
 				channel,
 				now,
+			);
+		}
+		if !self.batch_delete.is_empty() {
+			let height = 38.0;
+			let rect = egui::Rect::from_min_size(
+				egui::pos2(area.left() + 16.0, area.bottom() - height - 10.0),
+				egui::vec2((area.width() - 32.0).max(220.0), height),
+			);
+			overlay_bar(
+				ui,
+				rect,
+				colors.raised.to_opaque(),
+				egui::CornerRadius::same(8),
+				|ui| {
+					ui.label(
+						crate::design::medium(
+							ui,
+							&format!("{} / {MAX_BATCH_DELETE} selected", self.batch_delete.len()),
+							13.0,
+						)
+						.color(colors.text_strong),
+					);
+					ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+						if ui.button("Delete selected…").clicked() {
+							self.batch_delete_requested = true;
+						}
+						if ui.button("Clear").clicked() {
+							self.batch_delete.clear();
+						}
+					});
+				},
 			);
 		}
 		let browsing_history = state.history_targeted
@@ -3513,6 +3589,20 @@ mod pending_tests;
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn batch_delete_selection_is_bounded_and_toggleable() {
+		let mut selected = BTreeSet::new();
+		for id in 1..=MAX_BATCH_DELETE as u64 {
+			assert!(toggle_batch_delete(&mut selected, Id(id)));
+		}
+		assert_eq!(selected.len(), MAX_BATCH_DELETE);
+		assert!(!toggle_batch_delete(&mut selected, Id(99)));
+		assert!(toggle_batch_delete(&mut selected, Id(3)));
+		assert!(!selected.contains(&Id(3)));
+		assert!(toggle_batch_delete(&mut selected, Id(99)));
+		assert_eq!(selected.len(), MAX_BATCH_DELETE);
+	}
 
 	#[test]
 	fn message_hover_keeps_the_shared_image_visible() {
@@ -4195,6 +4285,7 @@ mod tests {
 			let mut editing = None;
 			let mut edit_started = false;
 			let mut deleting = None;
+			let mut batch_delete = BTreeSet::new();
 			let mut reply = None;
 			let mut frame = |events: Vec<egui::Event>| {
 				let output = ctx.run_ui(
@@ -4216,6 +4307,7 @@ mod tests {
 							(None, None, &mut reply),
 							(&mut editing, &mut edit_started),
 							&mut deleting,
+							&mut batch_delete,
 							(false, false, &mut None),
 							(own, &mut thread_request),
 							(false, &mut None),
