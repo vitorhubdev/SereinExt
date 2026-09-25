@@ -3915,6 +3915,38 @@ mod tests {
 					);
 				}
 			}
+			if count == 1 && !tall {
+				// A short channel never scrolls, so the banner offers to acknowledge it directly.
+				let labels = banner_frame(&ctx, &mut view, &mut state, vec![], false);
+				let pos = labels
+					.iter()
+					.find(|(text, _)| text == "Mark as read")
+					.map(|(_, rect)| rect.center())
+					.expect("the unread banner offers Mark as read");
+				for pressed in [true, false] {
+					banner_frame(
+						&ctx,
+						&mut view,
+						&mut state,
+						vec![
+							egui::Event::PointerMoved(pos),
+							egui::Event::PointerButton {
+								pos,
+								button: egui::PointerButton::Primary,
+								pressed,
+								modifiers: egui::Modifiers::NONE,
+							},
+						],
+						false,
+					);
+				}
+				assert_eq!(view.mark_channel_read.take(), Some(Id(20)));
+				let labels = banner_frame(&ctx, &mut view, &mut state, vec![], false);
+				assert!(
+					!labels.iter().any(|(text, _)| text == "Unread messages"),
+					"Mark as read left the banner up: {labels:?}"
+				);
+			}
 			if count == 1 && !tall && latest == 20 {
 				// A read snapshot arriving after a local reply jump must not resume reading.
 				state.read_state.reset();
