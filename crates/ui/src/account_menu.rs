@@ -272,15 +272,14 @@ impl MessagingUi {
 					let (_, _, activities, _) = profiles::presence(state, user.id, guild);
 					if !activities.is_empty() {
 						ui.add_space(8.0);
-						for activity in activities {
-							profiles::activity_card(
-								ui,
-								activity,
-								&mut self.avatars,
-								state.demo,
-								(colors.base, colors.muted),
-							);
-						}
+						profiles::activity_list(
+							ui,
+							egui::Id::unique(("account-activity", user.id)),
+							activities,
+							&mut self.avatars,
+							state.demo,
+							(colors.base, colors.muted),
+						);
 					}
 				}
 				ui.add_space(8.0);

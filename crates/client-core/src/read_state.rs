@@ -1072,14 +1072,14 @@ mod navigation_tests {
 	}
 	#[test]
 	fn leaving_channel_acknowledges_only_latest_seen_message() {
-		let mut state = state(Some(Id(100)));
+		let mut current = state(Some(Id(100)));
 		let Some(Command::MarkRead {
 			channel,
 			message,
 			manual: false,
 			mention_count: None,
 			..
-		}) = state.prepare_mark_left_channel_read(Id(1), Id(500))
+		}) = current.prepare_mark_left_channel_read(Id(1), Id(500))
 		else {
 			panic!("leave acknowledgement")
 		};

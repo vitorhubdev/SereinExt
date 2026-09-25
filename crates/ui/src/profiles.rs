@@ -214,6 +214,109 @@ pub(crate) fn activity_card(
 		});
 }
 
+/// Rich Presence stack: one activity gets the full card, the rest collapse to one-line rows
+/// that swap in when clicked. The choice is keyed by activity name, not position.
+pub(crate) fn activity_list(
+	ui: &mut egui::Ui,
+	id: egui::Id,
+	activities: &[model::RichActivity],
+	avatars: &mut Avatars,
+	demo: bool,
+	(fill, muted): (Color32, Color32),
+) {
+	let key = |activity: &model::RichActivity| egui::Id::unique((activity.kind, &activity.name));
+	let chosen = ui.data(|data| data.get_temp::<egui::Id>(id));
+	let main = chosen
+		.and_then(|chosen| activities.iter().position(|activity| key(activity) == chosen))
+		.unwrap_or(0);
+	let Some(activity) = activities.get(main) else {
+		return;
+	};
+	activity_card(ui, activity, avatars, demo, (fill, muted));
+	for (index, activity) in activities.iter().enumerate() {
+		if index != main && activity_row(ui, activity, avatars, demo, (fill, muted)).clicked() {
+			ui.data_mut(|data| data.insert_temp(id, key(activity)));
+		}
+	}
+}
+
+fn activity_row(
+	ui: &mut egui::Ui,
+	activity: &model::RichActivity,
+	avatars: &mut Avatars,
+	demo: bool,
+	(fill, muted): (Color32, Color32),
+) -> egui::Response {
+	let (rect, response) =
+		ui.allocate_exact_size(vec2(ui.available_width(), 36.0), egui::Sense::click());
+	let hot = response.hovered() || response.has_focus();
+	response.widget_info(|| {
+		egui::WidgetInfo::labeled(
+			egui::Role::Button,
+			true,
+			format!("Show {}", activity.summary()),
+		)
+	});
+	if !ui.is_rect_visible(rect) {
+		return response.on_hover_cursor(egui::CursorIcon::PointingHand);
+	}
+	let colors = design::palette(ui);
+	ui.painter().rect_filled(
+		rect,
+		8,
+		if hot {
+			design::mix(fill, colors.text, 0.06)
+		} else {
+			fill
+		},
+	);
+	let icon = Rect::from_center_size(pos2(rect.left() + 20.0, rect.center().y), Vec2::splat(24.0));
+	if let Some(image) = &activity.image {
+		let mut icon_ui = ui.new_child(UiBuilder::new().max_rect(icon));
+		avatars.show_icon(&mut icon_ui, Some(image.key()), 24.0, demo, &activity.name);
+	} else {
+		let glyph = if is_spotify(activity) {
+			Icon::Spotify
+		} else {
+			Icon::GameController
+		};
+		icons::paint(ui.painter(), glyph, icon.shrink(2.0), muted);
+	}
+	let chevron = Rect::from_center_size(
+		pos2(rect.right() - 18.0, rect.center().y),
+		Vec2::splat(16.0),
+	);
+	icons::paint(
+		ui.painter(),
+		Icon::ChevronDown,
+		chevron,
+		if hot { colors.text } else { muted },
+	);
+	let mut text = ui.new_child(
+		UiBuilder::new()
+			.max_rect(Rect::from_x_y_ranges(
+				icon.right() + 8.0..=(chevron.left() - 6.0).max(icon.right() + 9.0),
+				rect.y_range(),
+			))
+			.layout(egui::Layout::left_to_right(egui::Align::Center)),
+	);
+	text.spacing_mut().item_spacing.x = 6.0;
+	let verb = activity.summary();
+	let verb = verb.strip_suffix(activity.name.as_str()).unwrap_or("");
+	if !verb.is_empty() {
+		text.add(
+			egui::Label::new(RichText::new(verb.trim_end()).size(12.0).color(muted))
+				.selectable(false),
+		);
+	}
+	text.add(
+		egui::Label::new(design::semibold(&text, &activity.name, 13.0))
+			.truncate()
+			.selectable(false),
+	);
+	response.on_hover_cursor(egui::CursorIcon::PointingHand)
+}
+
 fn activity_elapsed(start: u64, now: u64) -> Option<String> {
 	let seconds = now.checked_sub(start)? / 1000;
 	Some(if seconds >= 3600 {
@@ -1511,15 +1614,14 @@ pub fn show(
 										let mut sections = 0;
 										if !activities.is_empty() {
 											sections += 1;
-											for activity in activities {
-												activity_card(
-													ui,
-													activity,
-													avatars,
-													state.demo,
-													(theme.chip, theme.muted),
-												);
-											}
+											activity_list(
+												ui,
+												egui::Id::unique(("profile-activity", user.id)),
+												activities,
+												avatars,
+												state.demo,
+												(theme.chip, theme.muted),
+											);
 										}
 										if let Some(data) = data {
 											let bio = data

@@ -2126,6 +2126,7 @@ impl TimelineView {
 							}
 							let system = message.system_message();
 							let mut body_bottom = f32::NAN;
+							let mut avatar_hot = false;
 							ui.horizontal_top(|ui| {
 								if system.is_some() {
 									let (gutter, _) = ui.allocate_exact_size(
@@ -2151,8 +2152,10 @@ impl TimelineView {
 										.0,
 									);
 								} else {
-									let avatar =
-										avatars.show(ui, &message.author, 40.0, state.demo);
+									let avatar = avatars
+										.show(ui, &message.author, 40.0, state.demo)
+										.on_hover_cursor(egui::CursorIcon::PointingHand);
+									avatar_hot = avatar.hovered();
 									crate::user_menu::show(
 										&avatar,
 										state,
@@ -2172,24 +2175,32 @@ impl TimelineView {
 											egui::Layout::left_to_right(egui::Align::Center),
 											|ui| {
 												ui.spacing_mut().item_spacing.x = 8.0;
+												let name_color = state
+													.message_author_color(message)
+													.map_or(colors.text_strong, |rgb| {
+														crate::design::role_name_color(
+															rgb,
+															colors.chat,
+															colors.text_strong,
+														)
+													});
 												let author = crate::account_badge::name(
 													ui,
 													&message.author,
 													state.message_author_name(message),
 													15.5,
-													state.message_author_color(message).map_or(
-														colors.text_strong,
-														|rgb| {
-															crate::design::role_name_color(
-																rgb,
-																colors.chat,
-																colors.text_strong,
-															)
-														},
-													),
+													name_color,
 													egui::Sense::click(),
 													48.0,
-												);
+												)
+												.on_hover_cursor(egui::CursorIcon::PointingHand);
+												if avatar_hot || author.hovered() {
+													ui.painter().hline(
+														author.rect.x_range(),
+														author.rect.bottom() - 1.0,
+														egui::Stroke::new(1.0, name_color),
+													);
+												}
 												crate::user_menu::show(
 													&author,
 													state,

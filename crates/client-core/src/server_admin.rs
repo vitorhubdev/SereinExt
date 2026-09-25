@@ -1005,7 +1005,8 @@ mod member_kick_tests {
 		let owner = if owner_actor { actor } else { Id(99) };
 		let actor_role = Id(20);
 		let lower = Id(30);
-		let equal = Id(31);
+		let older_peer = Id(19);
+		let newer_peer = Id(31);
 		let higher = Id(32);
 		let actor_bits = if administrator {
 			p::ADMINISTRATOR
@@ -1038,7 +1039,8 @@ mod member_kick_tests {
 					role(guild.0, 0, 0),
 					role(actor_role.0, actor_bits, 5),
 					role(lower.0, 0, 1),
-					role(equal.0, 0, 5),
+					role(older_peer.0, 0, 5),
+					role(newer_peer.0, 0, 5),
 					role(higher.0, 0, 10),
 				]),
 			},
@@ -1047,11 +1049,12 @@ mod member_kick_tests {
 		state.server_admin.members = Some(model::server_admin::Members {
 			items: vec![
 				admin_member(2, vec![lower]),
-				admin_member(3, vec![equal]),
+				admin_member(3, vec![older_peer]),
+				admin_member(5, vec![newer_peer]),
 				admin_member(4, vec![higher]),
 				admin_member(actor.0, if owner_actor { vec![] } else { vec![actor_role] }),
 			],
-			total: 4,
+			total: 5,
 			..Default::default()
 		});
 		state
@@ -1064,6 +1067,7 @@ mod member_kick_tests {
 		let owner = state(true, false);
 		assert!(owner.can_kick_guild_member(guild, Id(2)));
 		assert!(owner.can_kick_guild_member(guild, Id(3)));
+		assert!(owner.can_kick_guild_member(guild, Id(5)));
 		assert!(owner.can_kick_guild_member(guild, Id(4)));
 		assert!(!owner.can_kick_guild_member(guild, Id(1)));
 		assert!(!owner.can_kick_guild_member(guild, Id(99)));
@@ -1072,7 +1076,9 @@ mod member_kick_tests {
 			let mut moderator = state(false, administrator);
 			assert!(moderator.can_open_member_settings(guild));
 			assert!(moderator.can_kick_guild_member(guild, Id(2)));
+			// Same position is not a tie: the older role ID ranks above.
 			assert!(!moderator.can_kick_guild_member(guild, Id(3)));
+			assert!(moderator.can_kick_guild_member(guild, Id(5)));
 			assert!(!moderator.can_kick_guild_member(guild, Id(4)));
 			assert!(!moderator.can_kick_guild_member(guild, Id(1)));
 			assert!(!moderator.can_kick_guild_member(guild, Id(99)));
