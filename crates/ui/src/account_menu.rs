@@ -180,8 +180,14 @@ impl MessagingUi {
 		self.account_menu.open = open && !std::mem::take(&mut self.account_menu.close);
 		if self.account_menu.custom_open {
 			let ctx = anchor.ctx.clone();
-			let response = crate::dialog::Dialog::new("custom-status-editor", "Custom status")
-				.subtitle("Shown next to your name across Discord.")
+			let response = crate::dialog::Dialog::new(
+				"custom-status-editor",
+				crate::i18n::text(self.language, "Custom status"),
+			)
+				.subtitle(crate::i18n::text(
+					self.language,
+					"Shown next to your name across Discord.",
+				))
 				.width(420.0)
 				.show(&ctx, |d| {
 					d.content(|ui| self.custom_status_editor(ui, state));
@@ -296,7 +302,11 @@ impl MessagingUi {
 			ui.allocate_exact_size(vec2(ui.available_width(), 1.0), egui::Sense::hover());
 		ui.painter().rect_filled(line, 0, colors.border);
 		ui.add_space(10.0);
-		ui.label(design::eyebrow(ui, "Switch accounts", colors.muted));
+		ui.label(design::eyebrow(
+			ui,
+			crate::i18n::text(self.language, "Switch accounts"),
+			colors.muted,
+		));
 		ui.add_space(4.0);
 		for account in &others {
 			self.account_switcher_row(ui, account, state.demo);
@@ -308,7 +318,12 @@ impl MessagingUi {
 				ui.add(
 					egui::Button::new(())
 						.left_text(
-							design::medium(ui, "Add an account", 14.0).color(colors.text_strong),
+							design::medium(
+							ui,
+							crate::i18n::text(self.language, "Add an account"),
+							14.0,
+						)
+						.color(colors.text_strong),
 						)
 						.frame_when_inactive(false)
 						.corner_radius(6)
@@ -420,7 +435,10 @@ impl MessagingUi {
 				format!("Forget {}", account.label()),
 			)
 		});
-		let forget = forget.on_hover_text("Forget this account on this device");
+		let forget = forget.on_hover_text(crate::i18n::text(
+			self.language,
+			"Forget this account on this device",
+		));
 		if forget.clicked() {
 			self.forget_account_requested = Some(account.id);
 			self.account_menu.close = true;
@@ -490,7 +508,7 @@ impl MessagingUi {
 				if state.own_profile.loading {
 					ui.add_space(6.0);
 					ui.label(
-						RichText::new("Loading profile…")
+						RichText::new(crate::i18n::text(self.language, "Loading profile…"))
 							.small()
 							.color(colors.muted),
 					);
@@ -501,7 +519,9 @@ impl MessagingUi {
 						egui::Label::new(RichText::new(error).size(12.0).color(colors.danger))
 							.wrap(),
 					);
-					if ui.button("Reload profile").clicked()
+					if ui
+						.button(crate::i18n::text(self.language, "Reload profile"))
+						.clicked()
 						&& let Some(command) = state.load_own_profile()
 					{
 						commands.push(command);
@@ -559,8 +579,11 @@ impl MessagingUi {
 		ui.set_width(260.0_f32.min(ui.ctx().content_rect().width() - 48.0));
 		for status in PresenceStatus::ALL {
 			let description = match status {
-				PresenceStatus::DoNotDisturb => "You will not receive desktop notifications",
-				PresenceStatus::Invisible => "You will appear offline",
+				PresenceStatus::DoNotDisturb => crate::i18n::text(
+					self.language,
+					"You will not receive desktop notifications",
+				),
+				PresenceStatus::Invisible => crate::i18n::text(self.language, "You will appear offline"),
 				_ => "",
 			};
 			let height = if description.is_empty() { 40.0 } else { 62.0 };
@@ -622,9 +645,9 @@ impl MessagingUi {
 		let colors = design::palette(ui);
 		let set = !self.own_presence.custom_status.is_empty();
 		let label = if set {
-			"Edit custom status"
+			crate::i18n::text(self.language, "Edit custom status")
 		} else {
-			"Set a custom status"
+			crate::i18n::text(self.language, "Set a custom status")
 		};
 		let text = design::medium(ui, label, 14.0).color(colors.text_strong);
 		let response = ui
@@ -754,7 +777,7 @@ impl MessagingUi {
 							.truncate(),
 						);
 						let (status, color) = if draft.is_empty() {
-							("No custom status", colors.muted)
+							(crate::i18n::text(self.language, "No custom status"), colors.muted)
 						} else {
 							(draft.as_str(), colors.text)
 						};
@@ -766,14 +789,18 @@ impl MessagingUi {
 				});
 			});
 		ui.add_space(16.0);
-		let label = ui.label(design::eyebrow(ui, "Status text", colors.muted));
+		let label = ui.label(design::eyebrow(
+			ui,
+			crate::i18n::text(self.language, "Status text"),
+			colors.muted,
+		));
 		ui.add_space(6.0);
 		ui.add_sized(
 			[ui.available_width(), 44.0],
 			egui::TextEdit::singleline(&mut self.account_menu.draft)
 				.align(egui::Align2::LEFT_CENTER)
 				.id_salt(("account-custom-status", state.generation))
-				.hint_text("What's on your mind?")
+				.hint_text(crate::i18n::text(self.language, "What's on your mind?"))
 				.char_limit(128)
 				.margin(egui::Margin::symmetric(12, 0))
 				.desired_width(f32::INFINITY),
@@ -807,7 +834,11 @@ impl MessagingUi {
 			});
 		});
 		ui.add_space(12.0);
-		let label = ui.label(design::eyebrow(ui, "Clear after", colors.muted));
+		let label = ui.label(design::eyebrow(
+			ui,
+			crate::i18n::text(self.language, "Clear after"),
+			colors.muted,
+		));
 		ui.add_space(6.0);
 		self.clear_after_row(ui).labelled_by(label.id);
 		// The deadline is local to this client, so name the moment rather than implying
@@ -827,7 +858,10 @@ impl MessagingUi {
 			ui.add_space(4.0);
 			ui.add(
 				egui::Label::new(
-					RichText::new("Use up to 128 characters without control characters.")
+					RichText::new(crate::i18n::text(
+					self.language,
+					"Use up to 128 characters without control characters.",
+				))
 						.size(12.0)
 						.color(colors.danger),
 				)
@@ -855,7 +889,7 @@ impl MessagingUi {
 			ui.allocate_ui(vec2(half, 44.0), |ui| {
 				ui.set_width(half);
 				if ui
-					.add_enabled_ui(clearable, |ui| design::secondary_button(ui, "Clear"))
+					.add_enabled_ui(clearable, |ui| design::secondary_button(ui, crate::i18n::text(self.language, "Clear")))
 					.inner
 					.clicked()
 				{
@@ -872,7 +906,7 @@ impl MessagingUi {
 			ui.allocate_ui(vec2(half, 44.0), |ui| {
 				ui.set_width(half);
 				if ui
-					.add_enabled_ui(valid && changed, |ui| design::primary_button(ui, "Apply"))
+					.add_enabled_ui(valid && changed, |ui| design::primary_button(ui, crate::i18n::text(self.language, "Apply")))
 					.inner
 					.clicked()
 				{
