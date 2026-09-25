@@ -257,7 +257,7 @@ impl MessagingUi {
 		self.settings.open = true;
 		if let Some(page) = Page::ALL
 			.into_iter()
-			.find(|candidate| candidate.label().to_lowercase().contains(page))
+			.find(|candidate| candidate.label(self.language).to_lowercase().contains(page))
 		{
 			self.settings.page = page;
 		}

@@ -342,9 +342,9 @@ pub struct MessagingUi {
 	/// Enlarged stage tile; cleared when it stops showing video or on Escape.
 	pub voice_focus: Option<voice::StageFocus>,
 	/// Full-client watched-stream presentation and the native fullscreen transition it requests.
-	pub(super) voice_stream_fullscreen: bool,
-	pub(super) voice_stream_fullscreen_previous: bool,
-	pub(super) voice_stream_fullscreen_request: Option<bool>,
+	pub(crate) voice_stream_fullscreen: bool,
+	pub(crate) voice_stream_fullscreen_previous: bool,
+	pub(crate) voice_stream_fullscreen_request: Option<bool>,
 	/// Whether the other participants stay visible as a strip under the enlarged tile.
 	pub voice_focus_participants: bool,
 	/// Session-only visibility of the selected guild voice channel's chat.
@@ -1977,7 +1977,7 @@ impl MessagingUi {
 								.is_some_and(|c| c.guild.is_none() && matches!(c.kind, 1 | 3))
 						}) {
 							self.voice_settings(ui, state.demo, state.voice.active.is_some());
-							self.call_button(ui, state, channel, commands);
+							self.call_button(ui, state, channel, commands, false);
 						}
 						ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
 							// Centre the name block in the fixed-height header even without a subtitle.
@@ -3250,6 +3250,7 @@ impl MessagingUi {
 				&mut self.avatars,
 				&mut self.profile,
 				&mut commands,
+				self.language,
 			);
 			if self.profile.open_user().is_some() {
 				ctx.set_sublayer(
@@ -4039,15 +4040,23 @@ impl MessagingUi {
 				self.timeline.pending_channel_reference = None;
 			}
 		}
-		if let Some((channel, message)) = self.timeline.leave_read.take()
-			&& let Some(command) = state.prepare_mark_left_channel_read(channel, message)
-		{
-			commands.push(command);
+		if let Some(pending) = self.timeline.leave_read.take() {
+			if ctx.will_discard() {
+				self.timeline.leave_read = Some(pending);
+			} else if let Some(command) =
+				state.prepare_mark_left_channel_read(pending.0, pending.1)
+			{
+				commands.push(command);
+			}
 		}
 		if let Some(channel) = self.timeline.mark_channel_read.take() {
-			self.timeline.mark_read = None;
-			if let Some(command) = state.prepare_mark_channel_read(channel) {
-				commands.push(command);
+			if ctx.will_discard() {
+				self.timeline.mark_channel_read = Some(channel);
+			} else {
+				self.timeline.mark_read = None;
+				if let Some(command) = state.prepare_mark_channel_read(channel) {
+					commands.push(command);
+				}
 			}
 		}
 		if let Some(message) = self.timeline.mark_unread.take() {
@@ -5622,6 +5631,98 @@ mod composer_tests {
 			)));
 			assert_eq!(state.drafts, drafts);
 		}
+	}
+
+	#[test]
+	fn leaving_a_short_unread_channel_acknowledges_the_latest_message_seen() {
+		let ctx = egui::Context::default();
+		let mut view = MessagingUi::default();
+		let mut state = edit_state();
+		state.channels[0].last_message = Some(Id(20));
+		state.history_pending = false;
+		state.history_targeted = false;
+		state.history_before = None;
+		state.history_after = None;
+		state.older_exhausted = true;
+		state.channels.push(model::Channel {
+			id: Id(11),
+			guild: None,
+			parent_id: None,
+			kind: 1,
+			name: "Synthetic next conversation".into(),
+			position: 1,
+			recipients: vec![],
+			last_message: None,
+			member_list_id: None,
+			message_count: None,
+			icon: None,
+		});
+		state
+			.apply_read_state(client_core::read_state::Event::Snapshot {
+				entries: Some(vec![(Id(10), Some(Id(10)), 0)]),
+				version: Some(1),
+				partial: false,
+			})
+			.unwrap();
+		let frame = |view: &mut MessagingUi, state: &mut State| {
+			let mut commands = vec![];
+			let output = ctx.run_ui(
+				egui::RawInput {
+					focused: true,
+					screen_rect: Some(egui::Rect::from_min_size(
+						egui::Pos2::ZERO,
+						egui::vec2(1280.0, 800.0),
+					)),
+					..Default::default()
+				},
+				|ui| commands = view.show(ui, state),
+			);
+			let mut saw_message = false;
+			fn walk(shape: &egui::Shape, saw: &mut bool) {
+				match shape {
+					egui::Shape::Text(text) if text.galley.job.text.contains("Original") => {
+						*saw = true;
+					}
+					egui::Shape::Vec(shapes) => {
+						for shape in shapes {
+							walk(shape, saw);
+						}
+					}
+					_ => {}
+				}
+			}
+			for shape in &output.shapes {
+				walk(&shape.shape, &mut saw_message);
+			}
+			output.drop_without_applying_deltas();
+			(commands, saw_message)
+		};
+		for _ in 0..4 {
+			let (commands, saw_message) = frame(&mut view, &mut state);
+			assert!(saw_message, "the open channel never painted its message");
+			assert!(
+				!commands
+					.iter()
+					.any(|command| matches!(command, Command::MarkRead { .. })),
+				"a short unread channel acknowledged itself before the reader left"
+			);
+		}
+		state.selected = Some(Id(11));
+		let (commands, _) = frame(&mut view, &mut state);
+		let ack = commands.iter().find_map(|command| match command {
+			Command::MarkRead {
+				channel,
+				message,
+				manual,
+				..
+			} => Some((*channel, *message, *manual)),
+			_ => None,
+		});
+		assert_eq!(
+			ack,
+			Some((Id(10), Id(20), false)),
+			"leaving the channel did not acknowledge the latest message on screen"
+		);
 	}
 
 	#[test]

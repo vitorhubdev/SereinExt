@@ -4388,7 +4388,7 @@ mod tests {
 		context
 			.run_ui(Default::default(), |ui| {
 				messaging
-					.call_button(ui, &mut state, Id(25), &mut commands)
+					.call_button(ui, &mut state, Id(25), &mut commands, false)
 					.request_focus();
 			})
 			.drop_without_applying_deltas();
@@ -4406,7 +4406,7 @@ mod tests {
 		};
 		context
 			.run_ui(enter, |ui| {
-				messaging.call_button(ui, &mut state, Id(25), &mut commands);
+				messaging.call_button(ui, &mut state, Id(25), &mut commands, false);
 			})
 			.drop_without_applying_deltas();
 		assert!(matches!(
@@ -4501,7 +4501,9 @@ mod tests {
 				)),
 				..Default::default()
 			},
-			|ui| messaging.voice_participant(ui, &state, &state.voice.roster[0]),
+			|ui| {
+				messaging.voice_participant(ui, &state, &state.voice.roster[0], false);
+			},
 		);
 		let texts: Vec<_> = output
 			.shapes
@@ -4529,7 +4531,9 @@ mod tests {
 				)),
 				..Default::default()
 			},
-			|ui| messaging.voice_participant(ui, &state, &state.voice.roster[0]),
+			|ui| {
+				messaging.voice_participant(ui, &state, &state.voice.roster[0], false);
+			},
 		);
 		assert!(
 			!output.shapes.iter().any(|shape| matches!(
@@ -4595,7 +4599,7 @@ mod tests {
 				|ui| {
 					let width = ui.available_width();
 					let row = ui.scope(|ui| {
-						messaging.voice_participant(ui, &state, &state.voice.roster[0])
+						messaging.voice_participant(ui, &state, &state.voice.roster[0], false);
 					});
 					assert!(
 						row.response.rect.width() <= width + 1.0,

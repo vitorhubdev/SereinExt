@@ -3903,6 +3903,10 @@ mod tests {
 				);
 				assert!(view.following && !view.target_browsing);
 				assert_eq!(view.mark_read.take(), Some(Id(21)));
+				assert!(
+					view.unread_boundary.is_some(),
+					"reaching the live edge removed the unread divider"
+				);
 				for forbidden in [
 					"Unread messages",
 					"Next messages",
@@ -3946,6 +3950,10 @@ mod tests {
 					!labels.iter().any(|(text, _)| text == "Unread messages"),
 					"Mark as read left the banner up: {labels:?}"
 				);
+				assert!(
+					labels.iter().any(|(text, _)| text == "New messages"),
+					"Mark as read removed the unread divider: {labels:?}"
+				);
 			}
 			if count == 1 && !tall && latest == 20 {
 				// A read snapshot arriving after a local reply jump must not resume reading.
@@ -3964,6 +3972,118 @@ mod tests {
 				assert!(view.target_browsing && view.mark_read.is_none());
 			}
 		}
+	}
+
+	#[test]
+	fn unread_visit_keeps_the_divider_acks_on_leave_and_raises_again() {
+		let ctx = egui::Context::default();
+		let mut state = test_support::demo_state();
+		state.timeline.clear();
+		state.selected = Some(Id(20));
+		state.auth = client_core::auth::AuthState::Authenticated;
+		state.gateway_connected = true;
+		state.freshness = model::Freshness::Fresh;
+		state.history_pending = false;
+		state.history_targeted = false;
+		state.history_before = None;
+		state.history_after = None;
+		state.older_exhausted = true;
+		state.channels = vec![
+			model::Channel {
+				id: Id(20),
+				guild: None,
+				parent_id: None,
+				position: 0,
+				name: "Synthetic unread conversation".into(),
+				kind: 1,
+				recipients: vec![],
+				member_list_id: None,
+				message_count: None,
+				icon: None,
+				last_message: Some(Id(20)),
+			},
+			model::Channel {
+				id: Id(21),
+				guild: None,
+				parent_id: None,
+				position: 1,
+				name: "Synthetic next conversation".into(),
+				kind: 1,
+				recipients: vec![],
+				member_list_id: None,
+				message_count: None,
+				icon: None,
+				last_message: None,
+			},
+		];
+		state
+			.apply_read_state(client_core::read_state::Event::Snapshot {
+				entries: Some(vec![(Id(20), Some(Id(10)), 0)]),
+				version: Some(1),
+				partial: false,
+			})
+			.unwrap();
+		state
+			.timeline
+			.insert(text_message(20), false, false)
+			.unwrap();
+		let mut view = TimelineView::default();
+		for _ in 0..4 {
+			banner_frame(&ctx, &mut view, &mut state, vec![], false);
+		}
+		let boundary = view.unread_boundary;
+		assert!(boundary.is_some(), "the visit never placed an unread divider");
+		assert_eq!(view.seen_latest, Some(Id(20)));
+		state.selected = Some(Id(21));
+		banner_frame(&ctx, &mut view, &mut state, vec![], false);
+		assert_eq!(view.leave_read, Some((Id(20), Id(20))));
+
+		state.selected = Some(Id(20));
+		state.channels[0].last_message = Some(Id(20));
+		let mut view = TimelineView::default();
+		let labels = banner_frame(&ctx, &mut view, &mut state, vec![], false);
+		let pos = labels
+			.iter()
+			.find(|(text, _)| text == "Mark as read")
+			.map(|(_, rect)| rect.center())
+			.expect("the unread banner offers Mark as read");
+		for pressed in [true, false] {
+			banner_frame(
+				&ctx,
+				&mut view,
+				&mut state,
+				vec![
+					egui::Event::PointerMoved(pos),
+					egui::Event::PointerButton {
+						pos,
+						button: egui::PointerButton::Primary,
+						pressed,
+						modifiers: egui::Modifiers::NONE,
+					},
+				],
+				false,
+			);
+		}
+		let labels = banner_frame(&ctx, &mut view, &mut state, vec![], false);
+		assert!(
+			!labels.iter().any(|(text, _)| text == "Unread messages"),
+			"Mark as read left the banner up: {labels:?}"
+		);
+		assert_eq!(view.unread_boundary, boundary);
+		state.channels[0].last_message = Some(Id(30));
+		let mut newer = text_message(30);
+		newer.content = "Synthetic message after the dismissed edge".into();
+		state.timeline.insert(newer, false, false).unwrap();
+		state.revision += 1;
+		let labels = banner_frame(&ctx, &mut view, &mut state, vec![], false);
+		assert!(
+			labels.iter().any(|(text, _)| text == "Unread messages"),
+			"a newer message did not raise the banner again: {labels:?}"
+		);
+		assert!(
+			labels.iter().any(|(text, _)| text == "New messages"),
+			"the unread divider left when a newer message arrived: {labels:?}"
+		);
 	}
 
 	#[test]

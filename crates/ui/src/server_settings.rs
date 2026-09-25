@@ -356,6 +356,7 @@ impl Editor {
 		avatars: &mut Avatars,
 		profile: &mut crate::profiles::ProfileSession,
 		commands: &mut Vec<Command>,
+		language: model::Language,
 	) {
 		let Some((generation, guild)) = self.scope else {
 			return;
@@ -588,7 +589,7 @@ impl Editor {
 									.id_salt("server-close")
 									.max_rect(rect),
 							);
-							close = close_control(&mut close_ui).clicked();
+							close = close_control(&mut close_ui, language).clicked();
 						}
 						if !wide {
 							ui.horizontal_wrapped(|ui| {
@@ -608,7 +609,7 @@ impl Editor {
 									}
 									ui.selectable_value(&mut self.page, page, page.label());
 								}
-								close = close_control(ui).clicked();
+								close = close_control(ui, language).clicked();
 							});
 							if state.can_delete_server(guild) && delete_server_button(ui).clicked()
 							{
