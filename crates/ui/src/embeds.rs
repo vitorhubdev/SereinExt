@@ -69,6 +69,8 @@ fn youtube_thumb(value: &str) -> Option<model::EmbedMedia> {
 		..Default::default()
 	})
 }
+
+pub fn request_web_media(ctx: &egui::Context, url: &str) {
 	ctx.data_mut(|data| data.insert_temp(egui::Id::new(WEB_MEDIA_REQUEST), url.to_owned()));
 }
 

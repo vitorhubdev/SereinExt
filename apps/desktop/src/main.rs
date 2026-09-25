@@ -1073,6 +1073,7 @@ fn demo_members(guild: Option<model::Id>, channel: model::Id, request: u64) -> m
 			status: Some("idle".into()),
 			custom_status: None,
 			activities: vec![],
+			clients: model::ClientPlatforms::default(),
 		},
 		model::Member {
 			user: test_support::message(1, channel).author,
@@ -1097,6 +1098,7 @@ fn demo_members(guild: Option<model::Id>, channel: model::Id, request: u64) -> m
 				ends_at: None,
 				started_at: None,
 			}],
+			clients: model::ClientPlatforms::default(),
 		},
 	];
 	if guild.is_some() {
@@ -3797,7 +3799,11 @@ impl Desktop {
 						egui::vec2(220.0, 0.0),
 						egui::Layout::top_down(egui::Align::Center),
 						|ui| {
-							if ui::design::secondary_button(ui, "Use a different account").clicked()
+							if ui::design::secondary_button(
+								ui,
+								ui::i18n::text(self.messaging.language, "Use a different account"),
+							)
+							.clicked()
 							{
 								if let Some(store) = &mut self.store {
 									store.cancel_load();
@@ -3896,7 +3902,7 @@ impl Desktop {
 										};
 									egui::containers::menu::MenuButton::from_button(quiet(
 										ui,
-										"Appearance",
+										ui::i18n::text(self.messaging.language, "Appearance"),
 										p.muted,
 									))
 									.config(sticky())
@@ -3910,7 +3916,10 @@ impl Desktop {
 									} else if updates.available {
 										("Update available", p.link)
 									} else {
-										("Updates", p.muted)
+										(
+											ui::i18n::text(self.messaging.language, "Updates"),
+											p.muted,
+										)
 									};
 									let demo = self.fixture_only || self.state.demo;
 									egui::containers::menu::MenuButton::from_button(quiet(
@@ -3949,7 +3958,10 @@ impl Desktop {
 							ui.add_space(18.0);
 							ui.label(
 								egui::RichText::new(
-									"Independent and open source. Not affiliated with Discord.",
+									ui::i18n::text(
+										self.messaging.language,
+										"Independent and open source. Not affiliated with Discord.",
+									),
 								)
 								.size(12.0)
 								.color(p.muted),
@@ -4016,11 +4028,11 @@ impl Desktop {
 				self.sign_in_consent(ui);
 				ui.add_space(10.0);
 				let label = if waiting {
-					"Waiting for Discord…"
+					ui::i18n::text(self.messaging.language, "Waiting for Discord…")
 				} else if returning {
-					"Use another account"
+					ui::i18n::text(self.messaging.language, "Use another account")
 				} else {
-					"Continue with Discord"
+					ui::i18n::text(self.messaging.language, "Continue with Discord")
 				};
 				let button = ui
 					.add_enabled_ui(idle, |ui| {
@@ -4087,9 +4099,9 @@ impl Desktop {
 				ui::design::semibold(
 					ui,
 					if returning {
-						"Welcome back"
+						ui::i18n::text(self.messaging.language, "Welcome back")
 					} else {
-						"Welcome to SereinExt"
+						ui::i18n::text(self.messaging.language, "Welcome to SereinExt")
 					},
 					22.0,
 				)
@@ -4099,9 +4111,12 @@ impl Desktop {
 			ui.add(
 				egui::Label::new(
 					egui::RichText::new(if returning {
-						"Continue with a saved account, or sign in with another one."
+						ui::i18n::text(
+							self.messaging.language,
+							"Continue with a saved account, or sign in with another one.",
+						)
 					} else {
-						"Sign in with Discord."
+						ui::i18n::text(self.messaging.language, "Sign in with Discord.")
 					})
 					.size(14.0)
 					.color(p.muted),
@@ -4113,7 +4128,11 @@ impl Desktop {
 	/// Accounts already signed in on this device: one tap restores their saved login.
 	fn sign_in_accounts(&mut self, ui: &mut egui::Ui, enabled: bool) {
 		let p = ui::design::palette(ui);
-		ui.label(ui::design::eyebrow(ui, "Saved accounts", p.muted));
+		ui.label(ui::design::eyebrow(
+			ui,
+			ui::i18n::text(self.messaging.language, "Saved accounts"),
+			p.muted,
+		));
 		ui.add_space(6.0);
 		let saved: Vec<(model::Id, String, String)> = self
 			.messaging
@@ -4218,12 +4237,20 @@ impl Desktop {
 				ui.set_width(ui.available_width());
 				ui.checkbox(
 					&mut self.authorized,
-					ui::design::medium(ui, "This is my account", 13.0).color(p.text_strong),
+					ui::design::medium(
+						ui,
+						ui::i18n::text(self.messaging.language, "This is my account"),
+						13.0,
+					)
+					.color(p.text_strong),
 				);
 				if prompt {
 					ui.add_space(4.0);
 					ui.label(
-						egui::RichText::new("Check this to continue.")
+						egui::RichText::new(ui::i18n::text(
+							self.messaging.language,
+							"Check this to continue.",
+						))
 							.size(13.0)
 							.color(p.accent),
 					);

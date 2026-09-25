@@ -1710,8 +1710,11 @@ impl MessagingUi {
 					self.voice_processing.effective().suppression != NoiseSuppression::Off;
 				if design::switch(
 					ui,
-					"Noise suppression",
-					Some("Recommended filter for keyboard, fan and room noise."),
+					crate::i18n::text(self.language, "Noise suppression"),
+					Some(crate::i18n::text(
+						self.language,
+						"Recommended filter for keyboard, fan and room noise.",
+					)),
 					&mut suppression,
 				)
 				.changed()
@@ -2471,6 +2474,8 @@ impl MessagingUi {
 		let (mut muted, mut deafened) = (self.voice_muted || !can_speak, self.voice_deafened);
 		let controls = self.controls_enabled(state);
 		let voice_toggles = controls || state.demo;
+		let language = self.language;
+		let t = |english: &'static str| crate::i18n::text(language, english);
 		let focused = self.voice_focus.is_some();
 		let pill_width = MEDIA_PILL + if focused { 48.0 } else { 0.0 };
 		let width = pill_width + BAR_GAP + HANG_UP;
@@ -2492,13 +2497,13 @@ impl MessagingUi {
 					48.0,
 					voice_toggles && (can_speak || state.demo),
 					if muted { colors.danger } else { STAGE_TEXT },
-					if muted { "Unmute" } else { "Mute" },
+					if muted { t("Unmute") } else { t("Mute") },
 					if !can_speak {
-						"Speaking is unavailable in this channel."
+						t("Speaking is unavailable in this channel.")
 					} else if muted {
-						"Turn on microphone"
+						t("Turn on microphone")
 					} else {
-						"Turn off microphone"
+						t("Turn off microphone")
 					},
 				);
 				mute_clicked = mic.clicked();
@@ -2508,8 +2513,8 @@ impl MessagingUi {
 					28.0,
 					true,
 					STAGE_TEXT,
-					"Voice settings",
-					"Microphone and speaker settings",
+					t("Voice settings"),
+					t("Microphone and speaker settings"),
 				);
 				self.voice_settings_popup(&settings, state.demo, true, true);
 				deafen_clicked = control(
@@ -2522,11 +2527,11 @@ impl MessagingUi {
 					48.0,
 					voice_toggles,
 					if deafened { colors.danger } else { STAGE_TEXT },
-					if deafened { "Undeafen" } else { "Deafen" },
+					if deafened { t("Undeafen") } else { t("Deafen") },
 					if deafened {
-						"Turn on incoming audio"
+						t("Turn on incoming audio")
 					} else {
-						"Turn off incoming audio"
+						t("Turn off incoming audio")
 					},
 				)
 				.clicked();
@@ -2541,12 +2546,12 @@ impl MessagingUi {
 					controls && (camera || can_camera),
 					if camera { colors.positive } else { STAGE_TEXT },
 					if camera {
-						"Turn off camera"
+						t("Turn off camera")
 					} else {
-						"Turn on camera"
+						t("Turn on camera")
 					},
 					if camera {
-						"Stop sharing your camera"
+						t("Stop sharing your camera")
 					} else if state.demo {
 						"Camera is off in the offline preview"
 					} else if !cfg!(any(
@@ -2560,7 +2565,7 @@ impl MessagingUi {
 					} else if !state.can_camera(channel) {
 						"Camera is unavailable with current channel permissions"
 					} else {
-						"Share your selected camera with this call"
+						t("Share your selected camera with this call")
 					},
 				)
 				.clicked();
@@ -2619,9 +2624,9 @@ impl MessagingUi {
 					egui::Color32::WHITE,
 				);
 				let label = if phase == Phase::Failed {
-					"Dismiss call"
+					t("Dismiss call")
 				} else {
-					"Disconnect"
+					t("Disconnect")
 				};
 				response
 					.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, enabled, label));
@@ -2667,10 +2672,12 @@ impl MessagingUi {
 					matches!(call.phase, Phase::Connected | Phase::Waiting)
 						&& state.can_stream(call.channel)
 				}));
+		let language = self.language;
+		let t = |english: &'static str| crate::i18n::text(language, english);
 		let label = if self.screen.busy {
-			"Stop sharing"
+			t("Stop sharing")
 		} else {
-			"Share your screen"
+			t("Share your screen")
 		};
 		let color = if self.screen.busy {
 			design::palette(ui).accent
@@ -3015,6 +3022,8 @@ impl MessagingUi {
 				let processing = !state.demo && self.voice_available;
 				let mut camera_clicked = false;
 				let mut share_clicked = false;
+				let language = self.language;
+				let t = |english: &'static str| crate::i18n::text(language, english);
 				ui.horizontal(|ui| {
 					ui.spacing_mut().item_spacing.x = 8.0;
 					let width = ((ui.available_width() - 3.0 * 8.0 - 24.0) / 3.0).max(24.0);
@@ -3029,12 +3038,12 @@ impl MessagingUi {
 						controls && (camera || can_camera),
 						camera,
 						if camera {
-							"Turn off camera"
+							t("Turn off camera")
 						} else {
-							"Turn on camera"
+							t("Turn on camera")
 						},
 						if camera {
-							"Stop sharing your camera"
+							t("Stop sharing your camera")
 						} else if state.demo {
 							"Camera is off in the offline preview"
 						} else if !self.voice_camera_available {
@@ -3042,7 +3051,7 @@ impl MessagingUi {
 						} else if !state.can_camera(channel_id) {
 							"Camera is unavailable with current channel permissions"
 						} else {
-							"Share your selected camera with this call"
+							t("Share your selected camera with this call")
 						},
 					)
 					.clicked();
@@ -3060,17 +3069,17 @@ impl MessagingUi {
 						can_share,
 						self.screen.busy,
 						if self.screen.busy {
-							"Stop sharing"
+							t("Stop sharing")
 						} else {
-							"Share your screen"
+							t("Share your screen")
 						},
 						if can_share {
 							if let Some(status) = self.screen.capture_status {
 								status
 							} else if self.screen.busy {
-								"Stop sharing your screen"
+								t("Stop sharing your screen")
 							} else {
-								"Share a screen or window"
+								t("Share a screen or window")
 							}
 						} else {
 							"Screen sharing requires a connected call and video permission on a supported desktop."
@@ -3084,9 +3093,9 @@ impl MessagingUi {
 						processing,
 						self.voice_processing.effective().suppression != NoiseSuppression::Off,
 						if self.voice_processing.effective().suppression != NoiseSuppression::Off {
-							"Turn off noise suppression"
+							t("Turn off noise suppression")
 						} else {
-							"Turn on noise suppression"
+							t("Turn on noise suppression")
 						},
 						if processing {
 							"Noise suppression reduces keyboard noise, breathing and fans locally."

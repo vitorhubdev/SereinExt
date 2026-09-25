@@ -750,7 +750,7 @@ mod tests {
 			));
 			drop(store);
 			let reopened = LocalStore::open(&path).unwrap();
-			let restored = crate::app_settings::Settings {
+			let mut restored = crate::app_settings::Settings {
 				current: reopened.app_preferences().unwrap(),
 				..Default::default()
 			};

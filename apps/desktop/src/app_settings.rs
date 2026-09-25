@@ -103,32 +103,10 @@ impl Settings {
 
 /// First launch follows the operating system when that language exists in the app.
 pub fn system_language() -> model::Language {
-	#[cfg(windows)]
-	{
-		#[link(name = "kernel32")]
-		extern "system" {
-			fn GetUserDefaultUILanguage() -> u16;
-		}
-		let id = unsafe { GetUserDefaultUILanguage() };
-		return match id & 0x3ff {
-			0x16 => model::Language::PortugueseBrazil,
-			0x0a => model::Language::Spanish,
-			_ => model::Language::English,
-		};
-	}
-	#[cfg(not(windows))]
-	{
-		let name = std::env::var("LC_ALL")
-			.or_else(|_| std::env::var("LANG"))
-			.unwrap_or_default()
-			.to_ascii_lowercase();
-		if name.starts_with("pt") {
-			model::Language::PortugueseBrazil
-		} else if name.starts_with("es") {
-			model::Language::Spanish
-		} else {
-			model::Language::English
-		}
+	match platform::locale::ui_language() {
+		platform::locale::UiLanguage::Portuguese => model::Language::PortugueseBrazil,
+		platform::locale::UiLanguage::Spanish => model::Language::Spanish,
+		platform::locale::UiLanguage::English => model::Language::English,
 	}
 }
 
@@ -165,7 +143,7 @@ mod tests {
 		let current: AppPreferences = serde_json::from_str("{}").unwrap();
 		assert!(!current.voice_noise_suppression);
 		assert!(current.voice_processing.is_none());
-		let settings = Settings {
+		let mut settings = Settings {
 			current,
 			..Default::default()
 		};
@@ -175,5 +153,26 @@ mod tests {
 			ui.voice_processing.effective().suppression,
 			model::voice_settings::NoiseSuppression::Off
 		);
+	}
+
+	#[test]
+	fn first_launch_follows_the_system_until_the_owner_picks_a_language() {
+		let mut settings = Settings::default();
+		settings.loaded = true;
+		let mut ui = ui::MessagingUi::default();
+		settings.apply(&mut ui);
+		assert_eq!(ui.language, system_language());
+		assert!(!settings.current.language_chosen);
+		settings.observe(&ui);
+		assert!(!settings.state.dirty);
+
+		ui.language = match system_language() {
+			model::Language::English => model::Language::PortugueseBrazil,
+			_ => model::Language::English,
+		};
+		settings.observe(&ui);
+		assert!(settings.current.language_chosen);
+		assert_eq!(settings.current.language, ui.language);
+		assert!(settings.state.dirty);
 	}
 }

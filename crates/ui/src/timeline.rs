@@ -30,6 +30,7 @@ struct RevealScroll {
 #[derive(Default)]
 pub struct TimelineView {
 	pub(super) forward_request: Option<Id>,
+	pub(super) language: model::Language,
 	pub(super) sticker_request: Option<Id>,
 	pub(super) browse_sticker: Option<model::Sticker>,
 	pub(super) component_viewing: Option<(Id, u64)>,
@@ -785,6 +786,7 @@ fn message_actions(
 		model::ReactionEmoji,
 		&mut Option<(Id, model::ReactionEmoji, bool)>,
 	)>,
+	language: model::Language,
 ) {
 	let (mark_read, mark_unread, reply) = selection;
 	let (editing, edit_started) = editing;
@@ -805,11 +807,13 @@ fn message_actions(
 			});
 			ui.separator();
 		}
-		if crate::select::has_selection(ui.ctx()) && ui.button("Copy").clicked() {
+		if crate::select::has_selection(ui.ctx())
+			&& ui.button(crate::i18n::text(language, "Copy")).clicked()
+		{
 			crate::select::request_copy(ui.ctx());
 			ui.close();
 		}
-		if ui.button("Copy message").clicked() {
+		if ui.button(crate::i18n::text(language, "Copy message")).clicked() {
 			ui.ctx().copy_text(message.display_text().into_owned());
 			ui.close();
 		}
@@ -831,9 +835,12 @@ fn message_actions(
 			.collect();
 		for (filename, url) in &files {
 			let label = if files.len() == 1 {
-				"Copy download link".to_owned()
+				crate::i18n::text(language, "Copy download link").to_owned()
 			} else {
-				format!("Copy download link · {filename}")
+				format!(
+					"{} · {filename}",
+					crate::i18n::text(language, "Copy download link")
+				)
 			};
 			if ui.button(label).clicked() {
 				ui.ctx().copy_text(url.clone());
@@ -841,25 +848,25 @@ fn message_actions(
 			}
 		}
 		if ui
-			.add_enabled(can_reply, egui::Button::new("Reply"))
+			.add_enabled(can_reply, egui::Button::new(crate::i18n::text(language, "Reply")))
 			.clicked()
 		{
 			*reply = Some(message.id);
 			ui.close();
 		}
 		if ui
-			.add_enabled(forward.0, egui::Button::new("Forward"))
+			.add_enabled(forward.0, egui::Button::new(crate::i18n::text(language, "Forward")))
 			.clicked()
 		{
 			*forward.1 = Some(message.id);
 			ui.close();
 		}
-		if can_thread && ui.button("Create Thread\u{2026}").clicked() {
+		if can_thread && ui.button(crate::i18n::text(language, "Create Thread…")).clicked() {
 			*thread_request = Some((message.channel, message.id));
 			ui.close();
 		}
 		if let Some((emoji, view)) = view_reactions
-			&& ui.button("View reactions").clicked()
+			&& ui.button(crate::i18n::text(language, "View reactions")).clicked()
 		{
 			*view = Some((message.id, emoji, true));
 			ui.close();
@@ -867,7 +874,7 @@ fn message_actions(
 		if ui
 			.add_enabled(
 				mark_read.is_some(),
-				egui::Button::new("Mark read through here"),
+				egui::Button::new(crate::i18n::text(language, "Mark read through here")),
 			)
 			.clicked()
 		{
@@ -877,7 +884,7 @@ fn message_actions(
 			ui.close();
 		}
 		if ui
-			.add_enabled(mark_unread.is_some(), egui::Button::new("Mark Unread"))
+			.add_enabled(mark_unread.is_some(), egui::Button::new(crate::i18n::text(language, "Mark Unread")))
 			.clicked()
 		{
 			if let Some(mark_unread) = mark_unread {
@@ -888,11 +895,14 @@ fn message_actions(
 		if ui
 			.add_enabled(
 				can_pin,
-				egui::Button::new(if pinned {
-					"Unpin message"
-				} else {
-					"Pin message"
-				}),
+				egui::Button::new(crate::i18n::text(
+					language,
+					if pinned {
+						"Unpin message"
+					} else {
+						"Pin message"
+					},
+				)),
 			)
 			.clicked()
 		{
@@ -904,7 +914,7 @@ fn message_actions(
 		}
 		if own
 			&& ui
-				.add_enabled(can_edit, egui::Button::new("Edit message"))
+				.add_enabled(can_edit, egui::Button::new(crate::i18n::text(language, "Edit message")))
 				.clicked()
 		{
 			*editing = Some((message.channel, message.id, message.content.clone()));
@@ -917,13 +927,19 @@ fn message_actions(
 			if ui
 				.add_enabled(
 					room,
-					egui::Button::new(if selected {
-						"Remove from delete selection"
-					} else {
-						"Select for batch delete"
-					}),
+					egui::Button::new(crate::i18n::text(
+						language,
+						if selected {
+							"Remove from delete selection"
+						} else {
+							"Select for batch delete"
+						},
+					)),
 				)
-				.on_disabled_hover_text("You can select up to 5 messages at a time.")
+				.on_disabled_hover_text(crate::i18n::text(
+					language,
+					"You can select up to 5 messages at a time.",
+				))
 				.clicked()
 			{
 				let _ = toggle_batch_delete(batch_delete, message.id);
@@ -932,7 +948,7 @@ fn message_actions(
 		}
 		if (own || can_delete)
 			&& ui
-				.add_enabled(can_delete, egui::Button::new("Delete message\u{2026}"))
+				.add_enabled(can_delete, egui::Button::new(crate::i18n::text(language, "Delete message…")))
 				.clicked()
 		{
 			*deleting = Some((message.channel, message.id));
@@ -1067,7 +1083,12 @@ fn banner_rect(area: egui::Rect) -> egui::Rect {
 }
 
 /// Returns whether the reader asked to jump to unread or mark the channel read.
-fn unread_banner(ui: &mut egui::Ui, rect: egui::Rect, jump: bool) -> (bool, bool) {
+fn unread_banner(
+	ui: &mut egui::Ui,
+	rect: egui::Rect,
+	jump: bool,
+	language: model::Language,
+) -> (bool, bool) {
 	let colors = crate::design::palette(ui);
 	let mut jump_unread = false;
 	let mut mark_read = false;
@@ -1083,13 +1104,33 @@ fn unread_banner(ui: &mut egui::Ui, rect: egui::Rect, jump: bool) -> (bool, bool
 			se: 8,
 		},
 		|ui| {
-			ui.label(crate::design::medium(ui, "Unread messages", 13.0).color(text));
+			ui.label(
+				crate::design::medium(
+					ui,
+					crate::i18n::text(language, "Unread messages"),
+					13.0,
+				)
+				.color(text),
+			);
 			ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-				if bar_button(ui, "Mark as read", crate::icons::Icon::Check, text).clicked() {
+				if bar_button(
+					ui,
+					crate::i18n::text(language, "Mark as read"),
+					crate::icons::Icon::Check,
+					text,
+				)
+				.clicked()
+				{
 					mark_read = true;
 				}
 				if jump
-					&& bar_button(ui, "Jump to unread", crate::icons::Icon::ArrowUp, text).clicked()
+					&& bar_button(
+						ui,
+						crate::i18n::text(language, "Jump to unread"),
+						crate::icons::Icon::ArrowUp,
+						text,
+					)
+					.clicked()
 				{
 					jump_unread = true;
 				}
@@ -1581,7 +1622,10 @@ impl TimelineView {
 				.and_then(|id| state.channel(id))
 				.is_some_and(|channel| channel.guild.is_some() && channel.supports_text());
 		if !history_available {
-			ui.weak("Message history is unavailable with current permission information.");
+			ui.weak(crate::i18n::text(
+				self.language,
+				"Message history is unavailable with current permission information.",
+			));
 		}
 		if history_available && state.freshness == model::Freshness::Loading && empty {
 			let area = ui.available_rect_before_wrap().intersect(ui.clip_rect());
@@ -1593,7 +1637,7 @@ impl TimelineView {
 				.and_then(|channel| channel.last_message);
 			if state.show_missed_banner() && self.unread_dismissed != Some(latest) {
 				let (jump_unread, mark_read) =
-					unread_banner(ui, banner_rect(area), state.can_jump_unread());
+					unread_banner(ui, banner_rect(area), state.can_jump_unread(), self.language);
 				if jump_unread {
 					self.unread_jump = true;
 					self.browse_away();
@@ -2928,7 +2972,11 @@ impl TimelineView {
 							let can_delete = state.can_delete(message.channel, id);
 							if toolbar
 								.add_enabled_ui(can_reply, |ui| {
-									action_button(ui, crate::icons::Icon::Reply, "Reply")
+									action_button(
+										ui,
+										crate::icons::Icon::Reply,
+										crate::i18n::text(self.language, "Reply"),
+									)
 								})
 								.inner
 								.clicked()
@@ -2940,7 +2988,7 @@ impl TimelineView {
 									action_button(
 										ui,
 										crate::icons::Icon::Forward,
-										"Forward message",
+										crate::i18n::text(self.language, "Forward message"),
 									)
 								})
 								.inner
@@ -2954,7 +3002,7 @@ impl TimelineView {
 										action_button(
 											ui,
 											crate::icons::Icon::Pencil,
-											"Edit message",
+											crate::i18n::text(self.language, "Edit message"),
 										)
 									})
 									.inner
@@ -2972,7 +3020,7 @@ impl TimelineView {
 										action_button(
 											ui,
 											crate::icons::Icon::Trash,
-											"Delete message immediately",
+											crate::i18n::text(self.language, "Delete message immediately"),
 										)
 									})
 									.inner
@@ -3040,6 +3088,7 @@ impl TimelineView {
 										.map(|reaction| {
 											(reaction.emoji.clone(), &mut self.reaction_users)
 										}),
+									self.language,
 								);
 							}
 							self.toolbar = Some((id, toolbar_rect));
@@ -3430,7 +3479,7 @@ impl TimelineView {
 		{
 			self.unread_session |= self.unread_boundary.is_some();
 			let (jump_unread, mark_read) =
-				unread_banner(ui, banner_rect(area), can_jump_unread);
+				unread_banner(ui, banner_rect(area), can_jump_unread, self.language);
 			if jump_unread {
 				if state.can_jump_unread() {
 					self.unread_jump = true;
@@ -4590,6 +4639,7 @@ mod tests {
 							(own, &mut thread_request),
 							(false, &mut None),
 							None,
+							model::Language::English,
 						)
 					},
 				);

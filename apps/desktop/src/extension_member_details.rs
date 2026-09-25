@@ -171,6 +171,7 @@ mod tests {
 						status: None,
 						custom_status: None,
 						activities: vec![],
+						clients: model::ClientPlatforms::default(),
 					}))
 				})
 				.collect(),

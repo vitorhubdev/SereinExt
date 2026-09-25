@@ -27,6 +27,8 @@ pub struct ScreenUi {
 	fps: u32,
 	cursor: bool,
 	audio: bool,
+	apps_open: bool,
+	quality_open: bool,
 }
 impl Default for ScreenUi {
 	fn default() -> Self {
@@ -46,6 +48,8 @@ impl Default for ScreenUi {
 			fps: 30,
 			cursor: true,
 			audio: cfg!(target_os = "macos"),
+			apps_open: false,
+			quality_open: false,
 		}
 	}
 }
@@ -60,6 +64,8 @@ impl ScreenUi {
 		}
 		self.context = Some((state.generation, call.channel, call.request));
 		self.open = true;
+		self.apps_open = false;
+		self.quality_open = false;
 		self.selected = None;
 		self.sources.clear();
 		if state.demo {
@@ -98,7 +104,7 @@ impl ScreenUi {
 		};
 		settings.valid().then_some(settings)
 	}
-	pub(super) fn show(&mut self, ctx: &egui::Context, state: &State) {
+	pub(super) fn show(&mut self, ctx: &egui::Context, state: &State, language: model::Language) {
 		let current = state
 			.voice
 			.active
@@ -118,11 +124,17 @@ impl ScreenUi {
 		}
 		let mut cancel = false;
 		let mut share = false;
-		let response = crate::dialog::Dialog::new("screen-share-settings", "Share your screen")
-			.subtitle("Choose what people in this call can see.")
+		let response = crate::dialog::Dialog::new(
+			"screen-share-settings",
+			crate::i18n::text(language, "Share your screen"),
+		)
+		.subtitle(crate::i18n::text(
+			language,
+			"People in this call will see what you pick.",
+		))
 			.width(460.0)
 			.show(ctx, |d| {
-				d.scroll(260.0, |ui| self.body(ui, state));
+				d.scroll(260.0, |ui| self.body(ui, state, language));
 				d.footer(|ui| {
 					let allowed = !state.demo
 						&& self.supported && !self.busy
@@ -134,12 +146,16 @@ impl ScreenUi {
 					ui.add_enabled_ui(allowed, |ui| {
 						share = crate::dialog::action(
 							ui,
-							"Share Screen",
+							crate::i18n::text(language, "Share Screen"),
 							crate::dialog::Action::Primary,
 						)
 						.clicked();
 					});
-					cancel |= crate::dialog::action(ui, "Cancel", crate::dialog::Action::Neutral)
+					cancel |= crate::dialog::action(
+						ui,
+						crate::i18n::text(language, "Cancel"),
+						crate::dialog::Action::Neutral,
+					)
 						.clicked();
 				});
 			});
@@ -152,17 +168,94 @@ impl ScreenUi {
 		}
 	}
 
-	/// Source list, then the capture options Discord exposes without an entitlement.
-	fn body(&mut self, ui: &mut egui::Ui, state: &State) {
+	/// Whole screens first, audio under them, apps folded to the three most recent.
+	fn body(&mut self, ui: &mut egui::Ui, state: &State, language: model::Language) {
+		let t = |english: &'static str| crate::i18n::text(language, english);
 		let colors = crate::design::palette(ui);
-		ui.horizontal(|ui| {
-			ui.label(crate::design::eyebrow(ui, "Screen or window", colors.muted));
-			ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+		let displays: Vec<_> = self
+			.sources
+			.iter()
+			.filter(|source| is_display(source.id))
+			.map(|source| (source.id, source.name.clone()))
+			.collect();
+		let windows: Vec<_> = self
+			.sources
+			.iter()
+			.filter(|source| matches!(source.id, SourceId::Window(_)))
+			.map(|source| (source.id, source.name.clone()))
+			.collect();
+		if self
+			.selected
+			.is_none_or(|id| !self.sources.iter().any(|source| source.id == id))
+		{
+			self.selected = displays.first().map(|(id, _)| *id);
+		}
+		if displays.is_empty() && windows.is_empty() {
+			egui::Frame::new()
+				.fill(colors.base)
+				.corner_radius(8)
+				.inner_margin(egui::Margin::symmetric(12, 14))
+				.show(ui, |ui| {
+					ui.set_width(ui.available_width());
+					ui.add(
+						egui::Label::new(
+							egui::RichText::new(t("Looking for your screens…"))
+								.size(13.0)
+								.color(colors.muted),
+						)
+						.wrap(),
+					);
+				});
+		}
+		for (index, (id, name)) in displays.iter().enumerate() {
+			let title = if displays.len() == 1 {
+				t("Entire screen").to_owned()
+			} else {
+				format!("{} {}", t("Entire screen"), index + 1)
+			};
+			self.source_row(ui, *id, &title, name, true);
+		}
+		ui.add_space(8.0);
+		if self.supported {
+			crate::design::switch(
+				ui,
+				t("Share audio"),
+				Some(t(
+					"Also send sound from other apps. Your microphone stays as it is.",
+				)),
+				&mut self.audio,
+			);
+		}
+		ui.add_space(10.0);
+		let app_label = if windows.is_empty() {
+			t("Share an app").to_owned()
+		} else {
+			format!("{} ({})", t("Share an app"), windows.len().min(3))
+		};
+		if disclosure(ui, &app_label, self.apps_open).clicked() {
+			self.apps_open = !self.apps_open;
+		}
+		if self.apps_open {
+			ui.add_space(6.0);
+			if windows.is_empty() {
+				ui.add(
+					egui::Label::new(
+						egui::RichText::new(t("No apps are open to share."))
+							.size(12.0)
+							.color(colors.muted),
+					)
+					.wrap(),
+				);
+			}
+			for (id, name) in windows.iter().take(3) {
+				self.source_row(ui, *id, name, t("App"), false);
+			}
+			ui.horizontal(|ui| {
 				if ui
 					.add_enabled(
 						!state.demo && !cfg!(target_os = "linux"),
 						egui::Button::new(
-							egui::RichText::new("Refresh").size(12.0).color(colors.link),
+							egui::RichText::new(t("Refresh")).size(12.0).color(colors.link),
 						)
 						.frame(false),
 					)
@@ -174,196 +267,177 @@ impl ScreenUi {
 					self.status = "Looking for screens and windows…";
 				}
 			});
-		});
+		}
 		ui.add_space(6.0);
-		egui::ScrollArea::vertical()
-			.id_salt("screen-sources")
-			.max_height(196.0)
-			.show(ui, |ui| self.source_list(ui));
-		ui.add_space(14.0);
-		ui.label(crate::design::eyebrow(ui, "Quality", colors.muted));
-		ui.add_space(6.0);
-		ui.horizontal_wrapped(|ui| {
-			ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
-			for height in [480, 720, 1080] {
-				if segment(ui, &format!("{height}p"), self.height == height).clicked() {
-					self.height = height;
+		if disclosure(ui, t("Quality"), self.quality_open).clicked() {
+			self.quality_open = !self.quality_open;
+		}
+		if self.quality_open {
+			ui.add_space(6.0);
+			ui.horizontal_wrapped(|ui| {
+				ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+				for height in [480, 720, 1080] {
+					if segment(ui, &format!("{height}p"), self.height == height).clicked() {
+						self.height = height;
+					}
 				}
-			}
-		});
-		ui.add_space(8.0);
-		ui.label(crate::design::eyebrow(ui, "Frame rate", colors.muted));
-		ui.add_space(6.0);
-		ui.horizontal_wrapped(|ui| {
-			ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
-			for fps in [15, 30, 60] {
-				if segment(ui, &format!("{fps} fps"), self.fps == fps).clicked() {
-					self.fps = fps;
+			});
+			ui.add_space(6.0);
+			ui.horizontal_wrapped(|ui| {
+				ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+				for fps in [15, 30, 60] {
+					if segment(ui, &format!("{fps} fps"), self.fps == fps).clicked() {
+						self.fps = fps;
+					}
 				}
-			}
-		});
-		ui.add_space(4.0);
-		ui.add(
-			egui::Label::new(
-				egui::RichText::new("Quality selection does not require Nitro.")
-					.size(12.0)
-					.color(colors.muted),
-			)
-			.wrap(),
-		);
-		ui.add_space(10.0);
-		crate::design::switch(
-			ui,
-			"Show cursor",
-			Some("Include the pointer in the shared video."),
-			&mut self.cursor,
-		);
-		if self.supported {
+			});
 			ui.add_space(6.0);
 			crate::design::switch(
 				ui,
-				"Share system audio",
-				Some(if cfg!(target_os = "macos") {
-					"Send what your Mac plays along with the screen. Serein's own call audio is left out."
-				} else {
-					"Share sound from other apps, even when sharing one window. Serein's own audio is left out."
-				}),
-				&mut self.audio,
+				t("Show cursor"),
+				Some(t("Include the pointer in the shared video.")),
+				&mut self.cursor,
 			);
 		}
-		ui.add_space(4.0);
-		ui.add(
-			egui::Label::new(
-				egui::RichText::new("Your call microphone keeps its current settings.")
-					.size(12.0)
-					.color(colors.muted),
-			)
-			.wrap(),
-		);
 		if !self.status.is_empty() {
 			ui.add_space(10.0);
-			egui::Frame::new()
-				.fill(colors.base)
-				.corner_radius(8)
-				.inner_margin(egui::Margin::symmetric(12, 10))
-				.show(ui, |ui| {
-					ui.set_width(ui.available_width());
-					ui.add(
-						egui::Label::new(
-							egui::RichText::new(self.status)
-								.size(12.0)
-								.color(colors.muted),
-						)
-						.wrap(),
-					);
-				});
+			ui.add(
+				egui::Label::new(
+					egui::RichText::new(self.status)
+						.size(12.0)
+						.color(colors.muted),
+				)
+				.wrap(),
+			);
 		}
 	}
 
-	/// Selectable source rows; the caller bounds the height so options stay visible.
-	fn source_list(&mut self, ui: &mut egui::Ui) {
+	fn source_row(
+		&mut self,
+		ui: &mut egui::Ui,
+		id: SourceId,
+		title: &str,
+		detail: &str,
+		display: bool,
+	) {
 		let colors = crate::design::palette(ui);
-		if self.sources.is_empty() {
-			egui::Frame::new()
-				.fill(colors.base)
-				.corner_radius(8)
-				.inner_margin(egui::Margin::symmetric(12, 14))
-				.show(ui, |ui| {
-					ui.set_width(ui.available_width());
-					ui.add(
-						egui::Label::new(
-							egui::RichText::new("No screens or windows are available yet.")
-								.size(13.0)
-								.color(colors.muted),
-						)
-						.wrap(),
-					);
-				});
+		let selected = self.selected == Some(id);
+		let (rect, response) =
+			ui.allocate_exact_size(egui::vec2(ui.available_width(), 52.0), egui::Sense::click());
+		let fill = if selected {
+			colors.accent.gamma_multiply(0.18)
+		} else if response.hovered() || response.has_focus() {
+			colors.hover
+		} else {
+			colors.base
+		};
+		ui.painter().rect_filled(rect, 8, fill);
+		if selected {
+			ui.painter().rect_stroke(
+				rect,
+				8,
+				egui::Stroke::new(1.0, colors.accent),
+				egui::StrokeKind::Inside,
+			);
 		}
-		for source in &self.sources {
-			let selected = self.selected == Some(source.id);
-			let (rect, response) = ui
-				.allocate_exact_size(egui::vec2(ui.available_width(), 48.0), egui::Sense::click());
-			let fill = if selected {
-				colors.accent.gamma_multiply(0.18)
-			} else if response.hovered() || response.has_focus() {
-				colors.hover
+		crate::icons::paint(
+			ui.painter(),
+			if display {
+				crate::icons::Icon::Television
 			} else {
-				colors.base
-			};
-			ui.painter().rect_filled(rect, 8, fill);
+				crate::icons::Icon::ScreenShare
+			},
+			egui::Rect::from_center_size(
+				egui::pos2(rect.left() + 26.0, rect.center().y),
+				egui::Vec2::splat(20.0),
+			),
 			if selected {
-				ui.painter().rect_stroke(
-					rect,
-					8,
-					egui::Stroke::new(1.0, colors.accent),
-					egui::StrokeKind::Inside,
-				);
-			}
-			let display = matches!(source.id, SourceId::Display(_) | SourceId::X11Desktop);
+				colors.accent
+			} else {
+				colors.muted
+			},
+		);
+		let text_left = rect.left() + 46.0;
+		let text_width = (rect.right() - 36.0 - text_left).max(40.0);
+		let name = ui.painter().layout(
+			title.to_owned(),
+			egui::FontId::new(15.0, crate::design::semibold_family(ui.ctx())),
+			colors.text_strong,
+			text_width,
+		);
+		let kind = ui.painter().layout(
+			detail.to_owned(),
+			egui::FontId::proportional(11.0),
+			colors.muted,
+			text_width,
+		);
+		let total = name.size().y + 2.0 + kind.size().y;
+		let name_height = name.size().y;
+		let mut y = rect.center().y - total * 0.5;
+		ui.painter()
+			.galley(egui::pos2(text_left, y), name, colors.text_strong);
+		y += name_height + 2.0;
+		ui.painter()
+			.galley(egui::pos2(text_left, y), kind, colors.muted);
+		if selected {
 			crate::icons::paint(
 				ui.painter(),
-				if display {
-					crate::icons::Icon::Television
-				} else {
-					crate::icons::Icon::ScreenShare
-				},
+				crate::icons::Icon::Check,
 				egui::Rect::from_center_size(
-					egui::pos2(rect.left() + 26.0, rect.center().y),
-					egui::Vec2::splat(20.0),
+					egui::pos2(rect.right() - 20.0, rect.center().y),
+					egui::Vec2::splat(16.0),
 				),
-				if selected {
-					colors.accent
-				} else {
-					colors.muted
-				},
+				colors.accent,
 			);
-			let text_left = rect.left() + 46.0;
-			let text_width = (rect.right() - 36.0 - text_left).max(40.0);
-			let name = ui.painter().layout(
-				source.name.clone(),
-				egui::FontId::new(14.0, crate::design::medium_family(ui.ctx())),
-				colors.text_strong,
-				text_width,
-			);
-			let kind = ui.painter().layout_no_wrap(
-				match source.id {
-					SourceId::Display(_) | SourceId::X11Desktop => "Screen",
-					SourceId::Window(_) => "Window",
-					#[allow(unreachable_patterns)] // Portal may be absent outside Linux.
-					_ => "System permission dialog",
-				}
-				.to_owned(),
-				egui::FontId::proportional(11.0),
-				colors.muted,
-			);
-			let total = name.size().y + kind.size().y;
-			let mut y = rect.center().y - total * 0.5;
-			ui.painter()
-				.galley(egui::pos2(text_left, y), name, colors.text_strong);
-			y += total - kind.size().y;
-			ui.painter()
-				.galley(egui::pos2(text_left, y), kind, colors.muted);
-			if selected {
-				crate::icons::paint(
-					ui.painter(),
-					crate::icons::Icon::Check,
-					egui::Rect::from_center_size(
-						egui::pos2(rect.right() - 20.0, rect.center().y),
-						egui::Vec2::splat(16.0),
-					),
-					colors.accent,
-				);
-			}
-			response.widget_info(|| {
-				egui::WidgetInfo::selected(egui::Role::RadioButton, true, selected, &source.name)
-			});
-			if response.clicked() {
-				self.selected = Some(source.id);
-			}
-			ui.add_space(4.0);
 		}
+		response.widget_info(|| {
+			egui::WidgetInfo::selected(egui::Role::RadioButton, true, selected, title)
+		});
+		if response.clicked() {
+			self.selected = Some(id);
+		}
+		ui.add_space(4.0);
 	}
+}
+
+fn is_display(id: SourceId) -> bool {
+	matches!(
+		id,
+		SourceId::Display(_) | SourceId::X11Desktop | SourceId::Portal
+	)
+}
+
+fn disclosure(ui: &mut egui::Ui, label: &str, open: bool) -> egui::Response {
+	let colors = crate::design::palette(ui);
+	let (rect, response) =
+		ui.allocate_exact_size(egui::vec2(ui.available_width(), 32.0), egui::Sense::click());
+	if response.hovered() || response.has_focus() {
+		ui.painter().rect_filled(rect, 8, colors.hover);
+	}
+	crate::icons::paint(
+		ui.painter(),
+		if open {
+			crate::icons::Icon::ChevronDown
+		} else {
+			crate::icons::Icon::ChevronRight
+		},
+		egui::Rect::from_center_size(
+			egui::pos2(rect.left() + 14.0, rect.center().y),
+			egui::Vec2::splat(14.0),
+		),
+		colors.muted,
+	);
+	let galley = ui.painter().layout_no_wrap(
+		label.to_owned(),
+		egui::FontId::new(13.0, crate::design::medium_family(ui.ctx())),
+		colors.text,
+	);
+	ui.painter().galley(
+		egui::pos2(rect.left() + 28.0, rect.center().y - galley.size().y * 0.5),
+		galley,
+		colors.text,
+	);
+	response
 }
 
 /// Compact segmented choice used by the quality and frame-rate rows.

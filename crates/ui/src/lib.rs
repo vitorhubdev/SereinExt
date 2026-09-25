@@ -2549,13 +2549,14 @@ impl MessagingUi {
 					self.keybinds.chord(model::KeybindAction::SendMessage),
 				)
 			});
+		let message_label = crate::i18n::text(self.language, "Message");
 		let placeholder = state.channel(channel).map_or_else(
-			|| "Message".to_owned(),
+			|| message_label.to_owned(),
 			|c| {
 				if c.guild.is_some() {
-					format!("Message #{}", c.name)
+					format!("{message_label} #{}", c.name)
 				} else {
-					format!("Message @{}", state.conversation_name(c))
+					format!("{message_label} @{}", state.conversation_name(c))
 				}
 			},
 		);
@@ -3818,6 +3819,7 @@ impl MessagingUi {
 						if let Some(command) = state.request_author_members(&author_lookup) {
 							commands.push(command);
 						}
+						self.timeline.language = self.language;
 						self.timeline.show_with_scroll(
 							ui,
 							state,
@@ -4053,7 +4055,7 @@ impl MessagingUi {
 			self.thread_create.open(channel, None, String::new());
 		}
 		self.thread_create.show(&ctx, state, &mut commands);
-		self.screen.show(&ctx, state);
+		self.screen.show(&ctx, state, self.language);
 		if let Some(id) = self.timeline.channel_reference.take() {
 			state.clear_channel_action_result(id);
 			self.timeline.pending_channel_reference = Some(id);

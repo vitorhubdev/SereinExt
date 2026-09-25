@@ -676,7 +676,7 @@ fn proxy_base(source: &str) -> Option<url::Url> {
 	};
 	if !valid_path
 		|| !matches!(
-			host,
+			host.as_str(),
 			"cdn.discordapp.com"
 				| "media.discordapp.net"
 				| "images-ext-1.discordapp.net"
