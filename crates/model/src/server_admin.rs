@@ -133,6 +133,12 @@ pub enum Action {
 		user: Id,
 		nick: String,
 	},
+	/// Move one currently connected guild member between voice channels.
+	MoveVoice {
+		user: Id,
+		from: Id,
+		channel: Id,
+	},
 	Kick {
 		user: Id,
 	},
@@ -246,6 +252,11 @@ impl Action {
 					&& nick.chars().count() <= 32
 					&& !nick.chars().any(char::is_control)
 			}
+			Self::MoveVoice {
+				user,
+				from,
+				channel,
+			} => user.0 != 0 && from.0 != 0 && channel.0 != 0 && from != channel,
 			Self::Kick { user } => user.0 != 0,
 			Self::Prune { days, .. } => (1..=30).contains(days),
 			_ => true,
@@ -262,6 +273,7 @@ pub enum Result {
 	Stickers(Stickers),
 	Members(Members),
 	Member(Member),
+	VoiceMoved { user: Id, channel: Id },
 	Kicked(Id),
 	Pruned(Option<u64>),
 	ChannelList(bool),
@@ -389,6 +401,7 @@ impl Result {
 				}
 				Self::Members(page) => page.valid(),
 				Self::Member(member) => member.valid(),
+				Self::VoiceMoved { user, channel } => user.0 != 0 && channel.0 != 0,
 				Self::Kicked(id) => id.0 != 0,
 				_ => true,
 			}

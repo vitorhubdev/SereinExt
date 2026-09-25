@@ -210,6 +210,7 @@ pub struct MessagingUi {
 	composer_layout: composer_text::Layout,
 	channel_cache: categories::Cache,
 	channel_move: Option<(Id, client_core::channel_actions::Action)>,
+	voice_member_move: Option<(Id, model::server_admin::Action)>,
 	search: search::SearchUi,
 	settings: settings::Settings,
 	server_settings: server_settings::Editor,
@@ -1521,6 +1522,11 @@ impl MessagingUi {
 				let select = self.channel_list(ui, state);
 				if let Some((channel, action)) = self.channel_move.take()
 					&& let Some(command) = state.request_channel_action(channel, action)
+				{
+					commands.push(command);
+				}
+				if let Some((guild, action)) = self.voice_member_move.take()
+					&& let Some(command) = state.request_server_admin(guild, action)
 				{
 					commands.push(command);
 				}

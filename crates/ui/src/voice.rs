@@ -353,18 +353,23 @@ impl MessagingUi {
 		ui: &mut egui::Ui,
 		state: &State,
 		entry: &RosterEntry,
-	) {
+		draggable: bool,
+	) -> Option<egui::Response> {
 		if !state.can_view(entry.channel) {
-			return;
+			return None;
 		}
 		let colors = design::palette(ui);
 		let (user, name) = resolve_member(state, entry);
-		ui.push_id(
+		let response = ui.push_id(
 			("voice-participant", entry.channel, entry.participant.user),
 			|ui| {
 				let (rect, row) = ui.allocate_exact_size(
 					egui::vec2(ui.available_width(), 34.0),
-					egui::Sense::click(),
+					if draggable {
+						egui::Sense::click_and_drag()
+					} else {
+						egui::Sense::click()
+					},
 				);
 				row.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, name));
 				let hovered = row.contains_pointer() || row.has_focus();
@@ -452,8 +457,10 @@ impl MessagingUi {
 				if let Some(user) = user {
 					self.profile.person_click(ui, &row, None, user);
 				}
+				row
 			},
 		);
+		Some(response.inner)
 	}
 
 	/// Guild voice channel: Discord-style black stage with participant tiles and, when

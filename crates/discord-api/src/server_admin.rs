@@ -285,6 +285,29 @@ impl DiscordApi {
 				}
 				Ok(Outcome::Member(member))
 			}
+			Action::MoveVoice { user, channel, .. } => {
+				let bytes = self
+					.request_limited(
+						Method::PATCH,
+						&format!("/guilds/{guild}/members/{user}"),
+						Some(json!({"channel_id":channel.to_string()})),
+						64 * 1024,
+					)
+					.await
+					.map_err(write_failure)?;
+				// Discord normally returns the modified member. Accept an empty successful
+				// response too; VOICE_STATE_UPDATE is the authoritative move confirmation.
+				if !bytes.is_empty() {
+					let member = wire::member(&bytes, *user).map_err(|_| Failure::Ambiguous)?;
+					if member.user.id != *user {
+						return Err(Failure::Ambiguous);
+					}
+				}
+				Ok(Outcome::VoiceMoved {
+					user: *user,
+					channel: *channel,
+				})
+			}
 			Action::Kick { user } => {
 				let bytes = self
 					.request_limited(

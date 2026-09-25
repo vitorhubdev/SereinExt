@@ -347,6 +347,74 @@ impl State {
 		self.can_open_member_settings(guild)
 			&& self.server_members_shortcuts.get(&guild) == Some(&true)
 	}
+	fn voice_move_scope_allowed(&self, guild: Id, from: Id, channel: Id) -> bool {
+		if from == channel {
+			return false;
+		}
+		let Some(source) = self
+			.channel(from)
+			.filter(|source| source.guild == Some(guild) && source.kind == 2)
+		else {
+			return false;
+		};
+		let Some(target) = self
+			.channel(channel)
+			.filter(|target| target.guild == Some(guild) && target.kind == 2)
+		else {
+			return false;
+		};
+		let _ = (source, target);
+		self.permission(
+			from,
+			model::permissions::VIEW_CHANNEL | model::permissions::MOVE_MEMBERS,
+		) == Some(true)
+			&& self.permission(
+				channel,
+				model::permissions::VIEW_CHANNEL | model::permissions::MOVE_MEMBERS,
+			) == Some(true)
+	}
+	/// Whether this exact roster entry can be dragged right now. Destination permission is
+	/// checked separately while hovering, so invalid channels simply become non-drop targets.
+	pub fn can_drag_voice_member(&self, guild: Id, user: Id, from: Id) -> bool {
+		user.0 != 0
+			&& !self.server_admin.pending
+			&& !self.server_settings.saving
+			&& !self.server_admin.needs_refresh
+			&& (self.demo
+				|| (self.auth == AuthState::Authenticated && self.gateway_connected))
+			&& self
+				.channel(from)
+				.is_some_and(|channel| channel.guild == Some(guild) && channel.kind == 2)
+			&& self.permission(
+				from,
+				model::permissions::VIEW_CHANNEL | model::permissions::MOVE_MEMBERS,
+			) == Some(true)
+			&& self.voice.roster.iter().any(|entry| {
+				entry.guild == guild
+					&& entry.channel == from
+					&& entry.participant.user == user
+			})
+	}
+	/// Permission and freshness fence used both when dropping and immediately before the
+	/// REST write. The voice roster is authoritative for the source channel.
+	pub fn can_move_voice_member(
+		&self,
+		guild: Id,
+		user: Id,
+		from: Id,
+		channel: Id,
+	) -> bool {
+		user.0 != 0
+			&& (self.demo
+				|| (self.auth == AuthState::Authenticated && self.gateway_connected))
+			&& self.voice_move_scope_allowed(guild, from, channel)
+			&& self.voice.roster.iter().any(|entry| {
+				entry.guild == guild
+					&& entry.channel == from
+					&& entry.participant.user == user
+			})
+	}
+
 	pub fn server_admin_action_allowed(&self, guild: Id, action: &Action) -> bool {
 		if !action.valid() {
 			return false;
@@ -369,6 +437,11 @@ impl State {
 			Action::LoadMembers(_) => self.can_open_member_settings(guild),
 			Action::SetRole { user, role, .. } => self.can_edit_member_role(guild, *user, *role),
 			Action::SetNickname { user, .. } => self.can_edit_guild_nickname(guild, *user),
+			Action::MoveVoice {
+				user,
+				from,
+				channel,
+			} => self.can_move_voice_member(guild, *user, *from, *channel),
 			Action::Kick { user } => self.can_kick_guild_member(guild, *user),
 			Action::Prune { days, execute } => {
 				self.can_prune_guild(guild)
@@ -553,6 +626,8 @@ impl State {
 					) && !self.can_open_member_settings(event.guild)
 			} else if action.emoji() {
 				!self.can_open_emoji_settings(event.guild)
+			} else if let Action::MoveVoice { from, channel, .. } = action {
+				!self.voice_move_scope_allowed(event.guild, *from, *channel)
 			} else if action.sticker() {
 				!match action {
 					Action::LoadStickers => self.can_open_sticker_settings(event.guild),
@@ -582,8 +657,9 @@ impl State {
 					self.server_admin.revoke_audit_access();
 				}
 				self.server_admin.error = Some(failure.label());
-				self.server_admin.needs_refresh |=
-					action.as_ref().is_some_and(Action::write) && failure == Failure::Ambiguous;
+				self.server_admin.needs_refresh |= action.as_ref().is_some_and(Action::write)
+					&& !matches!(action, Some(Action::MoveVoice { .. }))
+					&& failure == Failure::Ambiguous;
 				if failure.ends_session() {
 					self.fail(failure);
 				}
@@ -687,6 +763,13 @@ impl State {
 				Some(Action::SetRole { user, .. } | Action::SetNickname { user, .. }),
 				Outcome::Member(member),
 			) => *user == member.user.id,
+			(
+				Some(Action::MoveVoice { user, channel, .. }),
+				Outcome::VoiceMoved {
+					user: moved,
+					channel: destination,
+				},
+			) => user == moved && channel == destination,
 			(Some(Action::Kick { user }), Outcome::Kicked(id)) => user == id,
 			(Some(action), Outcome::Stickers(page)) if action.sticker() => {
 				page.items
@@ -829,6 +912,8 @@ impl State {
 					*row = member;
 				}
 			}
+			// The gateway VOICE_STATE_UPDATE remains authoritative for roster placement.
+			Outcome::VoiceMoved { .. } => {}
 			Outcome::Kicked(user) => {
 				if let Some(page) = &mut self.server_admin.members {
 					page.items.retain(|row| row.user.id != user);

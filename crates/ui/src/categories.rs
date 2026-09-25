@@ -54,6 +54,13 @@ struct CacheKey {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ChannelDrag(Id);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct VoiceMemberDrag {
+	guild: Id,
+	user: Id,
+	from: Id,
+}
+
 #[derive(Clone, Copy)]
 struct DropRow {
 	id: Id,
@@ -591,16 +598,34 @@ impl MessagingUi {
 						}
 						CachedRow::Participant(entry) => {
 							let entry = &state.voice.roster[entry];
-							let response = ui.horizontal(|ui| {
-								ui.add_space(28.0);
-								self.voice_participant(ui, state, entry);
-							});
-							paint_shelf_rule(
-								ui,
-								response.response.rect,
-								&self.channel_cache.rows,
-								index,
+							let draggable = state.can_drag_voice_member(
+								entry.guild,
+								entry.participant.user,
+								entry.channel,
 							);
+							let response = ui
+								.horizontal(|ui| {
+									ui.add_space(28.0);
+									self.voice_participant(ui, state, entry, draggable)
+								})
+								.inner;
+							if let Some(response) = response {
+								if draggable
+									&& response.drag_started_by(egui::PointerButton::Primary)
+								{
+									response.dnd_set_drag_payload(VoiceMemberDrag {
+										guild: entry.guild,
+										user: entry.participant.user,
+										from: entry.channel,
+									});
+								}
+								paint_shelf_rule(
+									ui,
+									response.rect,
+									&self.channel_cache.rows,
+									index,
+								);
+							}
 						}
 						CachedRow::Category(category, count) => {
 							let category = &state.channels[category];
@@ -1136,7 +1161,59 @@ impl MessagingUi {
 				));
 			}
 		}
-		if egui::DragAndDrop::payload::<ChannelDrag>(ui.ctx()).is_some()
+		if let Some(source) = egui::DragAndDrop::payload::<VoiceMemberDrag>(ui.ctx()) {
+			let pointer = ui.ctx().pointer_hover_pos();
+			let hovered = pointer
+				.filter(|pointer| output.inner_rect.contains(*pointer))
+				.and_then(|pointer| {
+					drop_rows.iter().copied().find(|row| {
+						row.kind == 2
+							&& pointer.y >= row.rect.top()
+							&& pointer.y <= row.rect.bottom()
+					})
+				});
+			let target = hovered.filter(|target| {
+				state.can_move_voice_member(
+					source.guild,
+					source.user,
+					source.from,
+					target.id,
+				)
+			});
+			if let Some(target) = target {
+				ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+				ui.painter().rect_filled(
+					target.rect.shrink(1.0),
+					7,
+					colors.positive.gamma_multiply(0.12),
+				);
+				ui.painter().rect_stroke(
+					target.rect.shrink(1.0),
+					7,
+					egui::Stroke::new(2.0, colors.positive),
+					egui::StrokeKind::Inside,
+				);
+			} else if hovered.is_some() {
+				ui.ctx().set_cursor_icon(egui::CursorIcon::NotAllowed);
+			}
+			ui.ctx()
+				.request_repaint_after(std::time::Duration::from_millis(16));
+			if ui.input(|input| input.pointer.any_released()) {
+				egui::DragAndDrop::take_payload::<VoiceMemberDrag>(ui.ctx());
+				if let Some(target) = target {
+					self.voice_member_move = Some((
+						source.guild,
+						model::server_admin::Action::MoveVoice {
+							user: source.user,
+							from: source.from,
+							channel: target.id,
+						},
+					));
+				}
+			}
+		}
+		if (egui::DragAndDrop::payload::<ChannelDrag>(ui.ctx()).is_some()
+			|| egui::DragAndDrop::payload::<VoiceMemberDrag>(ui.ctx()).is_some())
 			&& let Some(pointer) = ui.ctx().pointer_hover_pos()
 		{
 			let direction = if pointer.y < output.inner_rect.top() + 28.0 {
