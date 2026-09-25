@@ -652,6 +652,9 @@ impl State {
 				if matches!(action, Some(Action::AuditLog(_))) && failure == Failure::Forbidden {
 					self.server_admin.revoke_audit_access();
 				}
+				if matches!(action, Some(Action::MoveVoice { .. })) {
+					self.status = failure.label();
+				}
 				self.server_admin.error = Some(failure.label());
 				self.server_admin.needs_refresh |= action.as_ref().is_some_and(Action::write)
 					&& !matches!(action, Some(Action::MoveVoice { .. }))
@@ -909,7 +912,9 @@ impl State {
 				}
 			}
 			// The gateway VOICE_STATE_UPDATE remains authoritative for roster placement.
-			Outcome::VoiceMoved { .. } => {}
+			Outcome::VoiceMoved { .. } => {
+				self.status = "Voice participant moved";
+			}
 			Outcome::Kicked(user) => {
 				if let Some(page) = &mut self.server_admin.members {
 					page.items.retain(|row| row.user.id != user);
