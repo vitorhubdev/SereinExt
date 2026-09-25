@@ -34,7 +34,8 @@ impl Settings {
 			show_hidden_channels: ui.show_hidden_channels,
 			hide_title_bar: ui.hide_title_bar,
 			language: ui.language,
-			language_chosen: self.loaded,
+			language_chosen: self.current.language_chosen
+				|| (self.loaded && ui.language != self.current.language),
 			gpu_preference: ui.gpu_preference,
 			primary_color: ui.primary_color,
 			transparency_blur: ui.transparency_blur,
@@ -65,7 +66,10 @@ impl Settings {
 			}
 		}
 	}
-	pub fn apply(&self, ui: &mut ui::MessagingUi) {
+	pub fn apply(&mut self, ui: &mut ui::MessagingUi) {
+		if !self.current.language_chosen {
+			self.current.language = system_language();
+		}
 		let value = &self.current;
 		ui.notifications_enabled = value.notifications_enabled;
 		ui.updates.auto_update = value.auto_update;
@@ -73,11 +77,7 @@ impl Settings {
 		ui.notification_options = value.notification_options;
 		ui.show_hidden_channels = value.show_hidden_channels;
 		ui.hide_title_bar = value.hide_title_bar;
-		ui.language = if value.language_chosen {
-			value.language
-		} else {
-			system_language()
-		};
+		ui.language = value.language;
 		ui.gpu_preference = value.gpu_preference;
 		ui.primary_color = value.primary_color;
 		ui.transparency_blur = value.transparency_blur;
