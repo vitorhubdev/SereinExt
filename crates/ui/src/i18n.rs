@@ -267,7 +267,7 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn settings_catalog_is_complete_for_both_locales() {
+	fn migrated_ui_catalog_is_complete_for_both_locales() {
 		const KEYS: &[&str] = &[
 			"Custom status",
 			"Shown next to your name across Discord.",
