@@ -1,117 +1,54 @@
-//! Ephemeral, provider-bounded web media player used from chat embeds.
-//! It never shares Discord credentials, accepts downloads, or grants device permissions.
-use std::sync::Arc;
+//! Provider-bounded web media player used from chat embeds.
+//! Default play is incognito. "Open with login" uses a dedicated profile that never
+//! shares the Discord login webview, accepts downloads, or grants device permissions.
+use std::{path::Path, sync::Arc};
 
 pub const HEADER_HEIGHT: f32 = 56.0;
 
-fn safe_url(value: &str) -> Option<url::Url> {
-	let url = url::Url::parse(value).ok()?;
-	if url.scheme() != "https"
-		|| !url.username().is_empty()
-		|| url.password().is_some()
-		|| url.port().is_some_and(|port| port != 443)
-	{
-		return None;
-	}
-	Some(url)
-}
-
-fn video_id(value: &str) -> Option<&str> {
-	(!value.is_empty()
-		&& value.len() <= 32
-		&& value
-			.bytes()
-			.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')))
-	.then_some(value)
-}
-
 pub fn normalize(value: &str) -> Option<String> {
-	let url = safe_url(value)?;
-	let host = url.host_str()?.trim_start_matches("www.").to_ascii_lowercase();
-	match host.as_str() {
-		"youtu.be" => {
-			let id = video_id(url.path_segments()?.next()?)?;
-			Some(format!("https://www.youtube-nocookie.com/embed/{id}?autoplay=1"))
-		}
-		"youtube.com" | "m.youtube.com" => {
-			let id = if url.path() == "/watch" {
-				url.query_pairs().find_map(|(key, value)| {
-					(key == "v").then(|| value.into_owned())
-				})?
-			} else {
-				let mut parts = url.path_segments()?;
-				let kind = parts.next()?;
-				if !matches!(kind, "shorts" | "embed") {
-					return None;
-				}
-				parts.next()?.to_owned()
-			};
-			let id = video_id(&id)?;
-			Some(format!("https://www.youtube-nocookie.com/embed/{id}?autoplay=1"))
-		}
-		"x.com" | "twitter.com" => {
-			let parts: Vec<_> = url.path_segments()?.filter(|part| !part.is_empty()).take(4).collect();
-			if parts.len() < 3 || parts[1] != "status" || !parts[2].bytes().all(|b| b.is_ascii_digit()) {
-				return None;
-			}
-			Some(format!("https://x.com/{}/status/{}", parts[0], parts[2]))
-		}
-		"vimeo.com" => {
-			let id = url.path_segments()?.find(|part| part.bytes().all(|b| b.is_ascii_digit()))?;
-			Some(format!("https://player.vimeo.com/video/{id}?autoplay=1"))
-		}
-		"player.vimeo.com" => {
-			let mut parts = url.path_segments()?;
-			if parts.next()? != "video" {
-				return None;
-			}
-			let id = parts.next()?;
-			if !id.bytes().all(|b| b.is_ascii_digit()) {
-				return None;
-			}
-			Some(format!("https://player.vimeo.com/video/{id}?autoplay=1"))
-		}
-		_ => None,
-	}
-}
-
-fn navigation_allowed(value: &str) -> bool {
-	let Some(url) = safe_url(value) else { return false };
-	let Some(host) = url.host_str().map(|host| host.to_ascii_lowercase()) else {
-		return false;
-	};
-	matches!(
-		host.as_str(),
-		"youtube.com"
-			| "www.youtube.com"
-			| "m.youtube.com"
-			| "youtube-nocookie.com"
-			| "www.youtube-nocookie.com"
-			| "x.com"
-			| "www.x.com"
-			| "twitter.com"
-			| "www.twitter.com"
-			| "vimeo.com"
-			| "www.vimeo.com"
-			| "player.vimeo.com"
-	)
+	model::web_media::normalize(value)
 }
 
 #[cfg(not(target_os = "linux"))]
 pub struct WebMediaView {
 	view: wry::WebView,
+	_context: Option<wry::WebContext>,
 }
 #[cfg(not(target_os = "linux"))]
 impl WebMediaView {
 	pub fn open(
 		parent: Arc<winit::window::Window>,
 		value: &str,
+		persist: Option<&Path>,
 		_wake: impl Fn() + Send + Sync + 'static,
 	) -> Result<Self, &'static str> {
 		let url = normalize(value).ok_or("Unsupported web video provider or URL")?;
-		let view = wry::WebViewBuilder::new()
+		#[cfg(windows)]
+		if let Some(dir) = persist {
+			std::fs::create_dir_all(dir).map_err(|_| "Could not create the web media profile")?;
+		}
+		let persist_on = persist.is_some();
+		#[cfg(windows)]
+		let mut context = persist.map(|dir| wry::WebContext::new(Some(dir.to_path_buf())));
+		#[cfg(not(windows))]
+		let context = None::<wry::WebContext>;
+		#[allow(unused_mut)]
+		let mut builder = {
+			#[cfg(windows)]
+			{
+				match context.as_mut() {
+					Some(context) => wry::WebViewBuilder::new_with_web_context(context),
+					None => wry::WebViewBuilder::new(),
+				}
+			}
+			#[cfg(not(windows))]
+			{
+				wry::WebViewBuilder::new()
+			}
+		};
+		builder = builder
 			.with_url(&url)
-			.with_incognito(true)
+			.with_incognito(!persist_on)
 			.with_visible(true)
 			.with_focused(true)
 			.with_autoplay(true)
@@ -123,19 +60,38 @@ impl WebMediaView {
 					wry::PermissionResponse::Deny
 				}
 			})
-			.with_navigation_handler(|url| navigation_allowed(&url))
+			.with_navigation_handler(|url| model::web_media::navigation_allowed(&url))
 			.with_new_window_req_handler(|_, _| wry::NewWindowResponse::Deny)
-			.with_download_started_handler(|_, _| false)
+			.with_download_started_handler(|_, _| false);
+		#[cfg(windows)]
+		{
+			use wry::WebViewBuilderExtWindows;
+			builder = builder.with_browser_extensions_enabled(false);
+		}
+		#[cfg(target_os = "macos")]
+		if persist_on {
+			use wry::WebViewBuilderExtDarwin;
+			// WKWebView has no data_directory; this is the 0.57 replacement API.
+			builder = builder.with_data_store_identifier(*b"serein-web-media");
+		}
+		let view = builder
 			.with_bounds(bounds(&parent))
 			.build_as_child(parent.as_ref())
 			.map_err(|_| "Could not create the isolated web media player")?;
 		view.set_visible(true)
 			.map_err(|_| "Could not show the web media player")?;
 		let _ = view.focus();
-		Ok(Self { view })
+		Ok(Self {
+			view,
+			_context: context,
+		})
 	}
-	pub fn embedded(&self) -> bool { true }
-	pub fn closed(&self) -> bool { false }
+	pub fn embedded(&self) -> bool {
+		true
+	}
+	pub fn closed(&self) -> bool {
+		false
+	}
 	pub fn pump(&self) {}
 	pub fn resize(&self, parent: &winit::window::Window) {
 		let _ = self.view.set_bounds(bounds(parent));
@@ -163,14 +119,35 @@ impl WebMediaView {
 	pub fn open(
 		_parent: Arc<winit::window::Window>,
 		value: &str,
+		persist: Option<&Path>,
 		wake: impl Fn() + Send + Sync + 'static,
 	) -> Result<Self, &'static str> {
 		use webkit6::{glib, prelude::*};
 		gtk4::init().map_err(|_| "Linux web media window unavailable")?;
 		crate::ensure_gtk_application_id();
 		let url = normalize(value).ok_or("Unsupported web video provider or URL")?;
-		let session = webkit6::NetworkSession::new_ephemeral();
-		session.set_persistent_credential_storage_enabled(false);
+		let session = if let Some(dir) = persist {
+			let data = dir.join("data");
+			let cache = dir.join("cache");
+			std::fs::create_dir_all(&data).map_err(|_| "Could not create the web media profile")?;
+			std::fs::create_dir_all(&cache)
+				.map_err(|_| "Could not create the web media profile")?;
+			webkit6::NetworkSession::builder()
+				.data_directory(
+					data.to_str()
+						.ok_or("Web media profile path is not valid UTF-8")?,
+				)
+				.cache_directory(
+					cache
+						.to_str()
+						.ok_or("Web media profile path is not valid UTF-8")?,
+				)
+				.build()
+		} else {
+			let session = webkit6::NetworkSession::new_ephemeral();
+			session.set_persistent_credential_storage_enabled(false);
+			session
+		};
 		session.set_tls_errors_policy(webkit6::TLSErrorsPolicy::Fail);
 		session.connect_download_started(|_, download| download.cancel());
 		let settings = webkit6::Settings::new();
@@ -193,7 +170,7 @@ impl WebMediaView {
 					.and_then(|decision| decision.navigation_action())
 					.and_then(|action| action.request())
 					.and_then(|request| request.uri())
-					.is_some_and(|uri| navigation_allowed(&uri)),
+					.is_some_and(|uri| model::web_media::navigation_allowed(&uri)),
 				webkit6::PolicyDecisionType::Response => decision
 					.downcast_ref::<webkit6::ResponsePolicyDecision>()
 					.is_some_and(|response| {
@@ -202,11 +179,15 @@ impl WebMediaView {
 								|| response
 									.request()
 									.and_then(|request| request.uri())
-									.is_some_and(|uri| navigation_allowed(&uri)))
+									.is_some_and(|uri| model::web_media::navigation_allowed(&uri)))
 					}),
 				_ => false,
 			};
-			if allowed { decision.use_(); } else { decision.ignore(); }
+			if allowed {
+				decision.use_();
+			} else {
+				decision.ignore();
+			}
 			true
 		});
 		view.connect_create(|_, _| None);
@@ -249,10 +230,19 @@ impl WebMediaView {
 		view.grab_focus();
 		view.load_uri(&url);
 		let display = gtk4::prelude::WidgetExt::display(&window);
-		Ok(Self { view, window, display, closed })
+		Ok(Self {
+			view,
+			window,
+			display,
+			closed,
+		})
 	}
-	pub fn embedded(&self) -> bool { false }
-	pub fn closed(&self) -> bool { self.closed.get() }
+	pub fn embedded(&self) -> bool {
+		false
+	}
+	pub fn closed(&self) -> bool {
+		self.closed.get()
+	}
 	pub fn resize(&self, _parent: &winit::window::Window) {}
 	pub fn pump(&self) {
 		use webkit6::glib;
@@ -285,20 +275,15 @@ impl Drop for WebMediaView {
 mod tests {
 	use super::*;
 	#[test]
-	fn normalizes_supported_media_without_open_redirects() {
-		assert_eq!(
-			normalize("https://youtu.be/dQw4w9WgXcQ?si=tracking").as_deref(),
-			Some("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?autoplay=1")
-		);
-		assert_eq!(
-			normalize("https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=ignored").as_deref(),
-			Some("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?autoplay=1")
-		);
-		assert_eq!(
-			normalize("https://x.com/user/status/123?utm_source=ignored").as_deref(),
-			Some("https://x.com/user/status/123")
-		);
-		assert!(normalize("https://youtube.com.evil.test/watch?v=dQw4w9WgXcQ").is_none());
-		assert!(normalize("http://x.com/user/status/123").is_none());
+	fn platform_normalize_delegates_to_model() {
+		for url in [
+			"https://youtu.be/dQw4w9WgXcQ?si=tracking",
+			"https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=ignored",
+			"https://x.com/user/status/123?utm_source=ignored",
+			"https://youtube.com.evil.test/watch?v=dQw4w9WgXcQ",
+			"http://x.com/user/status/123",
+		] {
+			assert_eq!(normalize(url), model::web_media::normalize(url), "{url}");
+		}
 	}
 }

@@ -813,7 +813,10 @@ fn message_actions(
 			crate::select::request_copy(ui.ctx());
 			ui.close();
 		}
-		if ui.button(crate::i18n::text(language, "Copy message")).clicked() {
+		if ui
+			.button(crate::i18n::text(language, "Copy message"))
+			.clicked()
+		{
 			ui.ctx().copy_text(message.display_text().into_owned());
 			ui.close();
 		}
@@ -848,25 +851,37 @@ fn message_actions(
 			}
 		}
 		if ui
-			.add_enabled(can_reply, egui::Button::new(crate::i18n::text(language, "Reply")))
+			.add_enabled(
+				can_reply,
+				egui::Button::new(crate::i18n::text(language, "Reply")),
+			)
 			.clicked()
 		{
 			*reply = Some(message.id);
 			ui.close();
 		}
 		if ui
-			.add_enabled(forward.0, egui::Button::new(crate::i18n::text(language, "Forward")))
+			.add_enabled(
+				forward.0,
+				egui::Button::new(crate::i18n::text(language, "Forward")),
+			)
 			.clicked()
 		{
 			*forward.1 = Some(message.id);
 			ui.close();
 		}
-		if can_thread && ui.button(crate::i18n::text(language, "Create Thread…")).clicked() {
+		if can_thread
+			&& ui
+				.button(crate::i18n::text(language, "Create Thread…"))
+				.clicked()
+		{
 			*thread_request = Some((message.channel, message.id));
 			ui.close();
 		}
 		if let Some((emoji, view)) = view_reactions
-			&& ui.button(crate::i18n::text(language, "View reactions")).clicked()
+			&& ui
+				.button(crate::i18n::text(language, "View reactions"))
+				.clicked()
 		{
 			*view = Some((message.id, emoji, true));
 			ui.close();
@@ -884,7 +899,10 @@ fn message_actions(
 			ui.close();
 		}
 		if ui
-			.add_enabled(mark_unread.is_some(), egui::Button::new(crate::i18n::text(language, "Mark Unread")))
+			.add_enabled(
+				mark_unread.is_some(),
+				egui::Button::new(crate::i18n::text(language, "Mark Unread")),
+			)
 			.clicked()
 		{
 			if let Some(mark_unread) = mark_unread {
@@ -914,7 +932,10 @@ fn message_actions(
 		}
 		if own
 			&& ui
-				.add_enabled(can_edit, egui::Button::new(crate::i18n::text(language, "Edit message")))
+				.add_enabled(
+					can_edit,
+					egui::Button::new(crate::i18n::text(language, "Edit message")),
+				)
 				.clicked()
 		{
 			*editing = Some((message.channel, message.id, message.content.clone()));
@@ -948,7 +969,10 @@ fn message_actions(
 		}
 		if (own || can_delete)
 			&& ui
-				.add_enabled(can_delete, egui::Button::new(crate::i18n::text(language, "Delete message…")))
+				.add_enabled(
+					can_delete,
+					egui::Button::new(crate::i18n::text(language, "Delete message…")),
+				)
 				.clicked()
 		{
 			*deleting = Some((message.channel, message.id));
@@ -1105,12 +1129,8 @@ fn unread_banner(
 		},
 		|ui| {
 			ui.label(
-				crate::design::medium(
-					ui,
-					crate::i18n::text(language, "Unread messages"),
-					13.0,
-				)
-				.color(text),
+				crate::design::medium(ui, crate::i18n::text(language, "Unread messages"), 13.0)
+					.color(text),
 			);
 			ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
 				if bar_button(
@@ -1636,8 +1656,12 @@ impl TimelineView {
 				.and_then(|channel| state.channel(channel))
 				.and_then(|channel| channel.last_message);
 			if state.show_missed_banner() && self.unread_dismissed != Some(latest) {
-				let (jump_unread, mark_read) =
-					unread_banner(ui, banner_rect(area), state.can_jump_unread(), self.language);
+				let (jump_unread, mark_read) = unread_banner(
+					ui,
+					banner_rect(area),
+					state.can_jump_unread(),
+					self.language,
+				);
 				if jump_unread {
 					self.unread_jump = true;
 					self.browse_away();
@@ -2742,10 +2766,10 @@ impl TimelineView {
 						.as_ref()
 						.is_some_and(|user| message.author.id == user.id);
 					if !self.batch_delete.is_empty()
-						&& own_message
-						&& state.can_delete(message.channel, id)
+						&& own_message && state.can_delete(message.channel, id)
 					{
-						let hit = egui::Rect::from_min_size(rect.min, egui::vec2(36.0, rect.height()));
+						let hit =
+							egui::Rect::from_min_size(rect.min, egui::vec2(36.0, rect.height()));
 						let toggle = ui.interact(
 							hit,
 							ui.id().with(("batch-select", id)),
@@ -3020,7 +3044,10 @@ impl TimelineView {
 										action_button(
 											ui,
 											crate::icons::Icon::Trash,
-											crate::i18n::text(self.language, "Delete message immediately"),
+											crate::i18n::text(
+												self.language,
+												"Delete message immediately",
+											),
 										)
 									})
 									.inner
@@ -3410,22 +3437,15 @@ impl TimelineView {
 					ui.vertical(|ui| {
 						ui.spacing_mut().item_spacing.y = 0.0;
 						let (title, hint) = if let Some((done, total)) = deleting {
-							(
-								format!("Deleting {done} of {total}"),
-								"Esc stops the rest",
-							)
+							(format!("Deleting {done} of {total}"), "Esc stops the rest")
 						} else {
 							(
 								format!("{} of {MAX_BATCH_DELETE}", self.batch_delete.len()),
 								"Click beside a message to add it · Esc cancels",
 							)
 						};
-						ui.label(
-							crate::design::medium(ui, &title, 13.0).color(colors.text_strong),
-						);
-						ui.label(
-							egui::RichText::new(hint).size(11.0).color(colors.muted),
-						);
+						ui.label(crate::design::medium(ui, &title, 13.0).color(colors.text_strong));
+						ui.label(egui::RichText::new(hint).size(11.0).color(colors.muted));
 					});
 					if let Some((done, total)) = deleting.filter(|(_, total)| *total > 0) {
 						ui.add(
@@ -3439,7 +3459,9 @@ impl TimelineView {
 						if deleting.is_none() && ui.button("Delete selected…").clicked() {
 							self.batch_delete_requested = true;
 						}
-						if ui.button(if deleting.is_some() { "Stop" } else { "Cancel" }).clicked()
+						if ui
+							.button(if deleting.is_some() { "Stop" } else { "Cancel" })
+							.clicked()
 						{
 							self.batch_delete.clear();
 							self.batch_delete_cancel = true;
@@ -4180,7 +4202,10 @@ mod tests {
 			banner_frame(&ctx, &mut view, &mut state, vec![], false);
 		}
 		let boundary = view.unread_boundary;
-		assert!(boundary.is_some(), "the visit never placed an unread divider");
+		assert!(
+			boundary.is_some(),
+			"the visit never placed an unread divider"
+		);
 		assert_eq!(view.seen_latest, Some(Id(20)));
 		state.selected = Some(Id(21));
 		banner_frame(&ctx, &mut view, &mut state, vec![], false);

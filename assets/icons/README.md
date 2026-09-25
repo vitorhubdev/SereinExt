@@ -6,9 +6,9 @@
 fetched through the jsDelivr npm mirror on September 10, 2026. The unmodified license is
 `LICENSE` and is staged in both packages as `licenses/Phosphor-Icons-MIT.txt`.
 
-Ninety unmodified Phosphor `assets/fill/*.svg` and `assets/bold/*.svg` files are scaled
+Ninety-two unmodified Phosphor `assets/fill/*.svg` and `assets/bold/*.svg` files are scaled
 to 56×56 pixels, filled white, and rasterized by `resvg` 0.45.1 into one transparent PNG atlas
-with 64×64 cells (8 columns, 13 rows). `headphones-slash` is derived from `headphones-fill.svg`
+with 64×64 cells (8 columns, 14 rows). `headphones-slash` is derived from `headphones-fill.svg`
 by masking a diagonal knockout and adding a 16-unit round-capped stroke, matching the style of
 Phosphor's own `*-slash` icons. The application tints glyphs at draw time; no icon font,
 JavaScript or per-icon file is bundled.
@@ -26,10 +26,13 @@ legal disclaimer applies. The license file is staged in both packages as
 One repository-drawn glyph, `thread.svg` (four slanted round-capped bars on the same 256-unit
 grid), marks threads; it is rasterized with the Phosphor set and carries no upstream license.
 
-- `atlas.png`: 512×832 RGBA, 114,614 bytes.
-  SHA-256 `1afd60fcba9cacf16576332911d88ea50f561e1f0e32408c84ff00b64d5a0d81`.
+- `atlas.png`: 512×896 RGBA, 117,224 bytes.
+  SHA-256 `173c28750d0e54e07ee1aeb3b3cd22fa080b2aa3daba40c45fdcae69cbb95279`.
 - `index.tsv`: icon name, tab, zero-based cell; SHA-256
-  `a150ba05027f284a49b8a93da4ae626f3019226019da1425ba0a72adf8f12a45`.
+  `d5521392722faa09bb94659373af9f688e0fd4575a8e216f29840894383d1f7b`.
+
+The bot badge and bot-conversation visibility glyphs are unmodified Phosphor `robot-fill.svg`
+and `eye-fill.svg`, fetched from the same pinned 2.1.1 package on September 25, 2026.
 
 Every upstream SVG's SHA-256 is pinned in `tools/generate-icons.py`, which refuses to build
 from mismatching files. Regenerate from the repository root:

@@ -455,6 +455,9 @@ Notification opt-in, hidden-channel visibility, primary RGB color, audio devices
 input profile/custom processing, push-to-talk and gain are saved in the device-wide `app_preferences`
 SQLite singleton (16 KiB maximum), using the existing background worker. These survive
 restart/logout; demo controls never read or write them. Save failures remain visible.
+An optional reconnect hint may store the last joined channel id, guild id if any, account id
+and a Unix timestamp — never a voice token, session secret or stream key. It is written while
+a call is connecting or connected, cleared on hang-up or dismiss, and ignored after 15 minutes.
 The optional voice profile preserves older records: an absent profile migrates the legacy
 suppression boolean to Custom with RNNoise/Off, AEC on, and no AGC/sensitivity gate.
 The selected profile and retained Custom settings are saved together; suppression strength
@@ -530,7 +533,9 @@ The owner explicitly withdrew the no-storage policy on 2026-09-09. Local files, 
 | SQLite working files | DELETE journal mode, in-memory temporary tables, 2 MiB page cache; transaction journal may temporarily add disk usage | SQLite transaction completion; normal SQLite crash recovery |
 | Voice credentials, DAVE identities/keys and PCM/Opus audio | Session memory only; one call, bounded media queues; no recording or audio cache | Hangup, failure, logout and application teardown; no forensic-erasure claim |
 | Audio devices, input profile/custom processing, push-to-talk and gain | Device-wide `app_preferences` SQLite singleton, bounded to 16 KiB; device names ≤1,024 bytes each | Retained across restart/logout; demo changes remain in memory |
+| Recent-call reconnect hint | Optional `reconnect_call` record in the same 16 KiB `app_preferences` JSON: channel, guild, account and timestamp only | Cleared on hang-up, dismiss or after 15 minutes; abrupt process exit leaves it so the next launch can offer an explicit reconnect |
 | Authentication page | Wry incognito on Windows/macOS; ephemeral WebKit6 NetworkSession on Linux, destroyed on token handoff/cancel/timeout | Platform engine teardown; OS artifacts not promised erased |
+| Optional signed-in web media profile | Dedicated `dirs::data_local_dir()/serein/web-media` (Windows WebView2 via wry `WebContext::new`); default play stays incognito. Isolated from the Discord login webview. macOS uses wry `with_data_store_identifier`, Linux `NetworkSession::new` | Not cleared on logout; owner may delete the folder |
 
 Typical database directories: macOS `~/Library/Application Support/serein`, Windows `%LOCALAPPDATA%/serein`, Linux `$XDG_DATA_HOME/serein` or `~/.local/share/serein`. The Unix directory is private (0700). Database contents are **not encrypted by Serein**. OS token protection does not encrypt history, backups or drafts.
 
@@ -1104,9 +1109,12 @@ The shared bounded avatar cache is reused.
 ### Application updates
 
 The existing device-wide `app_preferences` JSON stores `auto_update` (default false)
-and `update_nightly` (default true). Missing fields in older settings use those
+and `update_nightly` (default false). Missing fields in older settings use those
 defaults; the existing 16 KiB row bound still applies. These preferences survive
-account logout. Update checks wait for preferences to load; demo actions remain
+account logout. In-app checks always use the production GitHub latest release;
+leftover Nightly values are ignored and rewritten as production. A leftover
+`auto_update` preference can still auto-download after a newer release is found.
+Update checks wait for preferences to load; demo actions remain
 in memory and never open update transports or create installation files.
 
 The updater uses a separate credential-free HTTPS client for the Serein GitHub

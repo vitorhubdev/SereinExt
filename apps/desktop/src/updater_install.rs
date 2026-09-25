@@ -14,6 +14,7 @@ const MAX_FILES: usize = 8192;
 const MAX_UNPACKED: u64 = 1024 * 1024 * 1024;
 const WINDOWS_FILES: &[&str] = &[
 	"serein.exe",
+	"SereinExt.exe",
 	"README.md",
 	"LICENSE-MIT",
 	"LICENSE-APACHE",
@@ -24,6 +25,13 @@ const WINDOWS_FILES: &[&str] = &[
 	"install-notifications.ps1",
 	"setup.ps1",
 ];
+
+fn windows_executable(name: Option<&std::ffi::OsStr>) -> bool {
+	matches!(
+		name.and_then(|name| name.to_str()),
+		Some("serein.exe" | "SereinExt.exe")
+	)
+}
 
 pub(super) fn flatpak_session() -> bool {
 	static FLATPAK: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -184,11 +192,11 @@ fn installation() -> Result<PathBuf, String> {
 		let root = exe
 			.parent()
 			.ok_or("Cannot locate the installed application folder.")?;
-		if exe.file_name().is_none_or(|name| name != "serein.exe")
-			|| !root.join("THIRD_PARTY_NOTICES.md").is_file()
-			|| !root.join("licenses").is_dir()
-		{
-			return Err("Run Serein from an extracted release package to install updates; source builds cannot replace themselves.".into());
+		if !windows_executable(exe.file_name()) {
+			return Err(
+				"Run SereinExt.exe to install updates; source builds cannot replace themselves."
+					.into(),
+			);
 		}
 		Ok(root.to_owned())
 	} else {
@@ -648,11 +656,10 @@ pub(super) fn unpack(
 			return Err("The update does not contain Serein.app.".into());
 		}
 		verify_mac(&destination.join("Serein.app"), installed)?;
-	} else if !destination.join("serein.exe").is_file()
-		|| !destination.join("licenses").is_dir()
-		|| !destination.join("THIRD_PARTY_NOTICES.md").is_file()
+	} else if !destination.join("SereinExt.exe").is_file()
+		&& !destination.join("serein.exe").is_file()
 	{
-		return Err("The update is missing its executable or bundled notices.".into());
+		return Err("The update is missing SereinExt.exe.".into());
 	}
 	fs::remove_file(directory.join("package.zip"))
 		.map_err(|_| "Cannot clean the verified update archive.".to_owned())?;
@@ -922,7 +929,9 @@ try {
   if ($plan.version -and (Test-Path -LiteralPath $uninstallKey)) {
     Set-ItemProperty -LiteralPath $uninstallKey -Name 'DisplayVersion' -Value ([string]$plan.version) -ErrorAction SilentlyContinue
   }
-  Start-Process -FilePath (Join-Path $installation 'serein.exe') -WorkingDirectory $installation
+  $exe = Join-Path $installation 'SereinExt.exe'
+  if (!(Test-Path -LiteralPath $exe)) { $exe = Join-Path $installation 'serein.exe' }
+  Start-Process -FilePath $exe -WorkingDirectory $installation
 } catch {
   foreach ($name in $replaced) {
     $target = Join-Path $installation $name
@@ -931,7 +940,9 @@ try {
   foreach ($name in $moved) {
     Move-Item -LiteralPath (Join-Path $backup $name) -Destination (Join-Path $installation $name) -ErrorAction SilentlyContinue
   }
-  Start-Process -FilePath (Join-Path $installation 'serein.exe') -WorkingDirectory $installation -ErrorAction SilentlyContinue
+  $exe = Join-Path $installation 'SereinExt.exe'
+  if (!(Test-Path -LiteralPath $exe)) { $exe = Join-Path $installation 'serein.exe' }
+  Start-Process -FilePath $exe -WorkingDirectory $installation -ErrorAction SilentlyContinue
   exit 1
 }
 Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue

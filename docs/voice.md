@@ -43,7 +43,7 @@ gain perception, microphone/speaker hardware, native slider interaction and call
 remain unverified. Owner-controlled live checks should include 0/100/200% on each control,
 Reset levels, mute/deafen/PTT precedence and changing devices while custom levels are selected.
 
-Start calls the selected existing DM; incoming calls require Answer or Decline. One active call is retained while navigating text conversations. Start rings once after Discord voice transport allocation is confirmed; Answer never rings. Required DAVE group readiness and native device readiness precede the connected-audio state. An allocation with no endpoint waits within the deadline; incompatible states fail visibly. Hangup closes local audio immediately and sends departure; another call waits for the service's departure acknowledgment. No uncertain ring write or failed main Gateway session automatically starts another call.
+Start calls the selected existing DM; incoming calls require Answer or Decline. One active call is retained while navigating text conversations. Start rings once after Discord voice transport allocation is confirmed; Answer never rings. Required DAVE group readiness and native device readiness precede the connected-audio state. An allocation with no endpoint waits within the deadline; incompatible states fail visibly. Hangup closes local audio immediately and sends departure; another call waits for the service's departure acknowledgment. No uncertain ring write or failed main Gateway session automatically starts another call. Closing the app while still in a call (or an abrupt process exit) may leave a 15-minute local reconnect hint — channel, guild, account and timestamp only. The next authenticated launch can show **Reconnect to call**; clicking it uses the existing join command. Hang-up, dismiss or an older hint clears it. Startup never auto-joins or opens the microphone.
 
 Opening a one-to-one or group DM also requests its existing call state. An ongoing call shows a
 **Call in progress** banner and **Join call**, even after ringing stops or this device leaves.
@@ -117,7 +117,7 @@ Until actual two-way official-client audio and the relevant encryption/teardown 
 
 Select an existing server voice channel to inspect its roster, then explicitly Join. Browsing alone never opens media devices. Participant rows show names/avatars and separate mute/deafen states; the connected channel shows elapsed local connection time. Mute/deafen, audio settings and Leave remain available while reading other channels. Server-enforced mute/deafen cannot be overridden locally. To switch rooms, select the next room and Join, then confirm **Switch call**. The current call closes immediately; the new call waits for the matching service departure acknowledgment and local audio teardown. Cancelling keeps the current call. The pending switch expires after 12 seconds and is cancelled on disconnect, account change or lost target access; it never retries automatically. A rejected/full/inaccessible room fails visibly after the bounded allocation deadline.
 
-An authenticated empty room displays “Connected · waiting for others”; audio devices open for local microphone detection, respecting mute, deafen, push-to-talk and SPEAK permission. Captured audio is consumed locally while alone; transmission waits until another participant joins and DAVE is secured. The client does not transmit unencrypted microphone audio to make an empty room appear connected. A server move, changed voice endpoint/session or main Gateway failure requires an explicit rejoin. The roster is session-only, bounded to 4,096 entries and 1 MiB, and is cleared on fresh login/resync and relevant access invalidation; during a resumable disconnect it is labeled last-known until missed events replay. Missing user details use a fallback identity rather than fetching a whole guild directory.
+An authenticated empty room displays “Connected | waiting for others”; audio devices open for local microphone detection, respecting mute, deafen, push-to-talk and SPEAK permission. Captured audio is consumed locally while alone; transmission waits until another participant joins and DAVE is secured. The client does not transmit unencrypted microphone audio to make an empty room appear connected. A server move, changed voice endpoint/session or main Gateway failure requires an explicit rejoin. The roster is session-only, bounded to 4,096 entries and 1 MiB, and is cleared on fresh login/resync and relevant access invalidation; during a resumable disconnect it is labeled last-known until missed events replay. Missing user details use a fallback identity rather than fetching a whole guild directory.
 
 `cargo run --locked -- --demo --demo-voice` shows a separately labeled synthetic roster/call scene, including long names and mute/deafen states. It cannot connect, ring, or access devices. The ordinary `--demo` fixture remains the before/after comparison scenario.
 
@@ -302,7 +302,8 @@ Voice & Video settings offers three saved profiles:
   control (maximum 20 dB), and −55 dBFS input sensitivity.
 - **Studio:** bypasses processing and sensitivity gating. Manual gain, mute, deafen,
   push-to-talk and permission/security gates still apply.
-- **Custom:** Off, RNNoise, or WebRTC (four suppression strengths);
+- **Custom:** Off, Light (WebRTC, four strengths), Standard (RNNoise) or Maximum
+  (DeepFilterNet);
   independent echo cancellation and automatic gain controls; and optional manual
   sensitivity from −80 to 0 dBFS. The gate uses 3 dB hysteresis, a 200 ms release
   hold and a 5 ms ramp. This controls transmitted audio, not just the speaking glow.
@@ -311,13 +312,22 @@ Switching profiles retains Custom settings; editing a preset starts from its vis
 values. Saved preferences without a profile migrate to Custom with their prior
 RNNoise/Off choice, echo cancellation enabled, and gain control/sensitivity gating off.
 
-The worker processes AEC/WebRTC suppression, then optional RNNoise,
+Settings shows the suppression choice as four plain-language levels with a PC-usage
+meter. The call panel's noise button toggles between Off and the last chosen level,
+and its context menu picks a level directly.
+
+The worker processes AEC/WebRTC suppression, then optional RNNoise or DeepFilterNet,
 then digital automatic gain, manual gain, the local meter, and sensitivity gating.
 Calls and microphone preview share this path; playback audio is not denoised.
 No DSP runs in rendering or native audio callbacks. Settings replace one fixed-size
 worker snapshot and do not add a queue. Native PCM queues remain eight frames each.
 
-RNNoise uses bundled nnnoiseless 0.5.2. These processors keep bounded session state,
+RNNoise uses bundled nnnoiseless 0.5.2. DeepFilterNet 0.5.6 runs its bundled DFN3 model
+through tract on a dedicated `voice-deepfilter` thread, one 10 ms frame per request;
+it adds about 20 ms of model lookahead. RNNoise covers the model's load time (about
+0.6 s). If a frame takes longer than 50 ms, or the model uses more than 60% of real
+time for three consecutive seconds, the worker switches to RNNoise immediately. The
+desktop then saves Standard and explains why. These processors keep bounded session state,
 with no audio recordings or remote processing. Quality, CPU cost, physical latency and
 cross-platform behavior require owner-operated checks; this local implementation does
 not establish production readiness or superiority over Discord's processing.

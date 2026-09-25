@@ -224,8 +224,13 @@ impl Body<'_> {
 			.show(self.ui, |ui| {
 				ui.set_width(ui.available_width());
 				ui.spacing_mut().item_spacing.x = 8.0;
-				ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add)
-					.inner
+				// A bare right-to-left layout centres in all remaining height, which is last
+				// frame's dialog size: the strip would then keep a shrinking dialog tall.
+				ui.horizontal(|ui| {
+					ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add)
+						.inner
+				})
+				.inner
 			})
 			.inner
 	}
@@ -448,5 +453,45 @@ fn enter_after_shown_frame(
 		ctx.data_mut(|data| data.remove_temp::<u64>(key));
 	} else if !ctx.will_discard() {
 		ctx.data_mut(|data| data.insert_temp(key, frame));
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn dialog_shrinks_back_when_its_content_does() {
+		let ctx = egui::Context::default();
+		let height = |lines: usize| {
+			let mut height = 0.0;
+			for _ in 0..3 {
+				ctx.run_ui(
+					egui::RawInput {
+						screen_rect: Some(egui::Rect::from_min_size(
+							egui::Pos2::ZERO,
+							egui::vec2(1200.0, 900.0),
+						)),
+						..Default::default()
+					},
+					|ui| {
+						Dialog::new("footer-height", "Title").show(ui.ctx(), |d| {
+							d.content(|ui| (0..lines).for_each(|_| _ = ui.label("Line")));
+							d.footer(|ui| action(ui, "Confirm", Action::Primary));
+						});
+						height = ui.ctx().memory(|memory| {
+							memory
+								.area_rect(egui::Id::unique("footer-height"))
+								.map_or(0.0, |rect| rect.height())
+						});
+					},
+				)
+				.drop_without_applying_deltas();
+			}
+			height
+		};
+		let short = height(1);
+		assert!(short > 0.0 && height(20) > short + 200.0);
+		assert_eq!(height(1), short, "the footer must not keep the old height");
 	}
 }

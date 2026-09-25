@@ -396,14 +396,14 @@ fn demo_check_updates() {
 	messaging.updates.restart_requested = true;
 	assert!(!updater.sync(&ctx, &runtime, &mut messaging.updates, false));
 	let restored: local_store::AppPreferences = serde_json::from_str("{}").unwrap();
-	assert!(!restored.auto_update && restored.update_nightly);
+	assert!(!restored.auto_update && !restored.update_nightly);
 	let mut settings = app_settings::Settings::default();
 	messaging.updates.nightly = true;
 	settings.observe(&messaging);
 	let encoded = serde_json::to_string(&settings.current).unwrap();
 	settings.current = serde_json::from_str(&encoded).unwrap();
 	settings.apply(&mut messaging);
-	assert!(!messaging.updates.auto_update && messaging.updates.nightly);
+	assert!(!messaging.updates.auto_update && !messaging.updates.nightly);
 	messaging.open_update_settings();
 	let mut state = test_support::demo_state();
 	for size in [[1120.0, 760.0], [760.0, 520.0]] {
@@ -787,6 +787,9 @@ struct Desktop {
 	hotkeys: platform::hotkeys::Hotkeys,
 	tray_error: Option<&'static str>,
 	tray_window: tray_window::State,
+	/// Status last drawn on the tray icon, so it is only rebuilt when something changes.
+	#[cfg(target_os = "windows")]
+	tray_shown: Option<(u32, platform::tray::Voice, model::Language)>,
 	/// `--demo-reply`: keeps two synthetic typists active on the selected fixture channel.
 	#[cfg(feature = "demo")]
 	demo_typing: bool,
@@ -813,6 +816,10 @@ struct Desktop {
 	/// A switcher-roster write is in flight; failures stop retrying for this session.
 	roster_pending: bool,
 	roster_failed: bool,
+	/// False until this app's credential service confirms which roster rows it can restore.
+	/// Upstream Serein profiles share the local database but not this service, so they must
+	/// not be offered as a saved login.
+	account_tokens_probed: bool,
 	/// Session generation whose account was last recorded in the switcher roster.
 	roster_generation: Option<u64>,
 	close_approved: bool,
@@ -1399,6 +1406,7 @@ impl Desktop {
 		messaging.notifications_enabled = preference_defaults.notifications_enabled;
 		messaging.transparency = preference_defaults.transparency;
 		messaging.blur = preference_defaults.blur;
+		messaging.voice_bot_safe_volume = preference_defaults.voice_bot_safe_volume;
 		#[cfg(feature = "demo")]
 		if demo {
 			messaging.transparency_blur = transparency_available;
@@ -1929,6 +1937,8 @@ impl Desktop {
 			startup,
 			tray: None,
 			tray_window,
+			#[cfg(target_os = "windows")]
+			tray_shown: None,
 			hotkeys,
 			tray_error: None,
 			#[cfg(feature = "demo")]
@@ -1956,6 +1966,7 @@ impl Desktop {
 			switching: None,
 			roster_pending: false,
 			roster_failed: false,
+			account_tokens_probed: demo,
 			roster_generation: None,
 			close_approved: false,
 			fixture_only: demo,
@@ -2166,6 +2177,42 @@ impl Desktop {
 			self.begin_switch(account);
 		}
 	}
+	/// Confirms roster rows against this app's credential service. Profiles left by the
+	/// upstream Serein app stay in the shared database, but their tokens do not.
+	fn probe_saved_logins(&mut self) {
+		if self.fixture_only || self.state.demo {
+			self.account_tokens_probed = true;
+			return;
+		}
+		let ids: Vec<_> = self
+			.messaging
+			.accounts
+			.iter()
+			.filter(|account| account.has_token)
+			.map(|account| account.id)
+			.collect();
+		if ids.is_empty() {
+			self.account_tokens_probed = true;
+			return;
+		}
+		self.account_tokens_probed = false;
+		let queued = self.store.as_ref().is_some_and(|store| {
+			store
+				.send
+				.try_send((
+					self.state.generation,
+					credentials::Request::NONE,
+					credentials::Operation::ProbeAccounts(ids),
+				))
+				.is_ok()
+		});
+		if !queued {
+			self.account_tokens_probed = true;
+			for account in &mut self.messaging.accounts {
+				account.has_token = false;
+			}
+		}
+	}
 	/// Reads the saved token of an account already signed in on this device.
 	fn begin_switch(&mut self, account: model::Id) {
 		if self.fixture_only || self.state.demo {
@@ -2290,6 +2337,47 @@ impl Desktop {
 		}
 		false
 	}
+	fn unix_secs() -> u64 {
+		std::time::SystemTime::now()
+			.duration_since(std::time::UNIX_EPOCH)
+			.map(|duration| duration.as_secs())
+			.unwrap_or(0)
+	}
+	fn sync_reconnect_call(&mut self) {
+		if self.fixture_only || self.state.demo || !self.app_settings.loaded {
+			self.messaging.reconnect_offer = None;
+			return;
+		}
+		let now = Self::unix_secs();
+		if self.messaging.reconnect_dismissed {
+			self.messaging.reconnect_dismissed = false;
+			self.messaging.reconnect_offer = None;
+			self.app_settings.set_reconnect_call(None);
+			return;
+		}
+		if let Some(call) = &self.state.voice.active
+			&& call.phase != client_core::voice::Phase::Failed
+		{
+			if let Some(user) = self.state.user.as_ref().map(|user| user.id) {
+				self.app_settings
+					.remember_active_call(call.channel, call.guild, user, now);
+			}
+			self.messaging.reconnect_offer = None;
+			return;
+		}
+		let hint = self.app_settings.current.reconnect_call;
+		if hint.is_some_and(|hint| !hint.is_recent(now)) {
+			self.app_settings.set_reconnect_call(None);
+			self.messaging.reconnect_offer = None;
+			return;
+		}
+		self.messaging.reconnect_offer = self
+			.state
+			.user
+			.as_ref()
+			.filter(|_| self.state.auth == AuthState::Authenticated)
+			.and_then(|user| hint.and_then(|hint| hint.offer(user.id, now)));
+	}
 	fn save_app_preferences(&mut self) {
 		if self.fixture_only || self.state.demo {
 			return;
@@ -2369,7 +2457,13 @@ impl Desktop {
 				Ok(tray) => self.tray = Some(tray),
 				Err(error) => self.tray_error = Some(error),
 			}
+			#[cfg(target_os = "windows")]
+			{
+				self.tray_shown = None;
+			}
 		}
+		#[cfg(target_os = "windows")]
+		self.sync_tray_status();
 		if self.tray_window.hidden && !self.tray_available() {
 			self.tray_window.show(ctx);
 		}
@@ -2378,6 +2472,62 @@ impl Desktop {
 			.unwrap_or_else(|| self.tray_setting.status());
 		if previous_status != self.messaging.tray_status {
 			ctx.request_repaint();
+		}
+	}
+	/// Discord-style tray status: unread pings and the call state, as a badge and tooltip.
+	#[cfg(target_os = "windows")]
+	fn sync_tray_status(&mut self) {
+		use client_core::voice::Phase;
+		use platform::tray::Voice;
+		let Some(tray) = &self.tray else {
+			self.tray_shown = None;
+			return;
+		};
+		let voice = match self.state.voice.active.as_ref() {
+			Some(call) if matches!(call.phase, Phase::Connected | Phase::Waiting) => {
+				if call.deafened || call.server_deafened {
+					Voice::Deafened
+				} else if call.muted || call.server_muted {
+					Voice::Muted
+				} else {
+					Voice::Connected
+				}
+			}
+			_ => Voice::Idle,
+		};
+		let status = (
+			self.notification_runtime.pings(),
+			voice,
+			self.messaging.language,
+		);
+		if self.tray_shown == Some(status) {
+			return;
+		}
+		let (pings, voice, language) = status;
+		let t = |english: &'static str| ui::i18n::text(language, english);
+		let mut tooltip = "SereinExt".to_owned();
+		if let Some(call) = match voice {
+			Voice::Idle => None,
+			Voice::Connected => Some(t("In a call")),
+			Voice::Muted => Some(t("In a call · microphone muted")),
+			Voice::Deafened => Some(t("In a call · deafened")),
+		} {
+			tooltip.push_str(" — ");
+			tooltip.push_str(call);
+		}
+		if pings > 0 {
+			let count = if pings >= 100 {
+				"99+".to_owned()
+			} else {
+				pings.to_string()
+			};
+			tooltip.push_str(&format!(" · {count} {}", t("unread mentions")));
+		}
+		let png = include_bytes!("../../../packaging/windows/serein.png");
+		if let Some(pixels) = platform::tray::status_icon(png, 32, pings > 0, voice)
+			&& tray.set_icon(&pixels, 32, &tooltip)
+		{
+			self.tray_shown = Some(status);
 		}
 	}
 	fn tray_available(&self) -> bool {
@@ -2941,6 +3091,8 @@ impl Desktop {
 				self.voice.stop();
 				self.messaging.camera_test_requested = false;
 				self.messaging.camera_test_texture = None;
+				self.app_settings.set_reconnect_call(None);
+				self.messaging.reconnect_offer = None;
 			}
 		}
 		if let Command::History {
@@ -3827,6 +3979,114 @@ impl Desktop {
 			ui::design::TRAFFIC_LIGHT_INSET
 		}
 	}
+	fn notices_dialog(&mut self, ctx: &egui::Context) {
+		if self.state.demo
+			|| !self.app_settings.loaded
+			|| self.app_settings.current.notices_accepted
+		{
+			return;
+		}
+		let language = self.messaging.language;
+		let mut accept = false;
+		egui::Window::new(ui::i18n::text(language, "Before you use SereinExt"))
+			.collapsible(false)
+			.resizable(true)
+			.default_width(520.0)
+			.anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+			.show(ctx, |ui| {
+				ui.set_min_width(420.0);
+				ui.label(ui::i18n::text(
+					language,
+					"SereinExt is an unofficial app for your own Discord account. It is not Discord and is not endorsed by Discord. Discord's own rules still apply to your account.",
+				));
+				ui.add_space(8.0);
+				ui.label(ui::i18n::text(
+					language,
+					"This program also includes other people's work: libraries, fonts and icons. Their licenses are part of the app. Accepting here does not remove those licenses or shift their copyright.",
+				));
+				ui.add_space(8.0);
+				egui::ScrollArea::vertical()
+					.max_height(240.0)
+					.show(ui, |ui| {
+						ui.label(include_str!("../../../THIRD_PARTY_NOTICES.md"));
+					});
+				ui.add_space(8.0);
+				if ui
+					.button(ui::i18n::text(language, "I understand — continue"))
+					.clicked()
+				{
+					accept = true;
+				}
+			});
+		if accept {
+			self.app_settings.current.notices_accepted = true;
+			self.app_settings.state.dirty = true;
+			self.app_settings.state.touched = true;
+		}
+	}
+	fn ensure_notification_shortcut(&self) {
+		#[cfg(windows)]
+		{
+			if self.state.demo || self.fixture_only {
+				return;
+			}
+			static STARTED: std::sync::Once = std::sync::Once::new();
+			STARTED.call_once(|| {
+				let script = r#"
+$shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'SereinExt.lnk'
+if (Test-Path -LiteralPath $shortcut) { exit 0 }
+$exe = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+$shell = New-Object -ComObject WScript.Shell
+$link = $shell.CreateShortcut($shortcut)
+$link.TargetPath = $exe
+$link.WorkingDirectory = Split-Path -Parent $exe
+$link.Save()
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+public static class SereinExtShortcut {
+    [StructLayout(LayoutKind.Sequential)] struct PropertyKey { public Guid format; public uint id; }
+    [StructLayout(LayoutKind.Explicit)] struct PropVariant {
+        [FieldOffset(0)] public ushort type;
+        [FieldOffset(8)] public IntPtr value;
+        [FieldOffset(16)] private IntPtr padding;
+    }
+    [ComImport, Guid("886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IPropertyStore {
+        void GetCount(out uint count);
+        void GetAt(uint index, out PropertyKey key);
+        void GetValue(ref PropertyKey key, out PropVariant value);
+        void SetValue(ref PropertyKey key, ref PropVariant value);
+        void Commit();
+    }
+    [DllImport("shell32.dll", CharSet=CharSet.Unicode, PreserveSig=false)]
+    static extern void SHGetPropertyStoreFromParsingName(string path, IntPtr bindContext, uint flags, ref Guid iid, [MarshalAs(UnmanagedType.Interface)] out IPropertyStore store);
+    public static void SetAppId(string path) {
+        Guid iid = typeof(IPropertyStore).GUID;
+        IPropertyStore store;
+        SHGetPropertyStoreFromParsingName(path, IntPtr.Zero, 2, ref iid, out store);
+        PropertyKey key = new PropertyKey { format = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), id = 5 };
+        PropVariant value = new PropVariant { type = 31, value = Marshal.StringToCoTaskMemUni("cz.viceverse.serein") };
+        try { store.SetValue(ref key, ref value); store.Commit(); }
+        finally { Marshal.FreeCoTaskMem(value.value); Marshal.FinalReleaseComObject(store); }
+    }
+}
+'@
+[SereinExtShortcut]::SetAppId($shortcut)
+"#;
+				let _ = std::process::Command::new("powershell")
+					.args([
+						"-NoProfile",
+						"-NonInteractive",
+						"-WindowStyle",
+						"Hidden",
+						"-Command",
+						script,
+					])
+					.spawn();
+			});
+		}
+	}
 	fn sign_in_screen(&mut self, ui: &mut egui::Ui) {
 		let p = ui::design::palette(ui);
 		egui::CentralPanel::default()
@@ -3853,7 +4113,9 @@ impl Desktop {
 								p.accent_text,
 							);
 							ui.add_space(8.0);
-							ui.label(ui::design::semibold(ui, "SereinExt", 16.0).color(p.text_strong));
+							ui.label(
+								ui::design::semibold(ui, "SereinExt", 16.0).color(p.text_strong),
+							);
 							ui.add_space(8.0);
 							// Painted rather than framed: the pill must hug the text, not the row height.
 							let stage = ui.painter().layout_no_wrap(
@@ -3957,12 +4219,10 @@ impl Desktop {
 							);
 							ui.add_space(18.0);
 							ui.label(
-								egui::RichText::new(
-									ui::i18n::text(
-										self.messaging.language,
-										"Independent and open source. Not affiliated with Discord.",
-									),
-								)
+								egui::RichText::new(ui::i18n::text(
+									self.messaging.language,
+									"Independent and open source. Not affiliated with Discord.",
+								))
 								.size(12.0)
 								.color(p.muted),
 							);
@@ -4016,7 +4276,12 @@ impl Desktop {
 				bottom: 14,
 			})
 			.show(ui, |ui| {
-				let returning = !self.messaging.accounts.is_empty();
+				let returning = self.account_tokens_probed
+					&& self
+						.messaging
+						.accounts
+						.iter()
+						.any(|account| account.has_token);
 				let waiting = self.state.auth == AuthState::Authenticating;
 				let idle = !waiting && !self.forgetting;
 				self.sign_in_header(ui, returning);
@@ -4050,7 +4315,8 @@ impl Desktop {
 						if let Some(store) = &mut self.store {
 							store.cancel_load();
 						}
-						self.credential_status = "Sign in through Discord; saved-login lookup stopped";
+						self.credential_status =
+							"Sign in through Discord; saved-login lookup stopped";
 						let wake = ctx.clone();
 						match platform::LoginView::open(self.window.clone(), move || {
 							wake.request_repaint()
@@ -4138,6 +4404,7 @@ impl Desktop {
 			.messaging
 			.accounts
 			.iter()
+			.filter(|account| account.has_token)
 			.map(|account| {
 				(
 					account.id,
@@ -4251,8 +4518,8 @@ impl Desktop {
 							self.messaging.language,
 							"Check this to continue.",
 						))
-							.size(13.0)
-							.color(p.accent),
+						.size(13.0)
+						.color(p.accent),
 					);
 				}
 			});
@@ -4713,7 +4980,11 @@ impl Desktop {
 					}
 					let _ = error;
 					self.cache_error = true;
-					self.cache_status = message;
+					self.cache_status = if matches!(error, local_store::StoreError::Full) {
+						"Local cache was full. Older saved history was removed."
+					} else {
+						message
+					};
 					if *draft_restore && generation == self.state.generation {
 						self.messaging.draft_restore_pending = false;
 						self.state.drafts.retain(|_, content| !content.is_empty());
@@ -4734,7 +5005,10 @@ impl Desktop {
 						self.queue_cache_for(*account, cache::Operation::Forget);
 					}
 					match roster {
-						Ok(accounts) => self.messaging.accounts = accounts.clone(),
+						Ok(accounts) => {
+							self.messaging.accounts = accounts.clone();
+							self.probe_saved_logins();
+						}
 						Err(_) => {
 							self.roster_failed = true;
 							self.cache_error = true;
@@ -4871,11 +5145,20 @@ impl Desktop {
 						self.credential_status = "";
 						self.connect(secret, switching.is_some(), ctx);
 					} else {
-						self.credential_status = credentials::loaded_status(&result);
+						self.credential_status = if matches!(result, Ok(None)) {
+							""
+						} else {
+							credentials::loaded_status(&result)
+						};
 						if let Some(account) = switching {
-							// The entry stays: the owner decides whether to forget it. Signing
-							// in again with "Use another account" refreshes its token, which the
-							// roster must expect again.
+							if let Some(saved) = self
+								.messaging
+								.accounts
+								.iter_mut()
+								.find(|saved| saved.id == account)
+							{
+								saved.has_token = false;
+							}
 							self.queue_cache_for(
 								model::Id(0),
 								cache::Operation::SetAccountToken {
@@ -4883,13 +5166,29 @@ impl Desktop {
 									has_token: false,
 								},
 							);
-							self.credential_status = "No saved login for that account on this device. Use another account to sign in again, or forget it with ×.";
-							self.messaging.toasts.push(
-								ui::design::Level::Warning,
-								"That account's saved login is missing; sign in again to refresh it",
+						}
+					}
+				}
+				credentials::Outcome::AccountsProbed(result) => {
+					let ok = result.is_ok();
+					let present = result.unwrap_or_default();
+					let dropped =
+						credentials::forget_absent_tokens(&mut self.messaging.accounts, &present);
+					if ok {
+						for account in dropped {
+							self.queue_cache_for(
+								model::Id(0),
+								cache::Operation::SetAccountToken {
+									account,
+									has_token: false,
+								},
 							);
 						}
 					}
+					if !self.messaging.accounts.iter().any(|saved| saved.has_token) {
+						self.credential_status = "";
+					}
+					self.account_tokens_probed = true;
 				}
 				credentials::Outcome::AccountSaved(account, result) => {
 					if result.is_ok() {
@@ -5338,7 +5637,9 @@ fn monitor_refresh_due(
 		return true;
 	}
 	match (previous_rect, next.0) {
-		(Some(before), Some(after)) => (after.center() - before.center()).length_sq() > 320.0 * 320.0,
+		(Some(before), Some(after)) => {
+			(after.center() - before.center()).length_sq() > 320.0 * 320.0
+		}
 		_ => true,
 	}
 }
@@ -5859,7 +6160,11 @@ impl eframe::App for Desktop {
 			ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
 			self.confirming_close = true;
 		}
-		if self.web_media.as_ref().is_some_and(|media| media.embedded()) {
+		if self
+			.web_media
+			.as_ref()
+			.is_some_and(|media| media.embedded())
+		{
 			let p = ui::design::palette(ui);
 			egui::Panel::top("web-media-header")
 				.exact_size(platform::web_media::HEADER_HEIGHT)
@@ -5873,7 +6178,10 @@ impl eframe::App for Desktop {
 				.show(ui, |ui| {
 					ui::design::window_drag(ui, ui.max_rect());
 					ui.horizontal_centered(|ui| {
-						ui.label(ui::design::semibold(ui, "Web media preview", 15.0).color(p.text_strong));
+						ui.label(
+							ui::design::semibold(ui, "Web media preview", 15.0)
+								.color(p.text_strong),
+						);
 						ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
 							if ui::design::secondary_button(ui, "Back to chat").clicked() {
 								self.web_media = None;
@@ -5885,7 +6193,9 @@ impl eframe::App for Desktop {
 				.frame(egui::Frame::NONE.fill(p.canvas))
 				.show(ui, |ui| {
 					ui.centered_and_justified(|ui| {
-						ui.label(egui::RichText::new("Loading isolated media player…").color(p.muted));
+						ui.label(
+							egui::RichText::new("Loading isolated media player…").color(p.muted),
+						);
 					});
 				});
 			if let Some(media) = &self.web_media {
@@ -5969,13 +6279,25 @@ impl eframe::App for Desktop {
 				self.messaging.notification_sound_status = "Could not save device notification settings. Changes apply only until restart.";
 			}
 			let mut commands = self.messaging.show(ui, &mut self.state);
-			if let Some(target) = ui::take_web_media_request(&ctx) {
-				let wake = ctx.clone();
-				match platform::web_media::WebMediaView::open(
-					self.window.clone(),
-					&target,
-					move || wake.request_repaint(),
-				) {
+			if let Some(request) = ui::take_web_media_request(&ctx) {
+				self.web_media = None;
+				let persist = if request.persist {
+					dirs::data_local_dir()
+						.map(|root| Some(root.join("serein").join("web-media")))
+						.ok_or("Could not locate the local data directory")
+				} else {
+					Ok(None)
+				};
+				let opened = persist.and_then(|path| {
+					let wake = ctx.clone();
+					platform::web_media::WebMediaView::open(
+						self.window.clone(),
+						&request.url,
+						path.as_deref(),
+						move || wake.request_repaint(),
+					)
+				});
+				match opened {
 					Ok(media) => self.web_media = Some(media),
 					Err(error) => self.messaging.toasts.push(ui::design::Level::Error, error),
 				}
@@ -6366,6 +6688,8 @@ impl eframe::App for Desktop {
 				self.command(command);
 			}
 			self.poll_voice(&ctx);
+			self.notices_dialog(&ctx);
+			self.ensure_notification_shortcut();
 			if self.messaging.logout_requested {
 				self.messaging.logout_requested = false;
 				self.request_session_end(&ctx, SessionEnd::Logout);
@@ -6393,6 +6717,7 @@ impl eframe::App for Desktop {
 			self.state.status = error;
 		}
 		self.sync_customization(&ctx);
+		self.sync_reconnect_call();
 		self.save_app_preferences();
 		self.messaging.updates_save_failed = self.app_settings.state.failed;
 		self.save_reading_preferences(&ctx);

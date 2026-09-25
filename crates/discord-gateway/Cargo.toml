@@ -10,12 +10,14 @@ client-core.workspace = true
 discord-protocol.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
+rustls.workspace = true
 futures-util.workspace = true
 serde_json.workspace = true
 serde.workspace = true
 flate2.workspace = true
 url.workspace = true
 zeroize.workspace = true
+getrandom.workspace = true
 
 [lints]
 workspace = true

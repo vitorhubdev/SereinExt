@@ -10,16 +10,10 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 
 const WEB_MEDIA_REQUEST: &str = "serein-web-media-request";
 
-fn supported_web_media(value: &str) -> bool {
-	let Ok(url) = url::Url::parse(value) else { return false };
-	if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
-		return false;
-	}
-	matches!(
-		url.host_str().map(|host| host.trim_start_matches("www.").to_ascii_lowercase()),
-		Some(host) if matches!(host.as_str(),
-			"youtube.com" | "m.youtube.com" | "youtu.be" | "x.com" | "twitter.com" | "vimeo.com" | "player.vimeo.com")
-	)
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct WebMediaRequest {
+	pub url: String,
+	pub persist: bool,
 }
 
 fn web_media_target(embed: &Embed) -> Option<&str> {
@@ -29,52 +23,31 @@ fn web_media_target(embed: &Embed) -> Option<&str> {
 	]
 	.into_iter()
 	.flatten()
-	.find(|url| supported_web_media(url))
-}
-
-fn youtube_id(value: &str) -> Option<String> {
-	let url = url::Url::parse(value).ok()?;
-	if url.scheme() != "https" {
-		return None;
-	}
-	let host = url
-		.host_str()?
-		.trim_start_matches("www.")
-		.to_ascii_lowercase();
-	let id = match host.as_str() {
-		"youtu.be" => url.path_segments()?.next()?.to_owned(),
-		"youtube.com" | "m.youtube.com" if url.path() == "/watch" => url
-			.query_pairs()
-			.find_map(|(key, value)| (key == "v").then(|| value.into_owned()))?,
-		"youtube.com" | "m.youtube.com" => {
-			let mut parts = url.path_segments()?;
-			let kind = parts.next()?;
-			if !matches!(kind, "shorts" | "embed") {
-				return None;
-			}
-			parts.next()?.to_owned()
-		}
-		_ => return None,
-	};
-	(id.len() <= 32 && id.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')))
-		.then_some(id)
+	.find(|url| model::web_media::is_supported_host(url))
 }
 
 fn youtube_thumb(value: &str) -> Option<model::EmbedMedia> {
-	let id = youtube_id(value)?;
 	Some(model::EmbedMedia {
-		url: Some(format!("https://i.ytimg.com/vi/{id}/hqdefault.jpg")),
+		url: Some(model::web_media::youtube_thumbnail_url(value)?),
 		width: 480,
 		height: 360,
 		..Default::default()
 	})
 }
 
-pub fn request_web_media(ctx: &egui::Context, url: &str) {
-	ctx.data_mut(|data| data.insert_temp(egui::Id::new(WEB_MEDIA_REQUEST), url.to_owned()));
+pub fn request_web_media(ctx: &egui::Context, url: &str, persist: bool) {
+	ctx.data_mut(|data| {
+		data.insert_temp(
+			egui::Id::new(WEB_MEDIA_REQUEST),
+			WebMediaRequest {
+				url: url.to_owned(),
+				persist,
+			},
+		)
+	});
 }
 
-pub fn take_web_media_request(ctx: &egui::Context) -> Option<String> {
+pub fn take_web_media_request(ctx: &egui::Context) -> Option<WebMediaRequest> {
 	ctx.data_mut(|data| data.remove_temp(egui::Id::new(WEB_MEDIA_REQUEST)))
 }
 
@@ -660,22 +633,36 @@ pub fn show(
 										ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
 									}
 									if play.on_hover_text("Play in chat").clicked() {
-										request_web_media(ui.ctx(), target);
+										request_web_media(ui.ctx(), target, false);
+									}
+									if ui
+										.button("Open with login")
+										.on_hover_text("Play using a signed-in browser profile")
+										.clicked()
+									{
+										request_web_media(ui.ctx(), target, true);
 									}
 								} else {
-									let label = if target.contains("x.com") || target.contains("twitter.com")
+									let label = if target.contains("x.com")
+										|| target.contains("twitter.com")
 									{
 										"Post on X"
 									} else {
 										"Video"
 									};
-									if ui
-										.button(label)
-										.on_hover_text("Play in chat")
-										.clicked()
-									{
-										request_web_media(ui.ctx(), target);
-									}
+									ui.horizontal(|ui| {
+										if ui.button(label).on_hover_text("Play in chat").clicked()
+										{
+											request_web_media(ui.ctx(), target, false);
+										}
+										if ui
+											.button("Open with login")
+											.on_hover_text("Play using a signed-in browser profile")
+											.clicked()
+										{
+											request_web_media(ui.ctx(), target, true);
+										}
+									});
 								}
 							} else if embed.video.is_some()
 								|| matches!(embed.kind.as_str(), "video" | "gifv")
@@ -1312,7 +1299,7 @@ mod tests {
 			"https://twitter.com/example/status/123",
 			"https://vimeo.com/123456",
 		] {
-			assert!(supported_web_media(url), "{url}");
+			assert!(model::web_media::is_supported_host(url), "{url}");
 		}
 		for url in [
 			"http://youtube.com/watch?v=dQw4w9WgXcQ",
@@ -1320,7 +1307,28 @@ mod tests {
 			"https://user@x.com/example/status/123",
 			"https://example.com/video",
 		] {
-			assert!(!supported_web_media(url), "{url}");
+			assert!(!model::web_media::is_supported_host(url), "{url}");
 		}
+	}
+
+	#[test]
+	fn web_media_request_carries_persist_flag() {
+		let ctx = egui::Context::default();
+		request_web_media(&ctx, "https://youtu.be/dQw4w9WgXcQ", false);
+		assert_eq!(
+			take_web_media_request(&ctx),
+			Some(WebMediaRequest {
+				url: "https://youtu.be/dQw4w9WgXcQ".into(),
+				persist: false,
+			})
+		);
+		request_web_media(&ctx, "https://x.com/user/status/1", true);
+		assert_eq!(
+			take_web_media_request(&ctx),
+			Some(WebMediaRequest {
+				url: "https://x.com/user/status/1".into(),
+				persist: true,
+			})
+		);
 	}
 }

@@ -36,6 +36,7 @@ pub use components::*;
 mod embeds;
 pub use embeds::*;
 mod extra_content;
+pub mod web_media;
 pub use extra_content::{ExtraContent, ExtraContentPatch};
 mod mentions;
 pub use mentions::*;
@@ -678,10 +679,7 @@ pub struct ClientPlatforms {
 }
 impl ClientPlatforms {
 	pub fn is_empty(self) -> bool {
-		self.desktop.is_none()
-			&& self.mobile.is_none()
-			&& self.web.is_none()
-			&& self.vr.is_none()
+		self.desktop.is_none() && self.mobile.is_none() && self.web.is_none() && self.vr.is_none()
 	}
 }
 

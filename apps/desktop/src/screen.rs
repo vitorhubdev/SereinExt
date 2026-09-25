@@ -506,7 +506,7 @@ impl Screen {
 					Status::TransportReady | Status::Securing => "Securing screen video…",
 					Status::WaitingForPeer => "Screen preview · waiting for others",
 					Status::Ready { .. } => "Sharing your screen",
-					Status::RemoteAudio | Status::Speaking(_) | Status::CameraAvailable(_) => {
+					Status::RemoteAudio | Status::Speaking(_) | Status::CameraAvailable(_) | Status::Ping(_) => {
 						return Ok(());
 					}
 				};

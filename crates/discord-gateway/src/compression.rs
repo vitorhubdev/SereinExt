@@ -35,8 +35,8 @@ impl Decoder {
 		}
 		let mut output = Vec::new();
 		let mut consumed = 0;
+		let mut chunk = [0; 16 * 1024];
 		loop {
-			let mut chunk = [0; 16 * 1024];
 			let before_in = self.inflater.total_in();
 			let before_out = self.inflater.total_out();
 			let status = self

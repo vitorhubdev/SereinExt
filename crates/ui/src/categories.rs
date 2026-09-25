@@ -302,17 +302,27 @@ fn rows<'a>(
 	for channel in groups.remove(&None).unwrap_or_default() {
 		append(channel, Slot::Tree, false, &mut tree);
 	}
+	// A collapsed category still shows voice channels people are connected to, like your call.
+	let connected = |channel: &Channel| {
+		state
+			.voice
+			.active
+			.as_ref()
+			.is_some_and(|call| call.channel == channel.id)
+			|| state.voice.roster.iter().any(|e| e.channel == channel.id)
+	};
 	for category in categories {
 		let children = groups.remove(&Some(category.id)).unwrap_or_default();
 		if !show_hidden && children.is_empty() {
 			continue;
 		}
 		tree.push(Row::Category(category, count(&children)));
+		let folded = collapsed.contains(&category.id);
 		for channel in children {
 			append(
 				channel,
 				Slot::Tree,
-				collapsed.contains(&category.id),
+				folded && !connected(channel),
 				&mut tree,
 			);
 		}
@@ -521,8 +531,8 @@ impl MessagingUi {
 			"Bots".into()
 		};
 		let button = egui::Rect::from_min_size(
-			egui::pos2(rect.right() - 52.0, rect.bottom() - 26.0),
-			egui::vec2(44.0, 18.0),
+			egui::pos2(rect.right() - 66.0, rect.bottom() - 26.0),
+			egui::vec2(58.0, 18.0),
 		);
 		let response = ui.interact(button, ui.id().with("hide-bot-dms"), egui::Sense::click());
 		let hot = response.hovered() || response.has_focus() || hidden;
@@ -537,12 +547,35 @@ impl MessagingUi {
 				colors.raised
 			},
 		);
-		ui.painter().text(
-			button.center(),
-			egui::Align2::CENTER_CENTER,
-			caption,
-			egui::FontId::proportional(11.0),
-			if hidden { colors.accent } else { colors.muted },
+		let ink = if hidden {
+			colors.accent
+		} else if hot {
+			colors.text
+		} else {
+			colors.muted
+		};
+		let text = ui
+			.painter()
+			.layout_no_wrap(caption, egui::FontId::proportional(11.0), ink);
+		let glyph = 12.0;
+		let left = button.center().x - (glyph + 4.0 + text.size().x) * 0.5;
+		crate::icons::paint(
+			ui.painter(),
+			if hidden {
+				crate::icons::Icon::EyeSlash
+			} else {
+				crate::icons::Icon::Eye
+			},
+			egui::Rect::from_min_size(
+				egui::pos2(left, button.center().y - glyph * 0.5),
+				egui::Vec2::splat(glyph),
+			),
+			ink,
+		);
+		ui.painter().galley(
+			egui::pos2(left + glyph + 4.0, button.center().y - text.size().y * 0.5),
+			text,
+			ink,
 		);
 		let hint = if hidden {
 			format!("Show bot conversations. {unread} unread.")
@@ -615,9 +648,8 @@ impl MessagingUi {
 				}
 			}
 			if self.hide_bot_dms && self.guild.is_none() {
-				channel_rows.retain(|row| {
-					!matches!(row, Row::Channel(channel, ..) if bot_dm(channel))
-				});
+				channel_rows
+					.retain(|row| !matches!(row, Row::Channel(channel, ..) if bot_dm(channel)));
 			}
 			let mut participants = BTreeMap::<Id, Vec<_>>::new();
 			for entry in &state.voice.roster {
@@ -780,6 +812,7 @@ impl MessagingUi {
 								state,
 								category,
 								ShortcutView::new(&self.channel_preferences, shortcuts_available),
+								self.language,
 							);
 						}
 						CachedRow::Channel(channel, slot, nested) => {
@@ -821,6 +854,7 @@ impl MessagingUi {
 										&self.channel_preferences,
 										shortcuts_available,
 									),
+									self.language,
 								);
 								if response.clicked() {
 									selected = Some(channel.id);
@@ -979,7 +1013,9 @@ impl MessagingUi {
 										self.avatars.show(&mut inner, user, 32.0, state.demo);
 									let (status, _, _, clients) =
 										crate::profiles::presence(state, user.id, None);
-									if channel.kind == 1 && let Some(status) = status {
+									if channel.kind == 1
+										&& let Some(status) = status
+									{
 										crate::profiles::presence_badge(
 											&mut inner,
 											avatar.rect,
@@ -1216,7 +1252,7 @@ impl MessagingUi {
 								self.group_menu.context(&response, state, channel, view);
 							}
 							if channel.guild.is_some() {
-								self.channel_menu.context(&response, state, channel, view);
+								self.channel_menu.context(&response, state, channel, view, self.language);
 							}
 							if enabled && response.clicked() {
 								selected = Some(channel.id);
@@ -1283,12 +1319,7 @@ impl MessagingUi {
 						.map(|(channel, rect)| (*channel, *rect))
 				});
 			let target = hovered.filter(|(channel, _)| {
-				state.can_move_voice_member(
-					source.guild,
-					source.user,
-					source.from,
-					*channel,
-				)
+				state.can_move_voice_member(source.guild, source.user, source.from, *channel)
 			});
 			if let Some((target, target_rect)) = target {
 				ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
@@ -1357,7 +1388,7 @@ impl MessagingUi {
 				);
 				let mut next = hide_muted;
 				self.channel_menu
-					.sidebar_context(&response, state, guild, &mut next);
+					.sidebar_context(&response, state, guild, &mut next, self.language);
 				if next != hide_muted {
 					if let Some(channel) = state
 						.channels
@@ -2358,6 +2389,38 @@ mod tests {
 		};
 		assert_eq!(ids(tree(&layout, BTreeSet::new())), [3, 2, 4, 7, 8, 5, 9]);
 		assert_eq!(ids(tree(&layout, BTreeSet::from([Id(4)]))), [3, 2, 4, 5, 9]);
+		let mut connected = State {
+			channels: channels.clone(),
+			..State::default()
+		};
+		connected
+			.channels
+			.iter_mut()
+			.find(|c| c.id == Id(7))
+			.unwrap()
+			.kind = 2;
+		connected
+			.voice
+			.roster
+			.push(client_core::voice::RosterEntry {
+				guild: Id(100),
+				channel: Id(7),
+				participant: client_core::voice::Participant {
+					user: Id(50),
+					muted: false,
+					deafened: false,
+					server_muted: false,
+					server_deafened: false,
+					video: false,
+					streaming: false,
+				},
+				member: None,
+			});
+		assert_eq!(
+			ids(tree(&connected, BTreeSet::from([Id(4)]))),
+			[3, 2, 4, 7, 5, 9],
+			"a collapsed category keeps the voice channel people are in"
+		);
 		let mut hierarchy = vec![
 			channel(4, 4, 0, None),
 			channel(7, 15, 0, Some(Id(4))),

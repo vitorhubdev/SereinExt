@@ -18,6 +18,9 @@ pub enum Operation {
 	LoadAccount(model::Id),
 	SaveAccount(model::Id, Arc<SessionSecret>),
 	ForgetAccount(model::Id),
+	/// Which of these accounts have an entry in this app's credential service.
+	/// Missing entries are not read from any other application's store.
+	ProbeAccounts(Vec<model::Id>),
 }
 pub enum Outcome {
 	Loaded(Result<Option<SessionSecret>, CredentialError>),
@@ -27,6 +30,8 @@ pub enum Outcome {
 	Forgotten(Result<(), CredentialError>),
 	/// A per-account entry; never touches the launch-restore status or `forgetting`.
 	AccountForgotten(Result<(), CredentialError>),
+	/// Account ids that have a token in this app's credential service.
+	AccountsProbed(Result<Vec<model::Id>, CredentialError>),
 }
 /// Identifies one queued credential operation. Writes and deletions use `Request::NONE`,
 /// which never matches a read in flight.
@@ -63,6 +68,9 @@ impl Store {
 					),
 					Operation::ForgetAccount(account) => {
 						Outcome::AccountForgotten(platform::forget_account_session(account))
+					}
+					Operation::ProbeAccounts(accounts) => {
+						Outcome::AccountsProbed(probe_accounts(&accounts))
 					}
 				};
 				if events.send((generation, request, outcome)).is_err() {
@@ -147,6 +155,36 @@ impl Store {
 	}
 }
 
+fn probe_accounts(accounts: &[model::Id]) -> Result<Vec<model::Id>, CredentialError> {
+	let mut present = Vec::new();
+	for account in accounts {
+		match platform::load_account_session(*account) {
+			Ok(Some(secret)) => {
+				drop(secret);
+				present.push(*account);
+			}
+			Ok(None) | Err(CredentialError::Invalid) => {}
+			Err(error) => return Err(error),
+		}
+	}
+	Ok(present)
+}
+
+/// Drops roster rows whose token is not in this app's store. Returns the ids that changed.
+pub fn forget_absent_tokens(
+	accounts: &mut [model::SavedAccount],
+	present: &[model::Id],
+) -> Vec<model::Id> {
+	let mut dropped = Vec::new();
+	for account in accounts {
+		if account.has_token && !present.contains(&account.id) {
+			account.has_token = false;
+			dropped.push(account.id);
+		}
+	}
+	dropped
+}
+
 pub fn loaded_status(result: &Result<Option<SessionSecret>, CredentialError>) -> &'static str {
 	match result {
 		Ok(Some(_)) => "Saved login found; connecting to Discord",
@@ -172,6 +210,24 @@ mod tests {
 		let status = loaded_status(&Err(CredentialError::NoStore));
 		assert!(status.contains("No OS keyring"));
 		assert!(status.contains("sign in each launch"));
+	}
+
+	#[test]
+	fn absent_tokens_leave_the_roster_without_touching_accounts_this_app_saved() {
+		let account = |id, has_token| model::SavedAccount {
+			id: model::Id(id),
+			name: "synthetic".into(),
+			display: None,
+			avatar: None,
+			discriminator: 0,
+			has_token,
+		};
+		let mut accounts = vec![account(1, true), account(2, true), account(3, false)];
+		let dropped = forget_absent_tokens(&mut accounts, &[model::Id(2)]);
+		assert_eq!(dropped, vec![model::Id(1)]);
+		assert!(!accounts[0].has_token);
+		assert!(accounts[1].has_token);
+		assert!(!accounts[2].has_token);
 	}
 
 	#[test]

@@ -25,11 +25,36 @@ impl Settings {
 		self.state.failed = !accepted;
 		accepted
 	}
+	pub fn set_reconnect_call(&mut self, hint: Option<local_store::ReconnectCallHint>) {
+		if self.current.reconnect_call != hint {
+			self.current.reconnect_call = hint;
+			self.state.dirty = true;
+			self.state.touched = true;
+		}
+	}
+	pub fn remember_active_call(
+		&mut self,
+		channel: model::Id,
+		guild: Option<model::Id>,
+		user: model::Id,
+		now_unix: u64,
+	) {
+		let Some(next) = local_store::ReconnectCallHint::new(channel, guild, user, now_unix) else {
+			return;
+		};
+		if let Some(current) = self.current.reconnect_call
+			&& current.same_target(next)
+			&& now_unix.saturating_sub(current.at_unix) < local_store::ReconnectCallHint::TOUCH_SECS
+		{
+			return;
+		}
+		self.set_reconnect_call(Some(next));
+	}
 	pub fn observe(&mut self, ui: &ui::MessagingUi) {
 		let value = AppPreferences {
 			notifications_enabled: ui.notifications_enabled,
 			auto_update: ui.updates.auto_update,
-			update_nightly: ui.updates.nightly,
+			update_nightly: false,
 			notification_options: ui.notification_options,
 			show_hidden_channels: ui.show_hidden_channels,
 			hide_title_bar: ui.hide_title_bar,
@@ -56,6 +81,9 @@ impl Settings {
 			expanded_folders: ui.expanded_folders.clone(),
 			user_volumes: ui.voice_user_volume_overrides(),
 			muted_users: ui.voice_user_mutes().to_vec(),
+			voice_bot_safe_volume: ui.voice_bot_safe_volume,
+			reconnect_call: self.current.reconnect_call,
+			notices_accepted: self.current.notices_accepted,
 		};
 		if value != self.current {
 			self.state.touched = true;
@@ -73,7 +101,7 @@ impl Settings {
 		let value = &self.current;
 		ui.notifications_enabled = value.notifications_enabled;
 		ui.updates.auto_update = value.auto_update;
-		ui.updates.nightly = value.update_nightly;
+		ui.updates.nightly = false;
 		ui.notification_options = value.notification_options;
 		ui.show_hidden_channels = value.show_hidden_channels;
 		ui.hide_title_bar = value.hide_title_bar;
@@ -98,6 +126,7 @@ impl Settings {
 		ui.expanded_folders.clone_from(&value.expanded_folders);
 		ui.set_voice_user_volume_overrides(&value.user_volumes);
 		ui.set_voice_user_mutes(&value.muted_users);
+		ui.voice_bot_safe_volume = value.voice_bot_safe_volume;
 	}
 }
 
@@ -122,6 +151,7 @@ mod tests {
 		ui.notifications_enabled = defaults.notifications_enabled;
 		ui.transparency = defaults.transparency;
 		ui.blur = defaults.blur;
+		ui.voice_bot_safe_volume = defaults.voice_bot_safe_volume;
 		settings.observe(&ui);
 		assert!(
 			!settings.state.touched,

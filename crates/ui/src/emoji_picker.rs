@@ -1043,7 +1043,9 @@ impl Picker {
 									let active_guild = state
 										.channel(channel)
 										.and_then(|channel| channel.guild)
-										.and_then(|guild| state.guilds.iter().position(|item| item.id == guild));
+										.and_then(|guild| {
+											state.guilds.iter().position(|item| item.id == guild)
+										});
 									egui::ScrollArea::vertical()
 										.id_salt("emoji-server-rail")
 										.scroll_bar_visibility(
@@ -1052,7 +1054,8 @@ impl Picker {
 										.max_height(ui.available_height())
 										.show_rows(ui, 32.0, state.guilds.len(), |ui, rows| {
 											for display in rows {
-												let index = prioritized_guild_index(display, active_guild);
+												let index =
+													prioritized_guild_index(display, active_guild);
 												let guild = &state.guilds[index];
 												let active = self.server == Some(guild.id);
 												let response = ui

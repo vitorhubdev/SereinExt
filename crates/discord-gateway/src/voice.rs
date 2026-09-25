@@ -703,9 +703,16 @@ impl Calls {
 		if !allowed && !own {
 			return Ok(());
 		}
-		let request = self.active.and_then(|(_, request)| {
-			(own || self.active_guild == state.guild_id).then_some(request)
-		});
+		let same_guild = self.active_guild == state.guild_id;
+		// A null voice state for another guild is that guild's membership ending.
+		// It must not be tagged as a hangup of the call already in progress.
+		let foreign_departure = own && !same_guild && state.channel_id.is_none();
+		let request = if foreign_departure {
+			None
+		} else {
+			self.active
+				.and_then(|(_, request)| (own || same_guild).then_some(request))
+		};
 		let matches_active = allowed
 			&& self
 				.active
@@ -735,7 +742,7 @@ impl Calls {
 			video: participant.video,
 			streaming: participant.streaming,
 		}))?;
-		if own && self.active.is_some() && !matches_active {
+		if own && self.active.is_some() && !matches_active && !foreign_departure {
 			self.active = None;
 			self.active_guild = None;
 			self.stream = None;
@@ -1608,5 +1615,45 @@ mod tests {
 			&emit,
 		).unwrap();
 		assert_eq!(events.lock().unwrap().len(), 4);
+	}
+
+	#[test]
+	fn leaving_another_guild_does_not_drop_the_joined_call() {
+		let mut calls = Calls::default();
+		calls.allowed.insert(Id(20), Some(Id(10)));
+		calls.allowed.insert(Id(30), Some(Id(8)));
+		calls
+			.packet(Command::Join {
+				channel: Id(20),
+				request: 4,
+				ring: false,
+				mute: false,
+				deaf: false,
+			})
+			.unwrap();
+		let events = Mutex::new(Vec::new());
+		let emit = |event| {
+			events.lock().unwrap().push(event);
+			Ok(())
+		};
+		calls
+			.dispatch(
+				"VOICE_STATE_UPDATE",
+				br#"{"guild_id":"8","channel_id":null,"user_id":"1"}"#,
+				Some(Id(1)),
+				&emit,
+			)
+			.unwrap();
+		assert_eq!(calls.active, Some((Id(20), 4)));
+		assert_eq!(calls.active_guild, Some(Id(10)));
+		assert!(matches!(
+			events.lock().unwrap().last(),
+			Some(Event::Voice(voice::Event::State {
+				request: None,
+				guild: Some(Id(8)),
+				channel: None,
+				..
+			}))
+		));
 	}
 }

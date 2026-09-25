@@ -5,12 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-client-core.workspace = true
-model.workspace = true
-test-support.workspace = true
+serde_json.workspace = true
 
 [lints]
-workspace = true
-
-[dependencies.serde_json]
 workspace = true

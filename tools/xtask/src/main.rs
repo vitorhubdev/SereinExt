@@ -273,6 +273,8 @@ fn package() -> Result<(), String> {
 		std::fs::copy("packaging/macos/Info.plist", app.join("Info.plist"))
 			.map_err(|e| e.to_string())?;
 		app.join("MacOS").join(exe)
+	} else if cfg!(windows) {
+		root.join("SereinExt.exe")
 	} else {
 		root.join(exe)
 	};

@@ -67,7 +67,7 @@ impl Phase {
 			Self::Connecting => "Connecting call…",
 			Self::Ringing => "Ringing…",
 			Self::Securing => "Securing audio…",
-			Self::Waiting => "Connected · waiting for others",
+			Self::Waiting => "Connected | waiting for others",
 			Self::Connected => "Voice connected",
 			Self::Failed => "Call failed",
 		}
@@ -127,6 +127,15 @@ pub struct State {
 	pub(crate) dm_participants: Vec<(Id, Vec<Participant>)>,
 	pub roster: Vec<RosterEntry>,
 	sequence: u64,
+	/// Set when Discord moves this account into another voice channel of the same server.
+	/// The UI joins that channel once the previous media session has closed.
+	pub follow: Option<VoiceFollow>,
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct VoiceFollow {
+	pub channel: Id,
+	pub muted: bool,
+	pub deafened: bool,
 }
 impl State {
 	pub fn has_dm_call(&self, channel: Id) -> bool {
@@ -367,6 +376,7 @@ impl ClientState {
 			self.status = "Voice channel exceeds the 64 participant limit";
 			return None;
 		}
+		self.voice.follow = None;
 		let own = participants
 			.iter()
 			.find(|p| self.user.as_ref().is_some_and(|u| u.id == p.user));
@@ -402,7 +412,26 @@ impl ClientState {
 			deaf: deafened,
 		}))
 	}
+	pub(crate) fn end_call_in_guild(&mut self, guild: Id) {
+		if self.voice.follow.as_ref().is_some_and(|follow| {
+			self.channel(follow.channel)
+				.is_some_and(|channel| channel.guild == Some(guild))
+		}) {
+			self.voice.follow = None;
+		}
+		if self
+			.voice
+			.active
+			.as_ref()
+			.is_some_and(|call| call.guild == Some(guild))
+		{
+			self.voice.outgoing = None;
+			self.voice.departed = None;
+			self.voice.active = None;
+		}
+	}
 	pub fn leave_call(&mut self) -> Option<crate::Command> {
+		self.voice.follow = None;
 		self.voice.outgoing = None;
 		let call = self.voice.active.take()?;
 		self.voice.departed = None;
@@ -665,21 +694,67 @@ impl ClientState {
 						self.remember_dm_participants(channel, vec![participant]);
 					}
 				}
+				let own = self.user.as_ref().is_some_and(|u| u.id == user);
+				if own
+					&& self.voice.active.is_none()
+					&& let Some(follow) = self.voice.follow
+					&& self
+						.channel(follow.channel)
+						.and_then(|channel| channel.guild)
+						== guild
+				{
+					self.voice.follow = channel
+						.filter(|id| {
+							self.channel(*id)
+								.is_some_and(|channel| channel.guild == guild && channel.kind == 2)
+								&& self.has_voice_access(*id)
+						})
+						.map(|channel| VoiceFollow {
+							channel,
+							muted: follow.muted,
+							deafened: follow.deafened,
+						});
+					return;
+				}
+				let moved = if own {
+					self.voice.active.as_ref().and_then(|call| {
+						(request == Some(call.request)
+							&& guild == call.guild
+							&& channel != Some(call.channel))
+						.then_some((channel, call.muted, call.deafened, call.guild))
+					})
+				} else {
+					None
+				};
+				if let Some((destination, muted, deafened, call_guild)) = moved {
+					self.voice.outgoing = None;
+					self.voice.active = None;
+					self.voice.follow = destination
+						.filter(|id| {
+							call_guild.is_some()
+								&& self.channel(*id).is_some_and(|channel| {
+									channel.guild == call_guild && channel.kind == 2
+								}) && self.has_voice_access(*id)
+						})
+						.map(|channel| VoiceFollow {
+							channel,
+							muted,
+							deafened,
+						});
+					return;
+				}
+				if own
+					&& self
+						.voice
+						.active
+						.as_ref()
+						.is_some_and(|call| request != Some(call.request) || guild != call.guild)
+				{
+					return;
+				}
 				let Some(call) = &mut self.voice.active else {
 					return;
 				};
-				if self.user.as_ref().is_some_and(|u| u.id == user) {
-					if request != Some(call.request) {
-						return;
-					}
-					if channel != Some(call.channel) || guild != call.guild {
-						self.voice.outgoing = None;
-						if call.phase != Phase::Failed {
-							self.voice.active = None;
-						}
-						return;
-					}
-				}
 				if guild != call.guild {
 					return;
 				}
@@ -831,15 +906,24 @@ impl ClientState {
 		}
 		if self
 			.voice
+			.follow
+			.as_ref()
+			.is_some_and(|follow| follow.channel == channel)
+		{
+			self.voice.follow = None;
+		}
+		if self
+			.voice
 			.active
 			.as_ref()
-			.is_some_and(|c| c.channel == channel && c.phase != Phase::Failed)
+			.is_some_and(|c| c.channel == channel)
 		{
 			self.voice.active = None;
 		}
 	}
 	pub fn disconnect_voice(&mut self, reason: &'static str) {
 		self.voice.outgoing = None;
+		self.voice.follow = None;
 		self.voice.dm_calls.clear();
 		self.voice.dm_participants.clear();
 		self.voice.roster.clear();
@@ -1671,5 +1755,78 @@ mod tests {
 			service_ring(&mut state, &[Id(3)]);
 			assert_eq!(state.outgoing_ring(), None, "{end} must consume the intent");
 		}
+	}
+
+	#[test]
+	fn a_server_move_follows_into_the_new_voice_channel_and_can_move_back() {
+		let mut state = ClientState {
+			auth: AuthState::Authenticated,
+			gateway_connected: true,
+			user: Some(User {
+				primary_guild: None,
+				id: Id(1),
+				name: "Owner".into(),
+				avatar: None,
+				webhook: false,
+				kind: Default::default(),
+				discriminator: 0,
+			}),
+			guilds: vec![model::Guild {
+				stickers: None,
+				id: Id(10),
+				name: "Synthetic".into(),
+				icon: None,
+				emojis: None,
+			}],
+			channels: [20, 21]
+				.into_iter()
+				.map(|id| Channel {
+					id: Id(id),
+					guild: Some(Id(10)),
+					kind: 2,
+					name: "Room".into(),
+					last_message: None,
+					parent_id: None,
+					position: 0,
+					recipients: vec![],
+					icon: None,
+					member_list_id: None,
+					message_count: None,
+				})
+				.collect(),
+			..ClientState::default()
+		};
+		crate::tests::grant_permissions(&mut state);
+		assert!(state.start_call(Id(20), false).is_some());
+		let request = state.voice.active.as_ref().unwrap().request;
+		state.voice.active.as_mut().unwrap().muted = true;
+		let moved = |channel: Option<Id>, request: Option<u64>| Event::State {
+			guild: Some(Id(10)),
+			channel,
+			user: Id(1),
+			request,
+			session: None,
+			member: None,
+			muted: true,
+			deafened: false,
+			server_muted: false,
+			server_deafened: false,
+			video: false,
+			streaming: false,
+		};
+		state.apply_voice(moved(Some(Id(21)), Some(request)));
+		assert!(state.voice.active.is_none());
+		assert_eq!(
+			state.voice.follow,
+			Some(VoiceFollow {
+				channel: Id(21),
+				muted: true,
+				deafened: false,
+			})
+		);
+		state.apply_voice(moved(Some(Id(20)), None));
+		assert_eq!(state.voice.follow.unwrap().channel, Id(20));
+		state.apply_voice(moved(None, None));
+		assert!(state.voice.follow.is_none());
 	}
 }

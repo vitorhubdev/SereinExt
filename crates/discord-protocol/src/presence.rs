@@ -406,7 +406,11 @@ pub fn decode(bytes: &[u8]) -> Result<PresenceUpdate, DecodeError> {
 		Patch::Null => Patch::Null,
 		Patch::Value(value) => {
 			let value = value.platforms();
-			if value.is_empty() { Patch::Null } else { Patch::Value(value) }
+			if value.is_empty() {
+				Patch::Null
+			} else {
+				Patch::Value(value)
+			}
 		}
 	};
 	let (custom_status, activities) = match presence.activities {
@@ -999,12 +1003,17 @@ mod tests {
 	#[test]
 	fn client_status_retains_only_known_platform_states() {
 		let update = decode(br#"{"user":{"id":"2"},"status":"online","client_status":{"desktop":"online","mobile":"idle","web":"dnd","vr":"online"}}"#).unwrap();
-		let Patch::Value(clients) = update.clients else { panic!("client status must be retained") };
+		let Patch::Value(clients) = update.clients else {
+			panic!("client status must be retained")
+		};
 		assert_eq!(clients.desktop, Some(model::ClientPresence::Online));
 		assert_eq!(clients.mobile, Some(model::ClientPresence::Idle));
 		assert_eq!(clients.web, Some(model::ClientPresence::DoNotDisturb));
 		assert_eq!(clients.vr, Some(model::ClientPresence::Online));
-		let update = decode(br#"{"user":{"id":"2"},"client_status":{"desktop":"future","mobile":"offline"}}"#).unwrap();
+		let update = decode(
+			br#"{"user":{"id":"2"},"client_status":{"desktop":"future","mobile":"offline"}}"#,
+		)
+		.unwrap();
 		assert_eq!(update.clients, Patch::Null);
 	}
 }

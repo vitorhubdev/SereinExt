@@ -110,6 +110,9 @@ impl Updater {
 		let check = std::mem::take(&mut view.check_requested);
 		let download = std::mem::take(&mut view.download_requested);
 		let restart = std::mem::take(&mut view.restart_requested);
+		// Production is the only in-app channel. Leftover Nightly prefs must not
+		// send the startup check at prereleases and miss GitHub `latest`.
+		view.nightly = false;
 		if self.demo {
 			if self.channel != Some(view.nightly) {
 				self.demo_available = false;
@@ -302,9 +305,8 @@ impl Updater {
 			{
 				self.last_check = Some(Instant::now());
 				self.next_check = Instant::now() + CHECK_INTERVAL;
-				let nightly = view.nightly;
 				self.start(runtime, ctx, 0, move |cancel, _| async move {
-					check_release(nightly, cancel).await.map(Outcome::Checked)
+					check_release(false, cancel).await.map(Outcome::Checked)
 				});
 				self.status = "Checking for updates…".into();
 			}
@@ -814,6 +816,55 @@ pub fn debug_check() -> Result<(), String> {
 		.is_ok()
 	{
 		return Err("Checksum validation failed.".into());
+	}
+	let current = semver::Version::parse("1.0.0").map_err(|_| "current version")?;
+	let latest = semver::Version::parse("1.0.3").map_err(|_| "latest version")?;
+	let archive_name = asset_name("v1.0.3");
+	let mut assets = Vec::new();
+	if let Some(name) = &archive_name {
+		assets.push(Asset {
+			name: name.clone(),
+			browser_download_url: format!(
+				"https://github.com/vitorhubdev/SereinExt/releases/download/v1.0.3/{name}"
+			),
+			size: 1,
+		});
+		assets.push(Asset {
+			name: "SHA256SUMS.txt".into(),
+			browser_download_url:
+				"https://github.com/vitorhubdev/SereinExt/releases/download/v1.0.3/SHA256SUMS.txt"
+					.into(),
+			size: 64,
+		});
+	}
+	let stable = Release {
+		tag_name: "v1.0.3".into(),
+		draft: false,
+		prerelease: false,
+		assets,
+	};
+	let nightly_release = Release {
+		tag_name: "v1.0.4-nightly.1".into(),
+		draft: false,
+		prerelease: true,
+		assets: Vec::new(),
+	};
+	let found = select_release(vec![stable.clone(), nightly_release], false, &current)?;
+	if found.as_ref().map(|package| package.version.as_str()) != Some("1.0.3") {
+		return Err("Production check did not select the newer stable release.".into());
+	}
+	if archive_name.is_some()
+		&& found
+			.as_ref()
+			.is_none_or(|package| package.archive.is_none())
+	{
+		return Err("Production check omitted the installable package.".into());
+	}
+	if select_release(vec![stable.clone()], false, &latest)?.is_some() {
+		return Err("Current version was offered as an update.".into());
+	}
+	if select_release(vec![stable], true, &current).is_ok() {
+		return Err("Nightly check accepted a stable-only feed.".into());
 	}
 	install::debug_check()
 }

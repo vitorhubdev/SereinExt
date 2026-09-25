@@ -79,15 +79,55 @@ impl MessagingUi {
 		}
 	}
 
-	/// Non-default volume overrides, for persistence to device settings.
+	/// Chosen volume overrides, for persistence to device settings. A bot can be pinned at
+	/// 100% on purpose, so only empty slots are skipped.
 	pub fn voice_user_volume_overrides(&self) -> Vec<(u64, u16)> {
 		self.voice_user_volumes
 			.as_deref()
 			.into_iter()
 			.flatten()
-			.filter(|(id, volume)| *id != 0 && *volume != 100)
+			.filter(|(id, _)| *id != 0)
 			.copied()
 			.collect()
+	}
+
+	/// What the mixer plays: chosen overrides and local mutes, plus hearing protection for
+	/// bots in the current call that nobody has set a volume for.
+	pub fn voice_mix_volumes(&self, state: &State) -> [(u64, u16); 64] {
+		let mut values = self.voice_user_volumes();
+		let Some(call) = state
+			.voice
+			.active
+			.as_ref()
+			.filter(|_| self.voice_bot_safe_volume)
+		else {
+			return values;
+		};
+		for entry in state
+			.voice
+			.roster
+			.iter()
+			.filter(|e| e.channel == call.channel)
+		{
+			let id = entry.participant.user.0;
+			if values.iter().any(|(user, _)| *user == id) || !is_bot(resolve_member(state, entry).0)
+			{
+				continue;
+			}
+			if let Some(slot) = values.iter_mut().find(|(user, _)| *user == 0) {
+				*slot = (id, BOT_SAFE_VOLUME);
+			}
+		}
+		values
+	}
+
+	/// The level a participant plays at before anyone picks one for them.
+	fn voice_default_volume(&self, user: Option<&model::User>) -> u16 {
+		if self.voice_bot_safe_volume && is_bot(user) {
+			BOT_SAFE_VOLUME
+		} else {
+			100
+		}
 	}
 
 	/// Restore persisted per-user volume overrides, e.g. at startup.
@@ -104,7 +144,12 @@ impl MessagingUi {
 	}
 
 	pub(super) fn set_voice_user_volume(&mut self, user: Id, volume: u16) {
-		if volume == 100 {
+		self.set_voice_user_volume_from(user, volume, 100);
+	}
+
+	/// Stores `volume` as a choice, or forgets it when it equals the participant's default.
+	fn set_voice_user_volume_from(&mut self, user: Id, volume: u16, default: u16) {
+		if volume == default {
 			if let Some(slot) = self
 				.voice_user_volumes
 				.as_deref_mut()
@@ -137,8 +182,10 @@ impl MessagingUi {
 		crate::user_menu::popup(response, egui::Popup::default_response_id(response))
 			.close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
 			.show(|ui| {
-				ui.set_width(220.0);
+				ui.set_width(260.0);
 				let id = entry.participant.user.0;
+				let language = self.language;
+				let t = |english: &'static str| crate::i18n::text(language, english);
 				if state.user.as_ref().is_some_and(|own| own.id.0 != id) {
 					let muted = self.voice_user_locally_muted(entry.participant.user);
 					if ui
@@ -150,19 +197,30 @@ impl MessagingUi {
 					{
 						self.set_voice_user_locally_muted(entry.participant.user, !muted);
 					}
+					let user = resolve_member(state, entry).0;
+					let default = self.voice_default_volume(user);
 					let mut volume = self
 						.voice_user_volumes
 						.as_deref()
 						.and_then(|values| values.iter().find(|(user, _)| *user == id))
-						.map_or(100, |(_, volume)| *volume);
-					let changed = gain_slider(ui, &mut volume, "User volume").changed();
+						.map_or(default, |(_, volume)| *volume);
+					let changed = volume_control(ui, &mut volume, t("User volume"), language);
+					if default != 100 {
+						design::hint(
+							ui,
+							t(
+								"Bots start at 50% to protect your hearing. You can still raise it here.",
+							),
+						);
+					}
 					let reset = ui
-						.add_enabled(volume != 100, egui::Button::new("Reset volume"))
+						.add_enabled(volume != default, egui::Button::new(t("Reset volume")))
 						.clicked();
 					if changed || reset {
-						self.set_voice_user_volume(
+						self.set_voice_user_volume_from(
 							entry.participant.user,
-							if reset { 100 } else { volume },
+							if reset { default } else { volume },
+							default,
 						);
 					}
 					ui.separator();
@@ -297,7 +355,8 @@ impl MessagingUi {
 		if participant_count > 0 {
 			let right = row.right() - 8.0 - marks - elapsed_width;
 			let center = egui::pos2(right - 12.0, row.center().y);
-			ui.painter().circle_filled(center - egui::vec2(9.0, 0.0), 3.5, colors.positive);
+			ui.painter()
+				.circle_filled(center - egui::vec2(9.0, 0.0), 3.5, colors.positive);
 			ui.painter().text(
 				center,
 				egui::Align2::LEFT_CENTER,
@@ -339,12 +398,7 @@ impl MessagingUi {
 			)
 		});
 		response.on_hover_text_with(|| {
-			format!(
-				"{} · View voice channel{}{}",
-				channel.name,
-				channel_marks::label(access),
-				if connected { " · Connected" } else { "" }
-			)
+			voice_channel_hover_text(&channel.name, channel_marks::label(access), connected)
 		})
 	}
 
@@ -444,6 +498,9 @@ impl MessagingUi {
 						egui::vec2(ui.available_width(), 28.0),
 						egui::Layout::left_to_right(egui::Align::Center),
 						|ui| {
+							if is_bot(user) {
+								bot_badge(ui, self.language);
+							}
 							ui.add(
 								egui::Label::new(RichText::new(name).color(name_color))
 									.truncate()
@@ -860,8 +917,7 @@ impl MessagingUi {
 			return false;
 		}
 		let valid = state.voice.active.as_ref().is_some_and(|call| {
-			call.watching.is_some()
-				&& matches!(call.phase, Phase::Connected | Phase::Waiting)
+			call.watching.is_some() && matches!(call.phase, Phase::Connected | Phase::Waiting)
 		}) && self.voice_stream_view.is_some();
 		if !valid || ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
 			self.exit_voice_stream_fullscreen(ctx);
@@ -880,7 +936,8 @@ impl MessagingUi {
 			.show(ctx, |ui| {
 				ui.set_min_size(screen.size());
 				ui.set_max_size(screen.size());
-				ui.painter().rect_filled(ui.max_rect(), 0.0, egui::Color32::BLACK);
+				ui.painter()
+					.rect_filled(ui.max_rect(), 0.0, egui::Color32::BLACK);
 				if let Some(texture) = &self.voice_stream_view {
 					let margin = 18.0;
 					let stage = ui.max_rect().shrink(margin);
@@ -1317,15 +1374,21 @@ impl MessagingUi {
 		};
 		let mut commands = Vec::new();
 		view.request_call(&mut state, Id(22), false, &mut commands);
-		assert!(commands.is_empty());
+		assert!(matches!(
+			commands.as_slice(),
+			[Command::Voice(client_core::voice::Command::Leave {
+				channel: Id(25),
+				..
+			})]
+		));
 		let from = view
 			.voice_switch
 			.as_ref()
-			.expect("switch requires confirmation")
+			.expect("switch leaves the current call immediately")
 			.from;
-		assert_eq!(state.voice.active.as_ref().unwrap().channel, from.0);
-		assert!(state.leave_call().is_some());
-		view.voice_switch.as_mut().unwrap().confirmed_at = Some(std::time::Instant::now());
+		assert!(view.voice_switch.as_ref().unwrap().confirmed_at.is_some());
+		assert!(state.voice.active.is_none());
+		commands.clear();
 		let ctx = egui::Context::default();
 		state.apply_voice(client_core::voice::Event::Departed {
 			channel: from.0,
@@ -1350,8 +1413,15 @@ impl MessagingUi {
 			})]
 		));
 		assert!(view.voice_switch.is_none());
+		commands.clear();
 		view.request_call(&mut state, Id(25), false, &mut commands);
-		assert!(view.voice_switch.is_some());
+		assert!(matches!(
+			commands.as_slice(),
+			[Command::Voice(client_core::voice::Command::Leave {
+				channel: Id(22),
+				..
+			})]
+		));
 		state.gateway_connected = false;
 		view.show_call_switch(&ctx, &mut state, &mut commands);
 		assert!(view.voice_switch.is_none());
@@ -1390,26 +1460,36 @@ impl MessagingUi {
 		if let Some(reason) = self.call_unavailable(state, channel) {
 			return Err(reason.into());
 		}
-		if let Some(call) = &state.voice.active {
+		if state.voice.active.is_some() {
+			state.voice.follow = None;
+			let from = state
+				.voice
+				.active
+				.as_ref()
+				.map(|call| (call.channel, call.request))
+				.expect("active call");
 			self.voice_switch = Some(CallSwitch {
-				from: (call.channel, call.request),
+				from,
 				channel,
 				ring,
 				generation: state.generation,
-				confirmed_at: None,
+				confirmed_at: Some(std::time::Instant::now()),
 				audio,
 			});
-		} else {
-			let (muted, deafened) = audio.unwrap_or((self.voice_muted, self.voice_deafened));
-			let command = state
-				.start_call_with_mute(channel, ring, muted, deafened)
-				.ok_or("Joining this call is no longer available")?;
-			if audio.is_some() {
-				self.voice_muted = muted;
-				self.voice_deafened = deafened;
+			if let Some(command) = state.leave_call() {
+				commands.push(command);
 			}
-			commands.push(command);
+			return Ok(());
 		}
+		let (muted, deafened) = audio.unwrap_or((self.voice_muted, self.voice_deafened));
+		let command = state
+			.start_call_with_mute(channel, ring, muted, deafened)
+			.ok_or("Joining this call is no longer available")?;
+		if audio.is_some() {
+			self.voice_muted = muted;
+			self.voice_deafened = deafened;
+		}
+		commands.push(command);
 		Ok(())
 	}
 
@@ -1419,6 +1499,7 @@ impl MessagingUi {
 		state: &mut State,
 		commands: &mut Vec<Command>,
 	) {
+		self.follow_moved_call(state, commands);
 		let Some(switch) = &self.voice_switch else {
 			return;
 		};
@@ -1468,35 +1549,27 @@ impl MessagingUi {
 			self.voice_switch = None;
 			return;
 		}
-		let name = state
-			.channel(switch.channel)
-			.map_or("the selected channel", |channel| channel.name.as_str());
-		match crate::dialog::Confirm::new(
-			"switch-call",
-			"Switch calls?",
-			format!("You are already in another call. Leave it and join {name}?"),
-		)
-		.confirm_label("Switch call")
-		.cancel_label("Stay in call")
-		.show(ctx)
+		if let Some(command) = state.leave_call() {
+			self.voice_switch
+				.as_mut()
+				.expect("pending switch")
+				.confirmed_at = Some(std::time::Instant::now());
+			commands.push(command);
+		}
+	}
+
+	fn follow_moved_call(&mut self, state: &mut State, commands: &mut Vec<Command>) {
+		let Some(follow) = state.voice.follow else {
+			return;
+		};
+		if self.voice_switch.is_some() || state.voice.active.is_some() || !self.voice_switch_ready {
+			return;
+		}
+		state.voice.follow = None;
+		if let Some(command) =
+			state.start_call_with_mute(follow.channel, false, follow.muted, follow.deafened)
 		{
-			Some(crate::dialog::Choice::Confirmed) => {
-				if let Some(command) = state.leave_call() {
-					self.voice_switch
-						.as_mut()
-						.expect("pending switch")
-						.confirmed_at = Some(std::time::Instant::now());
-					commands.push(command);
-				}
-			}
-			Some(crate::dialog::Choice::Cancelled) => {
-				let channel = self.voice_switch.as_ref().map(|switch| switch.channel);
-				self.voice_switch = None;
-				if channel.is_some() && self.voice_camera_on_join == channel {
-					self.voice_camera_on_join = None;
-				}
-			}
-			None => {}
+			commands.push(command);
 		}
 	}
 
@@ -1653,7 +1726,10 @@ impl MessagingUi {
 			design::notice(
 				ui,
 				design::Level::Info,
-				"Install a voice-enabled build to use these controls.",
+				crate::i18n::text(
+					self.language,
+					"Install a voice-enabled build to use these controls.",
+				),
 			);
 		}
 		ui.add_enabled_ui(!demo && self.voice_available, |ui| {
@@ -1677,65 +1753,84 @@ impl MessagingUi {
 					);
 					ui.label(design::medium(
 						ui,
-						if input { "Input device" } else { "Output device" },
+						crate::i18n::text(
+							self.language,
+							if input {
+								"Input device"
+							} else {
+								"Output device"
+							},
+						),
 						15.0,
 					))
 				})
 				.inner;
 			if input {
-				device_combo(ui, "voice-input", &self.voice_inputs, &mut self.voice_input)
-					.labelled_by(label.id);
-				gain_slider(ui, &mut self.voice_gain.input_percent, "Microphone gain");
+				device_combo(
+					ui,
+					"voice-input",
+					&self.voice_inputs,
+					&mut self.voice_input,
+					self.language,
+				)
+				.labelled_by(label.id);
+				gain_slider(
+					ui,
+					&mut self.voice_gain.input_percent,
+					crate::i18n::text(self.language, "Microphone gain"),
+				);
 			} else {
 				device_combo(
 					ui,
 					"voice-output",
 					&self.voice_outputs,
 					&mut self.voice_output,
+					self.language,
 				)
 				.labelled_by(label.id);
-				gain_slider(ui, &mut self.voice_gain.output_percent, "Speaker volume");
+				gain_slider(
+					ui,
+					&mut self.voice_gain.output_percent,
+					crate::i18n::text(self.language, "Speaker volume"),
+				);
 			}
 			ui.horizontal_wrapped(|ui| {
-				if ui.small_button("Rescan devices").clicked() {
+				if ui
+					.small_button(crate::i18n::text(self.language, "Rescan devices"))
+					.clicked()
+				{
 					self.voice_refresh_devices = true;
 				}
-				if ui.small_button("Reset levels").clicked() {
+				if ui
+					.small_button(crate::i18n::text(self.language, "Reset levels"))
+					.clicked()
+				{
 					self.voice_gain = crate::VoiceGain::default();
 				}
 			});
 			ui.separator();
 			if input {
-				let mut suppression =
-					self.voice_processing.effective().suppression != NoiseSuppression::Off;
-				if design::switch(
+				ui.label(design::medium(
 					ui,
 					crate::i18n::text(self.language, "Noise suppression"),
-					Some(crate::i18n::text(
-						self.language,
-						"Recommended filter for keyboard, fan and room noise.",
-					)),
-					&mut suppression,
-				)
-				.changed()
-				{
-					self.voice_processing.edit().suppression = if suppression {
-						NoiseSuppression::default()
-					} else {
-						NoiseSuppression::Off
-					};
-				}
+					15.0,
+				));
+				self.noise_level_picker(ui, true);
 				design::switch(
 					ui,
-					"Push to talk",
-					Some("Hold your configured shortcut when you want to speak."),
+					crate::i18n::text(self.language, "Push to talk"),
+					Some(crate::i18n::text(
+						self.language,
+						"Hold your configured shortcut when you want to speak.",
+					)),
 					&mut self.voice_push_to_talk,
 				);
 			} else {
 				ui.label(
-					RichText::new(
+					RichText::new(crate::i18n::text(
+						self.language,
 						"Deafen turns off incoming audio and mutes your microphone with it.",
-					)
+					))
 					.size(12.0)
 					.color(colors.muted),
 				);
@@ -1743,16 +1838,17 @@ impl MessagingUi {
 		});
 		if self.voice_microphone_unavailable {
 			ui.label(
-				RichText::new(
+				RichText::new(crate::i18n::text(
+					self.language,
 					"Microphone unavailable · choose another input. You are still connected.",
-				)
+				))
 				.size(12.0)
 				.color(colors.warning),
 			);
 		}
 		if !self.voice_device_status.is_empty() {
 			ui.label(
-				RichText::new(self.voice_device_status)
+				RichText::new(crate::i18n::text(self.language, self.voice_device_status))
 					.size(12.0)
 					.color(colors.muted),
 			);
@@ -1760,7 +1856,7 @@ impl MessagingUi {
 		if active
 			&& !input && let Some(code) = &self.voice_privacy_code
 		{
-			egui::CollapsingHeader::new("Voice privacy code").show(ui, |ui| {
+			egui::CollapsingHeader::new(crate::i18n::text(self.language, "Voice privacy code")).show(ui, |ui| {
 				ui.add(
 					egui::Label::new(RichText::new(code).monospace())
 						.selectable(true)
@@ -1865,23 +1961,35 @@ impl MessagingUi {
 			design::notice(
 				ui,
 				design::Level::Info,
-				"Install a voice-enabled build to use these controls.",
+				crate::i18n::text(
+					self.language,
+					"Install a voice-enabled build to use these controls.",
+				),
 			);
 		}
 		ui.add_enabled_ui(!demo && self.voice_available, |ui| {
 			if compact {
 				self.voice_audio_controls(ui);
-				egui::CollapsingHeader::new("Voice processing & input mode")
-					.show(ui, |ui| self.voice_processing_controls(ui));
+				egui::CollapsingHeader::new(crate::i18n::text(
+					self.language,
+					"Voice processing & input mode",
+				))
+				.show(ui, |ui| self.voice_processing_controls(ui));
 			} else {
-				design::group(ui, "Devices & levels", |ui| {
-					self.voice_audio_controls(ui);
-					design::card_divider(ui);
-					self.microphone_preview_controls(ui, active);
-				});
-				design::group(ui, "Voice processing", |ui| {
-					self.voice_processing_controls(ui)
-				});
+				design::group(
+					ui,
+					crate::i18n::text(self.language, "Devices & levels"),
+					|ui| {
+						self.voice_audio_controls(ui);
+						design::card_divider(ui);
+						self.microphone_preview_controls(ui, active);
+					},
+				);
+				design::group(
+					ui,
+					crate::i18n::text(self.language, "Voice processing"),
+					|ui| self.voice_processing_controls(ui),
+				);
 			}
 		});
 		if !compact {
@@ -1890,20 +1998,25 @@ impl MessagingUi {
 				&mut self.keybinds,
 				&mut self.keybind_capture,
 				self.global_keybind_status,
+				self.language,
 			);
 		}
-		design::group(ui, "Camera", |ui| self.camera_settings_content(ui, demo));
+		design::group(ui, crate::i18n::text(self.language, "Camera"), |ui| {
+			self.camera_settings_content(ui, demo)
+		});
 		if active && let Some(code) = &self.voice_privacy_code {
-			egui::CollapsingHeader::new("Voice privacy code").show(ui, |ui| {
+			egui::CollapsingHeader::new(crate::i18n::text(self.language, "Voice privacy code"))
+				.show(ui, |ui| {
 				ui.add(
 					egui::Label::new(RichText::new(code).monospace())
 						.selectable(true)
 						.wrap(),
 				);
 				ui.label(
-					RichText::new(
+					RichText::new(crate::i18n::text(
+						self.language,
 						"Compare with the other participants. This code changes with the encrypted call group.",
-					)
+					))
 					.size(12.0)
 					.color(colors.muted),
 				);
@@ -1912,7 +2025,10 @@ impl MessagingUi {
 		if !compact {
 			design::hint(
 				ui,
-				"Audio preferences are saved on this device. Your microphone starts only when you join a call or start testing.",
+				crate::i18n::text(
+					self.language,
+					"Audio preferences are saved on this device. Your microphone starts only when you join a call or start testing.",
+				),
 			);
 		}
 	}
@@ -1951,6 +2067,7 @@ impl MessagingUi {
 			"voice-camera",
 			&self.voice_cameras,
 			&mut self.voice_camera_device,
+			self.language,
 		)
 		.labelled_by(label.id);
 		ui.horizontal(|ui| {
@@ -2054,7 +2171,10 @@ impl MessagingUi {
 	fn voice_audio_controls(&mut self, ui: &mut egui::Ui) {
 		design::hint(
 			ui,
-			"System default follows your operating-system choice. Select a device only when you want SereinExt to stay pinned to it.",
+			crate::i18n::text(
+				self.language,
+				"System default follows your operating-system choice. Select a device only when you want SereinExt to stay pinned to it.",
+			),
 		);
 		// Both settings surfaces use this path. Queue discovery once, without opening streams.
 		if ui.is_enabled() && self.voice_device_status.is_empty() {
@@ -2078,13 +2198,26 @@ impl MessagingUi {
 					);
 					ui.label(design::medium(
 						ui,
-						if input { "Input device" } else { "Output device" },
+						crate::i18n::text(
+							self.language,
+							if input {
+								"Input device"
+							} else {
+								"Output device"
+							},
+						),
 						15.0,
 					))
 				})
 				.inner;
 			if input {
-				device_combo(ui, "voice-input", &self.voice_inputs, &mut self.voice_input)
+				device_combo(
+					ui,
+					"voice-input",
+					&self.voice_inputs,
+					&mut self.voice_input,
+					self.language,
+				)
 					.labelled_by(label.id);
 			} else {
 				device_combo(
@@ -2092,6 +2225,7 @@ impl MessagingUi {
 					"voice-output",
 					&self.voice_outputs,
 					&mut self.voice_output,
+					self.language,
 				)
 				.labelled_by(label.id);
 			}
@@ -2105,143 +2239,212 @@ impl MessagingUi {
 			device(ui, true);
 			device(ui, false);
 		}
-		gain_controls(ui, &mut self.voice_gain);
+		gain_controls(ui, &mut self.voice_gain, self.language);
+		design::switch(
+			ui,
+			crate::i18n::text(self.language, "Start bots at 50% volume"),
+			Some(crate::i18n::text(
+				self.language,
+				"Protects your hearing from bots that join very loud. Right-click a bot in the call to change its volume.",
+			)),
+			&mut self.voice_bot_safe_volume,
+		);
 		ui.horizontal(|ui| {
 			ui.spacing_mut().item_spacing.x = 4.0;
-			if design::text_action(ui, "Rescan devices").clicked() {
+			if design::text_action(ui, crate::i18n::text(self.language, "Rescan devices")).clicked()
+			{
 				self.voice_refresh_devices = true;
 			}
 			if self.voice_gain != crate::VoiceGain::default()
-				&& design::text_action(ui, "Reset levels").clicked()
+				&& design::text_action(ui, crate::i18n::text(self.language, "Reset levels"))
+					.clicked()
 			{
 				self.voice_gain = crate::VoiceGain::default();
 			}
 			if !self.voice_device_status.is_empty() {
 				ui.label(
-					RichText::new(self.voice_device_status)
+					RichText::new(crate::i18n::text(self.language, self.voice_device_status))
 						.size(12.0)
 						.color(colors.muted),
 				);
 			}
 		});
-		let input_missing = self.voice_input.as_ref().is_some_and(|selected| {
-			!self.voice_inputs.iter().any(|(id, _)| id == selected)
-		});
-		let output_missing = self.voice_output.as_ref().is_some_and(|selected| {
-			!self.voice_outputs.iter().any(|(id, _)| id == selected)
-		});
+		let input_missing = self
+			.voice_input
+			.as_ref()
+			.is_some_and(|selected| !self.voice_inputs.iter().any(|(id, _)| id == selected));
+		let output_missing = self
+			.voice_output
+			.as_ref()
+			.is_some_and(|selected| !self.voice_outputs.iter().any(|(id, _)| id == selected));
 		if input_missing || output_missing {
 			design::notice(
 				ui,
 				design::Level::Warning,
-				"One selected audio device is unavailable. Choose System default or rescan devices.",
+				crate::i18n::text(
+					self.language,
+					"One selected audio device is unavailable. Choose System default or rescan devices.",
+				),
 			);
 		}
 		if self.voice_microphone_unavailable {
 			design::notice(
 				ui,
 				design::Level::Warning,
-				"Microphone unavailable · choose another input. You are still connected.",
+				crate::i18n::text(
+					self.language,
+					"Microphone unavailable · choose another input. You are still connected.",
+				),
+			);
+		}
+	}
+
+	/// Called when the audio worker could not run Maximum in real time; it has already
+	/// switched to Standard, and this saves that choice and tells the user why.
+	pub fn voice_noise_fallback(&mut self) {
+		if self.voice_processing.effective().suppression == NoiseSuppression::DeepFilter {
+			self.set_noise_level(NoiseSuppression::RnNoise);
+			self.voice_noise_fell_back = true;
+		}
+	}
+
+	fn set_noise_level(&mut self, level: NoiseSuppression) {
+		let current = self.voice_processing.effective().suppression;
+		if current != NoiseSuppression::Off {
+			self.voice_noise_restore = current;
+		}
+		if level == current {
+			return;
+		}
+		let processing = self.voice_processing.edit();
+		processing.suppression = level;
+		if level == NoiseSuppression::WebRtc {
+			processing.suppression_level = processing.suppression_level.max(2);
+		}
+		if level != NoiseSuppression::Off {
+			self.voice_noise_restore = level;
+		}
+		self.voice_noise_fell_back = false;
+	}
+
+	/// Call-panel toggle: off, or back to the level the user chose last.
+	fn toggle_noise(&mut self) {
+		if self.voice_processing.effective().suppression == NoiseSuppression::Off {
+			self.set_noise_level(self.voice_noise_restore);
+		} else {
+			self.set_noise_level(NoiseSuppression::Off);
+		}
+	}
+
+	/// The four suppression levels as plain-language choices, shared by Settings, the input
+	/// popup and the call button's context menu. `compact` drops the explanations.
+	fn noise_level_picker(&mut self, ui: &mut egui::Ui, compact: bool) {
+		let language = self.language;
+		let current = self.voice_processing.effective().suppression;
+		let mut chosen = None;
+		ui.scope(|ui| {
+			ui.spacing_mut().item_spacing.y = if compact { 2.0 } else { 4.0 };
+			for level in NoiseSuppression::ALL {
+				if noise_level_row(ui, level, level == current, compact, language).clicked() {
+					chosen = Some(level);
+				}
+			}
+		});
+		if let Some(level) = chosen {
+			self.set_noise_level(level);
+		}
+		if self.voice_noise_fell_back {
+			design::notice(
+				ui,
+				design::Level::Warning,
+				crate::i18n::text(
+					language,
+					"Your PC couldn't keep up with Maximum, so SereinExt switched to Standard to keep your voice smooth.",
+				),
 			);
 		}
 	}
 
 	fn voice_processing_controls(&mut self, ui: &mut egui::Ui) {
 		let colors = design::palette(ui);
-		let effective = self.voice_processing.effective();
+		let language = self.language;
+		let t = |english: &'static str| crate::i18n::text(language, english);
 
 		design::section(
 			ui,
-			"Noise suppression",
-			Some("Choose how aggressively SereinExt removes background noise. Standard is recommended for most calls."),
+			t("Noise suppression"),
+			Some(t(
+				"Removes background noise from your microphone before anyone else hears it.",
+			)),
 		);
-		let choices = [
-			(NoiseSuppression::Off, "Off"),
-			(NoiseSuppression::RnNoise, "Standard"),
-			(NoiseSuppression::WebRtc, "Strong"),
-		];
-		let mut suppression = effective.suppression;
-		design::row(
+		self.noise_level_picker(ui, false);
+		design::hint(
 			ui,
-			"Mode",
-			Some(match effective.suppression {
-				NoiseSuppression::Off => "No noise filtering. Best for music or already-processed microphones.",
-				NoiseSuppression::RnNoise => "Balanced voice isolation for keyboard, fan and room noise.",
-				NoiseSuppression::WebRtc => "More aggressive filtering for noisy rooms; may sound less natural.",
-			}),
-			|ui| {
-				egui::ComboBox::from_id_salt("voice-noise-suppression-simple")
-					.selected_text(
-						choices
-							.iter()
-							.find(|(value, _)| *value == suppression)
-							.map_or("Standard", |(_, label)| *label),
-					)
-					.width(ui.available_width().min(180.0))
-					.show_ui(ui, |ui| {
-						for (value, label) in choices {
-							ui.selectable_value(&mut suppression, value, label);
-						}
-					});
-			},
+			t(
+				"Friends complaining about noise? Choose Maximum. If your voice cuts out or your PC slows down, go back to Standard.",
+			),
 		);
-		if suppression != effective.suppression {
-			let processing = self.voice_processing.edit();
-			processing.suppression = suppression;
-			if suppression == NoiseSuppression::WebRtc {
-				processing.suppression_level = processing.suppression_level.max(2);
-			}
-		}
-
-		design::card_divider(ui);
-		let effective = self.voice_processing.effective();
-		let mut echo = effective.echo_cancellation;
-		if design::switch(
-			ui,
-			"Echo cancellation",
-			Some("Recommended when speakers can be picked up by your microphone."),
-			&mut echo,
-		)
-		.changed()
-		{
-			self.voice_processing.edit().echo_cancellation = echo;
-		}
-		let effective = self.voice_processing.effective();
-		let mut gain = effective.automatic_gain;
-		if design::switch(
-			ui,
-			"Automatic microphone volume",
-			Some("Keeps speech at a more consistent loudness without changing your output volume."),
-			&mut gain,
-		)
-		.changed()
-		{
-			self.voice_processing.edit().automatic_gain = gain;
-		}
 
 		design::card_divider(ui);
 		design::switch(
 			ui,
-			"Push to talk",
-			Some("When enabled, your microphone transmits only while the configured shortcut is held."),
+			t("Push to talk"),
+			Some(t(
+				"When enabled, your microphone transmits only while the configured shortcut is held.",
+			)),
 			&mut self.voice_push_to_talk,
 		)
-		.on_hover_text("Mute and deafen always take priority.");
+		.on_hover_text(t("Mute and deafen always take priority."));
 
 		design::card_divider(ui);
-		egui::CollapsingHeader::new("Advanced input settings")
+		egui::CollapsingHeader::new(t("Advanced input settings"))
 			.default_open(false)
 			.show(ui, |ui| {
+				design::hint(
+					ui,
+					t(
+						"The defaults work for most people. Change these only if something sounds wrong.",
+					),
+				);
 				let effective = self.voice_processing.effective();
-				let mut sensitivity = effective.sensitivity_db.is_some();
+				let mut echo = effective.echo_cancellation;
 				if design::switch(
 					ui,
-					"Voice activity threshold",
-					Some(if sensitivity {
-						"Only transmit sound above the threshold."
-					} else {
-						"Open voice activity; mute and push to talk still apply."
-					}),
+					t("Echo cancellation"),
+					Some(t(
+						"Recommended when speakers can be picked up by your microphone.",
+					)),
+					&mut echo,
+				)
+				.changed()
+				{
+					self.voice_processing.edit().echo_cancellation = echo;
+				}
+				let mut gain = effective.automatic_gain;
+				if design::switch(
+					ui,
+					t("Automatic microphone volume"),
+					Some(t(
+						"Keeps speech at a more consistent loudness without changing your output volume.",
+					)),
+					&mut gain,
+				)
+				.changed()
+				{
+					self.voice_processing.edit().automatic_gain = gain;
+				}
+				design::card_divider(ui);
+				let effective = self.voice_processing.effective();
+				let mut sensitivity = effective.sensitivity_db.is_some();
+				let sensitivity_detail = if sensitivity {
+					"Only transmit sound above the threshold."
+				} else {
+					"Open voice activity; mute and push to talk still apply."
+				};
+				if design::switch(
+					ui,
+					t("Voice activity threshold"),
+					Some(t(sensitivity_detail)),
 					&mut sensitivity,
 				)
 				.changed()
@@ -2264,29 +2467,31 @@ impl MessagingUi {
 				if let Some(level) = self.voice_preview_level {
 					ui.add(
 						egui::ProgressBar::new(((level + 80.0) / 80.0).clamp(0.0, 1.0))
-							.text(format!("Input level: {level:.0} dBFS"))
+							.text(format!("{}: {level:.0} dBFS", t("Input level")))
 							.fill(colors.positive),
 					);
 				}
 				if self.voice_processing.effective().suppression == NoiseSuppression::WebRtc {
 					design::card_divider(ui);
 					let labels = ["Low", "Moderate", "High", "Very high"];
-					let mut strength = self
-						.voice_processing
-						.effective()
-						.suppression_level
-						.min(3);
+					let mut strength = self.voice_processing.effective().suppression_level.min(3);
 					design::row(
 						ui,
-						"Strong suppression level",
-						Some("Higher levels remove more noise but can affect natural voice detail."),
+						t("Light suppression strength"),
+						Some(t(
+							"Higher levels remove more noise but can affect natural voice detail.",
+						)),
 						|ui| {
 							egui::ComboBox::from_id_salt("voice-suppression-strength")
-								.selected_text(labels[usize::from(strength)])
+								.selected_text(t(labels[usize::from(strength)]))
 								.width(ui.available_width().min(160.0))
 								.show_ui(ui, |ui| {
 									for (index, label) in labels.iter().enumerate() {
-										ui.selectable_value(&mut strength, index as u8, *label);
+										ui.selectable_value(
+											&mut strength,
+											index as u8,
+											t(label),
+										);
 									}
 								});
 						},
@@ -2297,10 +2502,11 @@ impl MessagingUi {
 				}
 				design::card_divider(ui);
 				ui.horizontal_wrapped(|ui| {
-					if design::text_action(ui, "Recommended defaults").clicked() {
+					if design::text_action(ui, t("Recommended defaults")).clicked() {
 						self.voice_processing = Default::default();
+						self.voice_noise_fell_back = false;
 					}
-					if design::text_action(ui, "Raw microphone").clicked() {
+					if design::text_action(ui, t("Raw microphone")).clicked() {
 						let processing = self.voice_processing.edit();
 						processing.suppression = NoiseSuppression::Off;
 						processing.echo_cancellation = false;
@@ -2709,6 +2915,96 @@ impl MessagingUi {
 		}
 	}
 
+	/// Offer to rejoin the last call after an abrupt close. Never joins by itself.
+	pub(super) fn reconnect_call_banner(
+		&mut self,
+		ui: &mut egui::Ui,
+		state: &mut State,
+		commands: &mut Vec<Command>,
+	) {
+		let Some((channel, _)) = self.reconnect_offer else {
+			return;
+		};
+		if state.voice.active.is_some() {
+			return;
+		}
+		let colors = design::palette(ui);
+		let name = state
+			.channel(channel)
+			.map(|channel| channel.name.as_str())
+			.filter(|name| !name.is_empty())
+			.unwrap_or(crate::i18n::text(self.language, "Recent call"))
+			.to_owned();
+		let unavailable = self.call_unavailable(state, channel);
+		egui::Panel::top("reconnect-call")
+			.show_separator_line(false)
+			.frame(
+				egui::Frame::new()
+					.fill(colors.raised)
+					.inner_margin(egui::Margin::symmetric(16, 10)),
+			)
+			.show(ui, |ui| {
+				ui.horizontal(|ui| {
+					ui.spacing_mut().item_spacing.x = 12.0;
+					crate::icons::inline(ui, crate::icons::Icon::Phone, 22.0, colors.positive);
+					ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+						ui.spacing_mut().item_spacing.x = 8.0;
+						let reconnect = ui
+							.add_enabled(
+								unavailable.is_none(),
+								egui::Button::new(
+									design::medium(
+										ui,
+										crate::i18n::text(self.language, "Reconnect to call"),
+										13.0,
+									)
+									.color(egui::Color32::WHITE),
+								)
+								.fill(colors.positive)
+								.min_size(egui::vec2(148.0, 36.0)),
+							)
+							.on_disabled_hover_text(unavailable.unwrap_or(""));
+						if reconnect.clicked()
+							&& self
+								.request_call_audio(state, channel, false, None, commands)
+								.is_ok()
+						{
+							self.reconnect_offer = None;
+						}
+						if ui
+							.add(
+								egui::Button::new(crate::i18n::text(self.language, "Dismiss"))
+									.min_size(egui::vec2(84.0, 36.0)),
+							)
+							.clicked()
+						{
+							self.reconnect_offer = None;
+							self.reconnect_dismissed = true;
+						}
+						ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+							ui.vertical(|ui| {
+								ui.spacing_mut().item_spacing.y = 2.0;
+								ui.add(
+									egui::Label::new(
+										design::semibold(ui, &name, 15.0).color(colors.text_strong),
+									)
+									.truncate(),
+								);
+								ui.label(
+									RichText::new(crate::i18n::text(
+										self.language,
+										"You were in this call recently",
+									))
+									.size(13.0)
+									.color(colors.muted),
+								);
+							});
+						});
+					});
+				});
+			});
+	}
+
 	/// DM call stage above the conversation, plus the incoming-call banner.
 	pub(super) fn call_bar(
 		&mut self,
@@ -2949,14 +3245,15 @@ impl MessagingUi {
 				ui.spacing_mut().item_spacing.y = 8.0;
 				if self.voice_microphone_unavailable {
 					ui.label(
-						RichText::new(
+						RichText::new(crate::i18n::text(
+							self.language,
 							"Microphone unavailable · still connected. Choose another input in Audio settings.",
-						)
+						))
 						.size(12.0)
 						.color(colors.warning),
 					);
 				}
-				ui.horizontal(|ui| {
+				let header = ui.horizontal(|ui| {
 					ui.spacing_mut().item_spacing.x = 10.0;
 					// Square status tile like Discord's, tinted with the connection colour.
 					let (tile, _) =
@@ -3010,6 +3307,14 @@ impl MessagingUi {
 						});
 					});
 				});
+				if connected && !state.demo {
+					let ping = self.voice_ping_ms;
+					let place = self.voice_server_place.clone();
+					let language = self.language;
+					header.response.on_hover_ui(|ui| {
+						voice_connection_tip(ui, ping, &place, language);
+					});
+				}
 				call_failure(ui, error, colors.text_strong);
 				let controls = self.controls_enabled(state);
 				let can_camera = self.voice_camera_available
@@ -3086,32 +3391,43 @@ impl MessagingUi {
 						},
 					)
 					.clicked();
-					if card_action(
+					let level = self.voice_processing.effective().suppression;
+					let hint = if processing {
+						format!(
+							"{}: {}\n{}",
+							t("Noise suppression"),
+							t(noise_level_title(level)),
+							t("Click to turn on or off · right-click to choose the level"),
+						)
+					} else {
+						t("Noise suppression is unavailable in this build or preview.").to_owned()
+					};
+					let noise = noise_action(
 						ui,
 						width,
-						crate::icons::Icon::Soundboard,
 						processing,
-						self.voice_processing.effective().suppression != NoiseSuppression::Off,
-						if self.voice_processing.effective().suppression != NoiseSuppression::Off {
-							t("Turn off noise suppression")
-						} else {
+						level,
+						if level == NoiseSuppression::Off {
 							t("Turn on noise suppression")
-						},
-						if processing {
-							"Noise suppression reduces keyboard noise, breathing and fans locally."
 						} else {
-							"Noise suppression is unavailable in this build or preview."
+							t("Turn off noise suppression")
 						},
-					)
-					.clicked()
-					{
-						let enabled =
-							self.voice_processing.effective().suppression != NoiseSuppression::Off;
-						self.voice_processing.edit().suppression = if enabled {
-							NoiseSuppression::Off
-						} else {
-							NoiseSuppression::default()
-						};
+						hint,
+					);
+					if noise.clicked() {
+						self.toggle_noise();
+					}
+					if processing {
+						noise.context_menu(|ui| {
+							ui.set_width(260.0);
+							ui.label(design::semibold(ui, t("Noise suppression"), 14.0));
+							self.noise_level_picker(ui, true);
+							ui.separator();
+							if ui.button(t("All voice settings")).clicked() {
+								self.open_voice_settings();
+								ui.close();
+							}
+						});
 					}
 				});
 				if camera_clicked && let Some(command) = state.set_call_camera(!camera) {
@@ -3191,6 +3507,455 @@ fn card_action(
 	);
 	response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, active, label));
 	response.on_hover_text(hint)
+}
+
+fn noise_action(
+	ui: &mut egui::Ui,
+	width: f32,
+	enabled: bool,
+	level: NoiseSuppression,
+	label: &str,
+	hint: String,
+) -> egui::Response {
+	let colors = design::palette(ui);
+	let active = level != NoiseSuppression::Off;
+	let (rect, response) = ui.allocate_exact_size(
+		egui::vec2(width, 40.0),
+		if enabled {
+			egui::Sense::click()
+		} else {
+			egui::Sense::hover()
+		},
+	);
+	let fill = if enabled && (response.hovered() || response.has_focus()) {
+		colors.selected
+	} else {
+		colors.hover
+	};
+	ui.painter().rect_filled(rect, 8, fill);
+	let color = if !enabled {
+		colors.muted.gamma_multiply(0.5)
+	} else if active {
+		colors.accent
+	} else {
+		colors.text_strong
+	};
+	paint_noise_suppression(
+		ui.painter(),
+		egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(22.0)),
+		color,
+		fill,
+		level.level(),
+	);
+	response.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, enabled, active, label));
+	response.on_hover_text(hint)
+}
+
+fn noise_level_title(level: NoiseSuppression) -> &'static str {
+	match level {
+		NoiseSuppression::Off => "Off",
+		NoiseSuppression::WebRtc => "Light",
+		NoiseSuppression::RnNoise => "Standard",
+		NoiseSuppression::DeepFilter => "Maximum",
+	}
+}
+
+fn noise_level_detail(level: NoiseSuppression) -> &'static str {
+	match level {
+		NoiseSuppression::Off => "No filter. For studio microphones or when playing music.",
+		NoiseSuppression::WebRtc => {
+			"Steady hum like fans or air conditioning. Lightest on your PC."
+		}
+		NoiseSuppression::RnNoise => {
+			"Keyboard, clicks and everyday home noise. Works well for most people."
+		}
+		NoiseSuppression::DeepFilter => {
+			"Very noisy home, or friends complain about your background noise. Uses more of your PC."
+		}
+	}
+}
+
+fn noise_level_usage(level: NoiseSuppression) -> &'static str {
+	match level {
+		NoiseSuppression::Off => "PC usage: none",
+		NoiseSuppression::WebRtc => "PC usage: very low",
+		NoiseSuppression::RnNoise => "PC usage: low",
+		NoiseSuppression::DeepFilter => "PC usage: medium",
+	}
+}
+
+/// One suppression level: glyph, plain name, engine tag, optional explanation, PC-usage
+/// meter and a radio marker. The whole row is the click target.
+fn noise_level_row(
+	ui: &mut egui::Ui,
+	level: NoiseSuppression,
+	selected: bool,
+	compact: bool,
+	language: model::Language,
+) -> egui::Response {
+	let p = design::palette(ui);
+	let t = |english: &'static str| crate::i18n::text(language, english);
+	let enabled = ui.is_enabled();
+	let width = ui.available_width();
+	let glyph = if compact { 20.0 } else { 26.0 };
+	let text_left = 12.0 + glyph + 12.0;
+	let meter_width = 22.0;
+	let text_width = (width - text_left - meter_width - 48.0).max(80.0);
+	let title_color = if enabled {
+		p.text_strong
+	} else {
+		p.text_strong.gamma_multiply(0.5)
+	};
+	let title = ui.painter().layout_no_wrap(
+		t(noise_level_title(level)).to_owned(),
+		egui::FontId::new(
+			if compact { 14.0 } else { 15.0 },
+			design::semibold_family(ui.ctx()),
+		),
+		title_color,
+	);
+	let engine = match level {
+		NoiseSuppression::Off => None,
+		NoiseSuppression::WebRtc => Some("WebRTC"),
+		NoiseSuppression::RnNoise => Some("RNNoise"),
+		NoiseSuppression::DeepFilter => Some("DeepFilterNet"),
+	}
+	.map(|name| {
+		ui.painter()
+			.layout_no_wrap(name.to_owned(), egui::FontId::proportional(11.0), p.muted)
+	});
+	let badge = (level == NoiseSuppression::default()).then(|| {
+		ui.painter().layout_no_wrap(
+			t("Recommended").to_owned(),
+			egui::FontId::new(11.0, design::medium_family(ui.ctx())),
+			p.accent,
+		)
+	});
+	let detail = (!compact).then(|| {
+		ui.painter().layout(
+			t(noise_level_detail(level)).to_owned(),
+			egui::FontId::proportional(12.5),
+			p.muted,
+			text_width,
+		)
+	});
+	let text_height = title.size().y + detail.as_ref().map_or(0.0, |d| d.size().y + 3.0);
+	let padding = if compact { 7.0 } else { 10.0 };
+	let (rect, response) = ui.allocate_exact_size(
+		egui::vec2(width, text_height.max(glyph) + padding * 2.0),
+		egui::Sense::click(),
+	);
+	let usage = t(noise_level_usage(level));
+	response.widget_info(|| {
+		egui::WidgetInfo::selected(
+			egui::Role::RadioButton,
+			enabled,
+			selected,
+			format!("{}, {usage}", t(noise_level_title(level))),
+		)
+	});
+	if !ui.is_rect_visible(rect) {
+		return response.on_hover_text(usage);
+	}
+	let hot = enabled && (response.hovered() || response.has_focus());
+	let painter = ui.painter();
+	let fill = if selected {
+		design::mix(p.selected, p.accent, 0.12)
+	} else if hot {
+		p.hover
+	} else {
+		egui::Color32::TRANSPARENT
+	};
+	painter.rect_filled(rect, 8, fill);
+	if selected {
+		painter.rect_stroke(
+			rect,
+			8,
+			egui::Stroke::new(1.0, p.accent.gamma_multiply(0.6)),
+			egui::StrokeKind::Inside,
+		);
+	} else if response.has_focus() {
+		painter.rect_stroke(
+			rect.shrink(1.0),
+			8,
+			egui::Stroke::new(1.0, p.accent),
+			egui::StrokeKind::Inside,
+		);
+	}
+	let glyph_color = match (enabled, selected) {
+		(false, _) => p.muted.gamma_multiply(0.5),
+		(true, true) => p.accent,
+		(true, false) => p.text,
+	};
+	let glyph_rect = egui::Rect::from_center_size(
+		egui::pos2(rect.left() + 12.0 + glyph * 0.5, rect.center().y),
+		egui::Vec2::splat(glyph),
+	);
+	let glyph_bg = if fill == egui::Color32::TRANSPARENT {
+		p.raised
+	} else {
+		fill
+	};
+	paint_noise_suppression(painter, glyph_rect, glyph_color, glyph_bg, level.level());
+
+	let mut x = rect.left() + text_left;
+	let top = rect.top() + padding;
+	let title_width = title.size().x;
+	let title_height = title.size().y;
+	painter.galley(egui::pos2(x, top), title, title_color);
+	x += title_width + 8.0;
+	let mid = top + title_height * 0.5;
+	if let Some(engine) = engine {
+		let size = engine.size();
+		painter.galley(egui::pos2(x, mid - size.y * 0.5), engine, p.muted);
+		x += size.x + 8.0;
+	}
+	if let Some(badge) = badge {
+		let size = badge.size();
+		let pill = egui::Rect::from_min_size(
+			egui::pos2(x, mid - size.y * 0.5 - 2.0),
+			size + egui::vec2(12.0, 4.0),
+		);
+		painter.rect_filled(pill, 9, p.accent.gamma_multiply(0.16));
+		painter.galley(pill.min + egui::vec2(6.0, 2.0), badge, p.accent);
+	}
+	if let Some(detail) = detail {
+		painter.galley(
+			egui::pos2(rect.left() + text_left, top + title_height + 3.0),
+			detail,
+			p.muted,
+		);
+	}
+
+	let marker = egui::pos2(rect.right() - 20.0, rect.center().y);
+	let ring = if selected {
+		p.accent
+	} else if hot {
+		p.text
+	} else {
+		p.muted
+	};
+	let ring = ring.gamma_multiply(if enabled { 1.0 } else { 0.4 });
+	painter.circle_stroke(marker, 8.0, egui::Stroke::new(2.0, ring));
+	if selected {
+		painter.circle_filled(marker, 4.0, ring);
+	}
+	// PC-usage meter: three rising bars, filled up to the level's cost.
+	let meter = egui::Rect::from_min_size(
+		egui::pos2(marker.x - 20.0 - meter_width, rect.center().y - 6.0),
+		egui::vec2(meter_width, 12.0),
+	);
+	let filled = level.level();
+	for index in 0..3u8 {
+		let bar_w = 5.0;
+		let height = 4.0 + f32::from(index) * 4.0;
+		let bar = egui::Rect::from_min_size(
+			egui::pos2(
+				meter.left() + f32::from(index) * (bar_w + 3.0),
+				meter.bottom() - height,
+			),
+			egui::vec2(bar_w, height),
+		);
+		let on = index < filled;
+		let color = match (on, filled) {
+			(false, _) => p.border,
+			(true, 3) => p.warning,
+			(true, _) => p.positive,
+		};
+		painter.rect_filled(
+			bar,
+			1.5,
+			color.gamma_multiply(if enabled { 1.0 } else { 0.4 }),
+		);
+	}
+	response.on_hover_text(usage)
+}
+
+/// Five rounded voice bars over three level pips; off adds a slash cut out of `background`.
+/// Bars are snapped to physical pixels so the small button glyph stays crisp.
+fn paint_noise_suppression(
+	painter: &egui::Painter,
+	rect: egui::Rect,
+	color: egui::Color32,
+	background: egui::Color32,
+	level: u8,
+) {
+	let ppp = painter.pixels_per_point();
+	let snap = |value: f32| (value * ppp).round() / ppp;
+	let size = rect.width();
+	let bar_w = snap((size * 0.12).max(1.5));
+	let gap = snap((size * 0.075).max(1.0));
+	let wave_width = bar_w * 5.0 + gap * 4.0;
+	let wave_left = snap(rect.center().x - wave_width * 0.5);
+	let pip_h = snap((size * 0.1).max(1.5));
+	let wave_top = rect.top() + size * 0.04;
+	let wave_bottom = rect.bottom() - pip_h - size * 0.14;
+	let wave_mid = (wave_top + wave_bottom) * 0.5;
+	let wave_h = wave_bottom - wave_top;
+	for (index, height) in [0.38, 0.7, 1.0, 0.7, 0.38].into_iter().enumerate() {
+		let bar_h = snap((wave_h * height).max(bar_w));
+		let x = wave_left + index as f32 * (bar_w + gap);
+		let y = snap(wave_mid - bar_h * 0.5);
+		painter.rect_filled(
+			egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(bar_w, bar_h)),
+			bar_w * 0.5,
+			color,
+		);
+	}
+	let pip_gap = gap;
+	let pip_w = snap((wave_width - pip_gap * 2.0) / 3.0);
+	let pip_y = snap(rect.bottom() - pip_h - size * 0.02);
+	for index in 0..3u8 {
+		let x = wave_left + f32::from(index) * (pip_w + pip_gap);
+		let on = index < level;
+		painter.rect_filled(
+			egui::Rect::from_min_size(egui::pos2(x, pip_y), egui::vec2(pip_w, pip_h)),
+			pip_h * 0.5,
+			if on { color } else { color.gamma_multiply(0.3) },
+		);
+	}
+	if level == 0 {
+		let start = egui::pos2(rect.left() + size * 0.12, rect.bottom() - size * 0.1);
+		let end = egui::pos2(rect.right() - size * 0.12, rect.top() + size * 0.06);
+		let thickness = (size * 0.1).max(1.5);
+		painter.line_segment([start, end], egui::Stroke::new(thickness * 2.2, background));
+		painter.line_segment([start, end], egui::Stroke::new(thickness, color));
+		painter.circle_filled(start, thickness * 0.5, color);
+		painter.circle_filled(end, thickness * 0.5, color);
+	}
+}
+
+fn voice_connection_tip(
+	ui: &mut egui::Ui,
+	ping_ms: Option<u32>,
+	place: &str,
+	language: model::Language,
+) {
+	ui.spacing_mut().item_spacing.y = 2.0;
+	let ping = ping_ms
+		.map(|ms| format!("{ms} ms"))
+		.unwrap_or_else(|| "…".to_owned());
+	ui.label(design::semibold(ui, ping, 13.0));
+	if !place.is_empty() {
+		ui.label(localized_place(language, place));
+	}
+}
+
+fn localized_place(language: model::Language, place: &str) -> &'static str {
+	let key = match place {
+		"Brazil" => "Brazil",
+		"United States" => "United States",
+		"Canada" => "Canada",
+		"United Kingdom" => "United Kingdom",
+		"Germany" => "Germany",
+		"Netherlands" => "Netherlands",
+		"France" => "France",
+		"Spain" => "Spain",
+		"Poland" => "Poland",
+		"Finland" => "Finland",
+		"Sweden" => "Sweden",
+		"Singapore" => "Singapore",
+		"Japan" => "Japan",
+		"Hong Kong" => "Hong Kong",
+		"Australia" => "Australia",
+		"India" => "India",
+		"South Africa" => "South Africa",
+		"Chile" => "Chile",
+		"Argentina" => "Argentina",
+		"South Korea" => "South Korea",
+		"Europe" => "Europe",
+		"Russia" => "Russia",
+		_ => return "",
+	};
+	crate::i18n::text(language, key)
+}
+
+/// Country or region named by a Discord voice hostname. Unknown hosts stay blank.
+pub fn voice_server_place(endpoint: &str) -> Option<&'static str> {
+	let host = endpoint
+		.trim()
+		.trim_start_matches("https://")
+		.trim_start_matches("http://")
+		.split(['/', ':'])
+		.next()
+		.unwrap_or("")
+		.to_ascii_lowercase();
+	let label = host.split('.').next().unwrap_or("");
+	if label.is_empty() {
+		return None;
+	}
+	if let Some(code) = label.strip_prefix("c-") {
+		let airport: String = code
+			.chars()
+			.take_while(|character| character.is_ascii_alphabetic())
+			.take(3)
+			.collect();
+		if let Some(place) = airport_place(&airport) {
+			return Some(place);
+		}
+	}
+	const PREFIXES: &[(&str, &str)] = &[
+		("brazil", "Brazil"),
+		("us-east", "United States"),
+		("us-west", "United States"),
+		("us-central", "United States"),
+		("us-south", "United States"),
+		("rotterdam", "Netherlands"),
+		("amsterdam", "Netherlands"),
+		("frankfurt", "Germany"),
+		("singapore", "Singapore"),
+		("japan", "Japan"),
+		("hongkong", "Hong Kong"),
+		("hong-kong", "Hong Kong"),
+		("sydney", "Australia"),
+		("india", "India"),
+		("southafrica", "South Africa"),
+		("south-africa", "South Africa"),
+		("southkorea", "South Korea"),
+		("south-korea", "South Korea"),
+		("europe", "Europe"),
+		("russia", "Russia"),
+		("london", "United Kingdom"),
+		("madrid", "Spain"),
+		("warsaw", "Poland"),
+		("finland", "Finland"),
+		("sweden", "Sweden"),
+		("canada", "Canada"),
+		("chile", "Chile"),
+		("argentina", "Argentina"),
+		("france", "France"),
+	];
+	PREFIXES
+		.iter()
+		.find(|(prefix, _)| label.starts_with(prefix))
+		.map(|(_, place)| *place)
+}
+
+fn airport_place(code: &str) -> Option<&'static str> {
+	Some(match code {
+		"gru" | "gig" | "bsb" | "cnf" | "ssa" | "rec" | "poa" | "for" | "bel" | "mao" => "Brazil",
+		"iad" | "ewr" | "atl" | "ord" | "dfw" | "sjc" | "lax" | "sea" | "mia" | "den" | "phx"
+		| "bos" => "United States",
+		"yul" | "yyz" | "yvr" => "Canada",
+		"lhr" | "man" => "United Kingdom",
+		"fra" | "muc" | "ber" => "Germany",
+		"ams" => "Netherlands",
+		"cdg" => "France",
+		"mad" => "Spain",
+		"waw" => "Poland",
+		"hel" => "Finland",
+		"arn" => "Sweden",
+		"sin" => "Singapore",
+		"nrt" | "hnd" | "kix" => "Japan",
+		"hkg" => "Hong Kong",
+		"syd" | "mel" => "Australia",
+		"bom" | "del" => "India",
+		"jnb" => "South Africa",
+		"scl" => "Chile",
+		"eze" => "Argentina",
+		"icn" => "South Korea",
+		_ => return None,
+	})
 }
 
 /// Discord's call stage is black in every appearance; pills and tiles sit on it in fixed greys.
@@ -3367,6 +4132,23 @@ fn tile_button(
 	response.on_hover_text(hint)
 }
 
+/// ASCII list separator for voice hover/status text.
+///
+/// A middle dot (U+00B7) is the usual mark, but its UTF-8 bytes `C2 B7` display
+/// as "Â·" when a Windows tooltip or AccessKit path treats the string as
+/// Windows-1252. `|` cannot mojibake.
+const VOICE_STATUS_SEP: &str = " | ";
+
+fn voice_channel_hover_text(name: &str, marks: &str, connected: bool) -> String {
+	let marks = marks.replace(" · ", VOICE_STATUS_SEP);
+	let mut text = format!("{name}{VOICE_STATUS_SEP}View voice channel{marks}");
+	if connected {
+		text.push_str(VOICE_STATUS_SEP);
+		text.push_str("Connected");
+	}
+	text
+}
+
 fn speaking_avatar(ui: &egui::Ui, avatar: &egui::Response, name: &str) {
 	let colors = design::palette(ui);
 	ui.painter().circle_stroke(
@@ -3374,7 +4156,7 @@ fn speaking_avatar(ui: &egui::Ui, avatar: &egui::Response, name: &str) {
 		avatar.rect.width() * 0.5 + 2.0,
 		egui::Stroke::new(2.0, colors.positive),
 	);
-	let label = format!("{name} · Speaking");
+	let label = format!("{name}{VOICE_STATUS_SEP}Speaking");
 	avatar.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Image, true, &label));
 	avatar.clone().on_hover_text(label);
 }
@@ -3623,6 +4405,104 @@ fn participant_user(state: &State, channel: Id, user: Id) -> Option<&model::User
 }
 
 /// Labelled percentage slider shared by the voice popout and the settings page.
+/// Hearing-protection level for bots nobody has set a volume for.
+const BOT_SAFE_VOLUME: u16 = 50;
+
+/// Small accent pill with a robot glyph, placed before a bot's name.
+fn bot_badge(ui: &mut egui::Ui, language: model::Language) {
+	let colors = design::palette(ui);
+	let (rect, response) = ui.allocate_exact_size(egui::vec2(22.0, 16.0), egui::Sense::hover());
+	ui.painter()
+		.rect_filled(rect, 5, colors.accent.gamma_multiply(0.22));
+	crate::icons::paint(
+		ui.painter(),
+		crate::icons::Icon::Robot,
+		rect.shrink2(egui::vec2(4.0, 2.0)),
+		colors.accent,
+	);
+	let label = crate::i18n::text(language, "Bot");
+	response.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Label, true, label));
+	response.on_hover_text(label);
+}
+
+fn volume_step_down(value: u16) -> u16 {
+	value.saturating_sub(1) / 5 * 5
+}
+
+fn volume_step_up(value: u16) -> u16 {
+	((value / 5 + 1) * 5).min(200)
+}
+
+fn is_bot(user: Option<&model::User>) -> bool {
+	user.is_some_and(|user| matches!(user.kind, model::AccountKind::Bot | model::AccountKind::App))
+}
+
+/// Per-person volume that is easy to set exactly: −/+ in 5% steps, a slider that lands on 5%
+/// steps and sticks at the 100% "Normal" mark, and one-click presets. True when changed.
+fn volume_control(
+	ui: &mut egui::Ui,
+	value: &mut u16,
+	title: &str,
+	language: model::Language,
+) -> bool {
+	let t = |english: &'static str| crate::i18n::text(language, english);
+	let colors = design::palette(ui);
+	let before = *value;
+	ui.scope(|ui| {
+		ui.spacing_mut().item_spacing.y = 6.0;
+		ui.horizontal(|ui| {
+			ui.label(RichText::new(title).size(13.0).color(colors.muted));
+			ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+				let (word, color) = match *value {
+					0 => (t("Silent"), colors.muted),
+					100 => (t("Normal"), colors.positive),
+					101.. => (t("Louder than normal"), colors.warning),
+					_ => ("", colors.muted),
+				};
+				ui.label(RichText::new(word).size(12.0).color(color));
+			});
+		});
+		ui.horizontal(|ui| {
+			ui.spacing_mut().item_spacing.x = 4.0;
+			let step = |ui: &mut egui::Ui, label: &str, hint: &str| {
+				ui.add(
+					egui::Button::new(RichText::new(label).size(15.0))
+						.min_size(egui::vec2(26.0, 26.0)),
+				)
+				.on_hover_text(hint)
+				.clicked()
+			};
+			if step(ui, "−", t("5% quieter")) {
+				*value = volume_step_down(*value);
+			}
+			let width = (ui.available_width() - 30.0).max(80.0);
+			ui.allocate_ui(egui::vec2(width, 28.0), |ui| {
+				design::marked_slider(ui, value, 0..=200, "%", 5.0, &[100]);
+			});
+			if step(ui, "+", t("5% louder")) {
+				*value = volume_step_up(*value);
+			}
+		});
+		ui.horizontal(|ui| {
+			ui.spacing_mut().item_spacing.x = 4.0;
+			let presets = [25u16, 50, 100, 150, 200];
+			let width = ((ui.available_width() - 16.0) / presets.len() as f32).max(36.0);
+			for preset in presets {
+				if ui
+					.add_sized(
+						[width, 24.0],
+						egui::Button::selectable(*value == preset, format!("{preset}%")),
+					)
+					.clicked()
+				{
+					*value = preset;
+				}
+			}
+		});
+	});
+	*value != before
+}
+
 fn gain_slider(ui: &mut egui::Ui, value: &mut u16, title: &str) -> egui::Response {
 	ui.scope(|ui| {
 		let colors = design::palette(ui);
@@ -3633,22 +4513,38 @@ fn gain_slider(ui: &mut egui::Ui, value: &mut u16, title: &str) -> egui::Respons
 	.inner
 }
 
-fn gain_controls(ui: &mut egui::Ui, gain: &mut crate::VoiceGain) -> [egui::Response; 2] {
+fn gain_controls(
+	ui: &mut egui::Ui,
+	gain: &mut crate::VoiceGain,
+	language: model::Language,
+) -> [egui::Response; 2] {
+	let t = |english: &'static str| crate::i18n::text(language, english);
 	let slider = gain_slider;
 	let responses = if ui.available_width() >= 480.0 {
 		ui.columns(2, |columns| {
 			[
-				slider(&mut columns[0], &mut gain.input_percent, "Microphone gain"),
-				slider(&mut columns[1], &mut gain.output_percent, "Speaker volume"),
+				slider(
+					&mut columns[0],
+					&mut gain.input_percent,
+					t("Microphone gain"),
+				),
+				slider(
+					&mut columns[1],
+					&mut gain.output_percent,
+					t("Speaker volume"),
+				),
 			]
 		})
 	} else {
 		[
-			slider(ui, &mut gain.input_percent, "Microphone gain"),
-			slider(ui, &mut gain.output_percent, "Speaker volume"),
+			slider(ui, &mut gain.input_percent, t("Microphone gain")),
+			slider(ui, &mut gain.output_percent, t("Speaker volume")),
 		]
 	};
-	design::hint(ui, "100% is the original level. Higher levels may distort.");
+	design::hint(
+		ui,
+		t("100% is the original level. Higher levels may distort."),
+	);
 	responses
 }
 
@@ -3693,13 +4589,16 @@ fn device_combo(
 	id: &str,
 	devices: &[(String, String)],
 	selected: &mut Option<String>,
+	language: model::Language,
 ) -> egui::Response {
+	let t = |english: &'static str| crate::i18n::text(language, english);
+	let unavailable = t("Device unavailable — choose another");
 	let label = match selected.as_ref() {
-		None => "System default (recommended)",
+		None => t("System default (recommended)"),
 		Some(id) => devices
 			.iter()
 			.find(|(key, _)| key == id)
-			.map_or("Device unavailable — choose another", |(_, label)| label.as_str()),
+			.map_or(unavailable, |(_, label)| label.as_str()),
 	};
 	egui::ComboBox::from_id_salt(id)
 		.selected_text(label)
@@ -3708,7 +4607,7 @@ fn device_combo(
 		.height(220.0)
 		.show_ui(ui, |ui| {
 			ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-			ui.selectable_value(selected, None, "System default (recommended)");
+			ui.selectable_value(selected, None, t("System default (recommended)"));
 			for (id, label) in devices.iter().take(32) {
 				ui.selectable_value(selected, Some(id.clone()), label)
 					.on_hover_text(label);
@@ -3721,6 +4620,48 @@ fn device_combo(
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	#[test]
+	fn voice_channel_hover_text_uses_ascii_separators() {
+		assert_eq!(
+			voice_channel_hover_text("De Borete", "", true),
+			"De Borete | View voice channel | Connected"
+		);
+		assert_eq!(
+			voice_channel_hover_text("Room", " · Muted", false),
+			"Room | View voice channel | Muted"
+		);
+		let text = voice_channel_hover_text("De Borete", "", true);
+		assert!(
+			!text.contains('\u{00C2}') && !text.contains('\u{00B7}'),
+			"separator must not be a UTF-8 middle dot (shows as Â· on Windows-1252 paths): {text:?}"
+		);
+	}
+
+	#[test]
+	fn voice_server_place_reads_country_from_the_hostname() {
+		assert_eq!(
+			voice_server_place("c-gru16-abc123.discord.media:443"),
+			Some("Brazil")
+		);
+		assert_eq!(
+			voice_server_place("brazil847.discord.media"),
+			Some("Brazil")
+		);
+		assert_eq!(
+			voice_server_place("us-east1.discord.media"),
+			Some("United States")
+		);
+		assert_eq!(
+			voice_server_place("https://c-fra3-node.discord.media/path"),
+			Some("Germany")
+		);
+		assert_eq!(voice_server_place("synthetic.discord.media"), None);
+		assert_eq!(
+			crate::i18n::text(model::Language::PortugueseBrazil, "Brazil"),
+			"Brasil"
+		);
+	}
 
 	#[test]
 	fn explicit_join_audio_waits_for_call_switch_and_survives_teardown() {
@@ -3736,10 +4677,14 @@ mod tests {
 		view.request_call_with_audio(&mut state, Id(25), false, true, true, &mut commands)
 			.unwrap();
 		assert_eq!((view.voice_muted, view.voice_deafened), before);
-		assert!(commands.is_empty());
+		assert!(matches!(
+			commands.as_slice(),
+			[Command::Voice(client_core::voice::Command::Leave { .. })]
+		));
 		let origin = view.voice_switch.as_ref().unwrap().from;
-		assert!(state.leave_call().is_some());
-		view.voice_switch.as_mut().unwrap().confirmed_at = Some(std::time::Instant::now());
+		assert!(view.voice_switch.as_ref().unwrap().confirmed_at.is_some());
+		assert!(state.voice.active.is_none());
+		commands.clear();
 		state.apply_voice(client_core::voice::Event::Departed {
 			channel: origin.0,
 			request: origin.1,
@@ -3774,6 +4719,97 @@ mod tests {
 		);
 		assert_eq!((view.voice_muted, view.voice_deafened), (true, true));
 		assert!(commands.is_empty());
+	}
+
+	#[test]
+	fn bots_start_at_half_volume_unless_chosen_or_disabled() {
+		let mut state = test_support::voice_demo_state();
+		let bot = state.voice.roster[2].participant.user;
+		state.voice.roster[2].member.as_mut().unwrap().user.kind = model::AccountKind::Bot;
+		let mut view = MessagingUi {
+			voice_bot_safe_volume: true,
+			..MessagingUi::default()
+		};
+		let mixed = |view: &MessagingUi, state: &State, user: Id| {
+			let mix = view.voice_mix_volumes(state);
+			mix.iter()
+				.find(|(id, _)| *id == user.0)
+				.map(|(_, volume)| *volume)
+		};
+		assert_eq!(mixed(&view, &state, bot), Some(BOT_SAFE_VOLUME));
+		assert_eq!(mixed(&view, &state, Id(2)), None, "people keep 100%");
+		let saved = view.voice_user_volume_overrides();
+		assert!(saved.is_empty(), "the default is not saved");
+
+		view.set_voice_user_volume_from(bot, 100, BOT_SAFE_VOLUME);
+		assert_eq!(mixed(&view, &state, bot), Some(100));
+		let saved = view.voice_user_volume_overrides();
+		assert_eq!(saved, [(bot.0, 100)], "a chosen 100% persists");
+		view.set_voice_user_volume_from(bot, BOT_SAFE_VOLUME, BOT_SAFE_VOLUME);
+		assert!(view.voice_user_volume_overrides().is_empty());
+
+		view.set_voice_user_locally_muted(bot, true);
+		assert_eq!(mixed(&view, &state, bot), Some(0), "mute wins");
+		view.set_voice_user_locally_muted(bot, false);
+		view.voice_bot_safe_volume = false;
+		assert_eq!(mixed(&view, &state, bot), None);
+		state.voice.active = None;
+		view.voice_bot_safe_volume = true;
+		assert_eq!(mixed(&view, &state, bot), None);
+	}
+
+	#[test]
+	fn volume_steps_land_on_five_percent() {
+		assert_eq!(volume_step_down(47), 45);
+		assert_eq!(volume_step_down(45), 40);
+		assert_eq!(volume_step_down(0), 0);
+		assert_eq!(volume_step_up(47), 50);
+		assert_eq!(volume_step_up(50), 55);
+		assert_eq!(volume_step_up(198), 200);
+		assert_eq!(volume_step_up(200), 200);
+	}
+
+	#[test]
+	fn marked_slider_drags_stick_to_marks_and_steps() {
+		let ctx = egui::Context::default();
+		let raw = |events| egui::RawInput {
+			screen_rect: Some(egui::Rect::from_min_size(
+				egui::Pos2::ZERO,
+				egui::vec2(300.0, 60.0),
+			)),
+			events,
+			..Default::default()
+		};
+		let mut value = 0u16;
+		let mut rect = egui::Rect::NOTHING;
+		ctx.run_ui(raw(vec![]), |ui| {
+			rect = design::marked_slider(ui, &mut value, 0..=200, "%", 5.0, &[100]).rect;
+		})
+		.drop_without_applying_deltas();
+		// Mirrors the slider's layout: 9 px insets and a 64 px value readout.
+		let (left, right) = (rect.left() + 9.0, rect.right() - 64.0 - 9.0);
+		let at = |percent: f32| left + (right - left) * percent / 200.0;
+		for (percent, expected) in [(103.0, 100), (61.0, 60), (33.8, 35)] {
+			let pos = egui::pos2(at(percent), rect.center().y);
+			for pressed in [true, false] {
+				ctx.run_ui(
+					raw(vec![
+						egui::Event::PointerMoved(pos),
+						egui::Event::PointerButton {
+							pos,
+							button: egui::PointerButton::Primary,
+							pressed,
+							modifiers: egui::Modifiers::NONE,
+						},
+					]),
+					|ui| {
+						design::marked_slider(ui, &mut value, 0..=200, "%", 5.0, &[100]);
+					},
+				)
+				.drop_without_applying_deltas();
+			}
+			assert_eq!(value, expected, "click at {percent}%");
+		}
 	}
 
 	#[test]
@@ -3821,14 +4857,18 @@ mod tests {
 			(true, true, Sound::Deafen),
 			(true, false, Sound::Undeafen),
 		] {
-			view.notification_preview = None;
+			view.notification_cues.clear();
 			view.queue_voice_toggle_cue(deafen, active);
-			assert_eq!(view.notification_preview, Some(expected));
+			assert_eq!(view.notification_cues.last().copied(), Some(expected));
 		}
 		view.notification_options.mute = false;
-		view.notification_preview = None;
+		view.notification_cues.clear();
 		view.queue_voice_toggle_cue(false, true);
-		assert_eq!(view.notification_preview, None);
+		assert_eq!(
+			view.notification_cues.last().copied(),
+			Some(Sound::Mute),
+			"sound preferences are applied when the cue is played"
+		);
 	}
 
 	#[test]
@@ -3944,7 +4984,11 @@ mod tests {
 			}
 		};
 		let mut messaging = MessagingUi::default();
-		for label in ["Choose camera", "System default (recommended)", "USB Camera (preview)"] {
+		for label in [
+			"Choose camera",
+			"System default (recommended)",
+			"USB Camera (preview)",
+		] {
 			frame(&mut messaging, vec![]);
 			let text = frame(&mut messaging, vec![]);
 			let pos = text
@@ -4175,10 +5219,21 @@ mod tests {
 								..
 							})]
 						));
+					} else if mode == 4 {
+						assert!(
+							matches!(
+								sent.as_slice(),
+								[Command::Voice(client_core::voice::Command::Leave {
+									channel: Id(25),
+									..
+								})]
+							),
+							"Joining another call leaves the current one immediately"
+						);
 					} else {
 						assert!(
 							sent.is_empty(),
-							"Demo, offline, voice-unavailable and busy states cannot join"
+							"Demo, offline and voice-unavailable states cannot join"
 						);
 					}
 					state.apply_voice(client_core::voice::Event::Deleted { channel: Id(22) });
@@ -4338,7 +5393,7 @@ mod tests {
 			..Default::default()
 		};
 		ctx.run_ui(raw(), |ui| {
-			gain_controls(ui, &mut messaging.voice_gain)[0].request_focus();
+			gain_controls(ui, &mut messaging.voice_gain, model::Language::English)[0].request_focus();
 		})
 		.drop_without_applying_deltas();
 		let mut input = raw();
@@ -4350,7 +5405,7 @@ mod tests {
 			modifiers: egui::Modifiers::NONE,
 		});
 		ctx.run_ui(input, |ui| {
-			let controls = gain_controls(ui, &mut messaging.voice_gain);
+			let controls = gain_controls(ui, &mut messaging.voice_gain, model::Language::English);
 			assert!(
 				controls
 					.iter()
@@ -4367,7 +5422,7 @@ mod tests {
 		messaging.voice_gain.input_percent = u16::MAX;
 		messaging.voice_gain.output_percent = 0;
 		ctx.run_ui(raw(), |ui| {
-			gain_controls(ui, &mut messaging.voice_gain);
+			gain_controls(ui, &mut messaging.voice_gain, model::Language::English);
 		})
 		.drop_without_applying_deltas();
 		assert_eq!(messaging.voice_gain.input_percent, 200);
@@ -4699,5 +5754,91 @@ mod tests {
 		);
 		messaging.voice_available = true;
 		assert!(messaging.call_unavailable(&state, Id(1)).is_none());
+	}
+
+	#[test]
+	fn reconnect_banner_never_auto_joins_and_click_uses_existing_join() {
+		let mut state = test_support::existing_call_demo_state();
+		state.demo = false;
+		state.auth = AuthState::Authenticated;
+		state.gateway_connected = true;
+		let mut messaging = MessagingUi {
+			voice_available: true,
+			reconnect_offer: Some((Id(22), None)),
+			..Default::default()
+		};
+		let ctx = egui::Context::default();
+		let frame = |messaging: &mut MessagingUi, state: &mut State, events: Vec<egui::Event>| {
+			let mut commands = vec![];
+			let mut output = ctx.run_ui(
+				egui::RawInput {
+					screen_rect: Some(egui::Rect::from_min_size(
+						egui::Pos2::ZERO,
+						egui::vec2(720.0, 240.0),
+					)),
+					events,
+					..Default::default()
+				},
+				|ui| messaging.reconnect_call_banner(ui, state, &mut commands),
+			);
+			output.textures_delta.clear();
+			let mut text = vec![];
+			fn labels(shape: &egui::Shape, out: &mut Vec<(String, egui::Rect)>) {
+				match shape {
+					egui::Shape::Text(text) => out.push((
+						text.galley.job.text.clone(),
+						text.galley.rect.translate(text.pos.to_vec2()),
+					)),
+					egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| labels(shape, out)),
+					_ => {}
+				}
+			}
+			for shape in output.shapes {
+				labels(&shape.shape, &mut text);
+			}
+			(text, commands)
+		};
+		frame(&mut messaging, &mut state, vec![]);
+		let (text, commands) = frame(&mut messaging, &mut state, vec![]);
+		assert!(commands.is_empty(), "showing the banner must never join");
+		assert!(state.voice.active.is_none());
+		assert!(text.iter().any(|(label, _)| label == "Reconnect to call"));
+		assert!(text.iter().any(|(label, _)| label == "Robin (synthetic)"));
+		let reconnect = text
+			.iter()
+			.find(|(label, _)| label == "Reconnect to call")
+			.expect("reconnect control")
+			.1
+			.center();
+		let mut sent = vec![];
+		for pressed in [true, false] {
+			let (_, commands) = frame(
+				&mut messaging,
+				&mut state,
+				vec![
+					egui::Event::PointerMoved(reconnect),
+					egui::Event::PointerButton {
+						pos: reconnect,
+						button: egui::PointerButton::Primary,
+						pressed,
+						modifiers: egui::Modifiers::NONE,
+					},
+				],
+			);
+			sent.extend(commands);
+		}
+		assert!(
+			sent.iter().any(|command| matches!(
+				command,
+				Command::Voice(client_core::voice::Command::Join {
+					channel: Id(22),
+					ring: false,
+					..
+				})
+			)),
+			"reconnect must reuse the existing join command without ringing"
+		);
+		assert!(state.voice.active.is_some());
+		assert!(messaging.reconnect_offer.is_none());
 	}
 }

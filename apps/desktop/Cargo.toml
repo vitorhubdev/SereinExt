@@ -32,6 +32,7 @@ platform.workspace = true
 local-store.workspace = true
 winit.workspace = true
 reqwest.workspace = true
+rustls.workspace = true
 rasterlottie.workspace = true
 dirs.workspace = true
 getrandom.workspace = true
@@ -51,11 +52,21 @@ arboard = "=3.6.1"
 # are dead code; this feature compiles them out of release builds instead of shipping them.
 log = { version = "=0.4.34", features = ["release_max_level_off"] }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+# eframe `wgpu_no_default_features` leaves backend selection to us. DX12 only: Vulkan
+# would pull `ash` and GLES is unused on Windows.
+wgpu = { version = "=30.0.1", default-features = false, features = ["dx12"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+wgpu = { version = "=30.0.1", default-features = false, features = ["metal"] }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 # Use Adwaita decorations when the Wayland compositor does not provide a frame (GNOME).
 winit = { workspace = true, features = ["wayland-csd-adwaita"] }
 # Native Wayland clipboard so copied files paste without an XWayland bridge.
 arboard = { version = "=3.6.1", features = ["wayland-data-control"] }
+# Linux packaging and docs expect a Vulkan-capable driver.
+wgpu = { version = "=30.0.1", default-features = false, features = ["vulkan"] }
 
 [build-dependencies]
 find-msvc-tools = "=0.1.12"
@@ -66,6 +77,9 @@ test-support.workspace = true
 [[example]]
 name = "profile_preview"
 required-features = ["demo"]
+
+[package.metadata.cargo-machete]
+ignored = ["log"]
 
 [lints]
 workspace = true

@@ -389,10 +389,17 @@ impl MessagingUi {
 								let query = self.settings.query.to_lowercase();
 								if !Page::ALL.into_iter().any(|p| p.matches(&query)) {
 									ui.label(
-										design::semibold(ui, crate::i18n::text(self.language, "No settings found"), 16.0)
-											.color(colors.text_strong),
+										design::semibold(
+											ui,
+											crate::i18n::text(self.language, "No settings found"),
+											16.0,
+										)
+										.color(colors.text_strong),
 									);
-									ui.weak(crate::i18n::text(self.language, "Try theme, notifications, voice, or cache."));
+									ui.weak(crate::i18n::text(
+										self.language,
+										"Try theme, notifications, voice, or cache.",
+									));
 									return;
 								}
 								match self.settings.page {
@@ -426,6 +433,7 @@ impl MessagingUi {
 										&mut self.keybinds,
 										&mut self.keybind_capture,
 										self.global_keybind_status,
+										self.language,
 									),
 									Page::Extensions | Page::Themes => {
 										self.extensions
@@ -437,7 +445,10 @@ impl MessagingUi {
 									ui.add_space(20.0);
 									design::hint(
 										ui,
-										crate::i18n::text(self.language, "Offline preview · changes stay in this session and are never sent."),
+										crate::i18n::text(
+											self.language,
+											"Offline preview · changes stay in this session and are never sent.",
+										),
 									);
 								}
 								ui.add_space(24.0);
@@ -481,10 +492,16 @@ impl MessagingUi {
 						continue;
 					}
 					ui.add_space(6.0);
-					ui.add(egui::Label::new(design::eyebrow(ui, crate::i18n::text(self.language, heading), colors.muted)));
+					ui.add(egui::Label::new(design::eyebrow(
+						ui,
+						crate::i18n::text(self.language, heading),
+						colors.muted,
+					)));
 					ui.add_space(2.0);
 					for page in visible {
-						if nav_item(ui, page.label(self.language), self.settings.page == page).clicked() {
+						if nav_item(ui, page.label(self.language), self.settings.page == page)
+							.clicked()
+						{
 							if page == Page::MessagingPermissions && self.settings.page != page {
 								self.settings.messaging_permissions.requested = false;
 							}
@@ -535,9 +552,12 @@ impl MessagingUi {
 						.color(colors.muted),
 				);
 				ui.label(
-					RichText::new(crate::i18n::text(self.language, "Unofficial · not endorsed by Discord"))
-						.size(11.0)
-						.color(colors.muted),
+					RichText::new(crate::i18n::text(
+						self.language,
+						"Unofficial · not endorsed by Discord",
+					))
+					.size(11.0)
+					.color(colors.muted),
 				);
 			});
 	}
@@ -574,7 +594,11 @@ impl MessagingUi {
 	fn settings_logout(&mut self, ui: &mut egui::Ui, demo: bool) {
 		let colors = design::palette(ui);
 		let label = crate::i18n::text(self.language, "Log out");
-		let label = if demo { crate::i18n::text(self.language, "Exit preview") } else { label };
+		let label = if demo {
+			crate::i18n::text(self.language, "Exit preview")
+		} else {
+			label
+		};
 		let (rect, response) =
 			ui.allocate_exact_size(egui::vec2(ui.available_width(), 32.0), egui::Sense::click());
 		response
@@ -609,7 +633,9 @@ impl MessagingUi {
 		let name = state
 			.user
 			.as_ref()
-			.map_or(crate::i18n::text(self.language, "Your account"), |u| u.name.as_str())
+			.map_or(crate::i18n::text(self.language, "Your account"), |u| {
+				u.name.as_str()
+			})
 			.to_owned();
 		egui::Frame::new()
 			.fill(colors.raised)
@@ -654,9 +680,15 @@ impl MessagingUi {
 								);
 								ui.label(
 									RichText::new(if state.demo {
-										crate::i18n::text(self.language, "Offline preview · synthetic account")
+										crate::i18n::text(
+											self.language,
+											"Offline preview · synthetic account",
+										)
 									} else {
-										crate::i18n::text(self.language, "Signed in with your Discord account")
+										crate::i18n::text(
+											self.language,
+											"Signed in with your Discord account",
+										)
 									})
 									.size(13.0)
 									.color(colors.muted),
@@ -671,11 +703,18 @@ impl MessagingUi {
 							.show(ui, |ui| {
 								ui.set_width(ui.available_width());
 								ui.spacing_mut().item_spacing.y = 10.0;
-								account_row(ui, crate::i18n::text(self.language, "Display name"), &name);
+								account_row(
+									ui,
+									crate::i18n::text(self.language, "Display name"),
+									&name,
+								);
 								ui.separator();
 								account_row(
 									ui,
-									crate::i18n::text(self.language, "Email, password and security"),
+									crate::i18n::text(
+										self.language,
+										"Email, password and security",
+									),
 									crate::i18n::text(self.language, "Managed in Discord"),
 								);
 							});
@@ -724,9 +763,15 @@ impl MessagingUi {
 				ui,
 				label,
 				Some(if state.demo {
-					crate::i18n::text(self.language, "Closes the offline fixture. Nothing is stored for the preview.")
+					crate::i18n::text(
+						self.language,
+						"Closes the offline fixture. Nothing is stored for the preview.",
+					)
 				} else {
-					crate::i18n::text(self.language, "Removes the saved login and clears this account's local cache and drafts.")
+					crate::i18n::text(
+						self.language,
+						"Removes the saved login and clears this account's local cache and drafts.",
+					)
 				}),
 				|ui| design::button(ui, label, design::ButtonKind::Danger),
 			)
@@ -743,7 +788,10 @@ impl MessagingUi {
 			design::row(
 				ui,
 				crate::i18n::text(self.language, "App language"),
-				Some(crate::i18n::text(self.language, "Changes apply immediately and are saved on this device.")),
+				Some(crate::i18n::text(
+					self.language,
+					"Changes apply immediately and are saved on this device.",
+				)),
 				|ui| {
 					egui::ComboBox::from_id_salt("ui-language")
 						.selected_text(self.language.label())
@@ -761,7 +809,10 @@ impl MessagingUi {
 				design::switch(
 					ui,
 					crate::i18n::text(self.language, "Open SereinExt when your computer starts"),
-					Some(crate::i18n::text(self.language, "SereinExt signs in and connects in the background.")),
+					Some(crate::i18n::text(
+						self.language,
+						"SereinExt signs in and connects in the background.",
+					)),
 					&mut self.startup_enabled,
 				);
 				design::card_divider(ui);
@@ -769,13 +820,22 @@ impl MessagingUi {
 					design::switch(
 						ui,
 						crate::i18n::text(self.language, "Start minimized"),
-						Some(crate::i18n::text(self.language, "Start in the background, out of your way.")),
+						Some(crate::i18n::text(
+							self.language,
+							"Start in the background, out of your way.",
+						)),
 						&mut self.startup_minimized,
 					);
 				});
 			});
 			if !self.startup_available {
-				design::hint(ui, crate::i18n::text(self.language, "Automatic startup is available on Windows and macOS."));
+				design::hint(
+					ui,
+					crate::i18n::text(
+						self.language,
+						"Automatic startup is available on Windows and macOS.",
+					),
+				);
 			} else if !self.startup_status.is_empty() {
 				design::hint(ui, self.startup_status);
 			}
@@ -786,7 +846,10 @@ impl MessagingUi {
 				design::switch(
 					ui,
 					crate::i18n::text(self.language, "Hide SereinExt title bar"),
-					Some(crate::i18n::text(self.language, "Use the system title bar and window buttons instead.")),
+					Some(crate::i18n::text(
+						self.language,
+						"Use the system title bar and window buttons instead.",
+					)),
 					&mut self.hide_title_bar,
 				);
 				design::card_divider(ui);
@@ -800,45 +863,66 @@ impl MessagingUi {
 						crate::i18n::text(self.language, "Keep SereinExt in the system tray")
 					},
 					Some(if cfg!(target_os = "macos") {
-						crate::i18n::text(self.language, "Closing the window keeps SereinExt in the menu bar. Quit from its menu to exit.")
+						crate::i18n::text(
+							self.language,
+							"Closing the window keeps SereinExt in the menu bar. Quit from its menu to exit.",
+						)
 					} else if cfg!(target_os = "linux") {
-						crate::i18n::text(self.language, "Closing keeps SereinExt running. Use the tray to show, minimize or quit.")
+						crate::i18n::text(
+							self.language,
+							"Closing keeps SereinExt running. Use the tray to show, minimize or quit.",
+						)
 					} else {
-						crate::i18n::text(self.language, "Closing the window keeps SereinExt in the notification area. Quit from its menu to exit.")
+						crate::i18n::text(
+							self.language,
+							"Closing the window keeps SereinExt in the notification area. Quit from its menu to exit.",
+						)
 					}),
 					&mut self.minimize_to_tray,
 				);
 			});
 			if !self.tray_available {
-				design::hint(ui, crate::i18n::text(self.language, "The tray is unavailable on this platform."));
+				design::hint(
+					ui,
+					crate::i18n::text(self.language, "The tray is unavailable on this platform."),
+				);
 			} else if !self.tray_status.is_empty() {
 				design::hint(ui, self.tray_status);
 			}
 		});
 		design::group(ui, crate::i18n::text(self.language, "Graphics"), |ui| {
 			let detail = if self.gpu_adapter.is_empty() {
-				crate::i18n::text(self.language, "Takes effect the next time SereinExt starts.").to_owned()
+				crate::i18n::text(
+					self.language,
+					"Takes effect the next time SereinExt starts.",
+				)
+				.to_owned()
 			} else {
 				format!(
 					"Currently drawing with {}. Takes effect the next time SereinExt starts.",
 					self.gpu_adapter
 				)
 			};
-			design::row(ui, crate::i18n::text(self.language, "Render with"), Some(&detail), |ui| {
-				egui::ComboBox::from_id_salt("gpu-preference")
-					.selected_text(self.gpu_preference.label())
-					.width(ui.available_width().min(220.0))
-					.show_ui(ui, |ui| {
-						for preference in model::GpuPreference::ALL {
-							ui.selectable_value(
-								&mut self.gpu_preference,
-								preference,
-								preference.label(),
-							)
-							.on_hover_text(preference.description());
-						}
-					});
-			});
+			design::row(
+				ui,
+				crate::i18n::text(self.language, "Render with"),
+				Some(&detail),
+				|ui| {
+					egui::ComboBox::from_id_salt("gpu-preference")
+						.selected_text(self.gpu_preference.label())
+						.width(ui.available_width().min(220.0))
+						.show_ui(ui, |ui| {
+							for preference in model::GpuPreference::ALL {
+								ui.selectable_value(
+									&mut self.gpu_preference,
+									preference,
+									preference.label(),
+								)
+								.on_hover_text(preference.description());
+							}
+						});
+				},
+			);
 		});
 	}
 
@@ -852,7 +936,11 @@ impl MessagingUi {
 		ui.label(design::eyebrow(ui, "Mode", colors.muted));
 		theme_preference_cards(ui);
 		ui.add_space(6.0);
-		ui.label(design::eyebrow(ui, crate::i18n::text(self.language, "Theme"), colors.muted));
+		ui.label(design::eyebrow(
+			ui,
+			crate::i18n::text(self.language, "Theme"),
+			colors.muted,
+		));
 		let current = design::variant();
 		ui.horizontal_wrapped(|ui| {
 			ui.spacing_mut().item_spacing = egui::vec2(0.0, 4.0);
@@ -879,7 +967,11 @@ impl MessagingUi {
 	fn appearance_settings(&mut self, ui: &mut egui::Ui, demo: bool) {
 		let colors = design::palette(ui);
 		ui.add_space(4.0);
-		ui.label(design::eyebrow(ui, crate::i18n::text(self.language, "Theme"), colors.muted));
+		ui.label(design::eyebrow(
+			ui,
+			crate::i18n::text(self.language, "Theme"),
+			colors.muted,
+		));
 		theme_preference_cards(ui);
 		self.colour_preset_settings(ui);
 		design::group(ui, crate::i18n::text(self.language, "Accent"), |ui| {
@@ -888,14 +980,21 @@ impl MessagingUi {
 				ui,
 				crate::i18n::text(self.language, "Primary color"),
 				Some(if themed_accent {
-					crate::i18n::text(self.language, "The active theme brings its own accent; it takes over while the theme is in use.")
+					crate::i18n::text(
+						self.language,
+						"The active theme brings its own accent; it takes over while the theme is in use.",
+					)
 				} else {
-					crate::i18n::text(self.language, "Used for buttons, selection and message highlights.")
+					crate::i18n::text(
+						self.language,
+						"Used for buttons, selection and message highlights.",
+					)
 				}),
 				|ui| {
 					ui.add_enabled_ui(!themed_accent, |ui| {
 						if self.primary_color.is_some()
-							&& design::text_action(ui, crate::i18n::text(self.language, "Reset")).clicked()
+							&& design::text_action(ui, crate::i18n::text(self.language, "Reset"))
+								.clicked()
 						{
 							self.primary_color = None;
 						}
@@ -910,41 +1009,54 @@ impl MessagingUi {
 				},
 			);
 		});
-		design::group(ui, crate::i18n::text(self.language, "Window effects"), |ui| {
-			design::switch(
-				ui,
-				crate::i18n::text(self.language, "Transparency & blur"),
-				Some(crate::i18n::text(self.language, "Restart SereinExt after changing this. Themes can customize effects while enabled.")),
-				&mut self.transparency_blur,
-			);
-			if self.transparency_blur {
-				design::card_divider(ui);
-				design::slider_row(
-					ui,
-					crate::i18n::text(self.language, "Transparency"),
-					None,
-					&mut self.transparency,
-					0..=100,
-					"%",
-				);
-				ui.add_space(8.0);
-				design::slider_row(
-					ui,
-					crate::i18n::text(self.language, "Blur"),
-					Some(crate::i18n::text(self.language, "Zero disables blur; the native compositor controls its exact strength.")),
-					&mut self.blur,
-					0..=100,
-					"%",
-				);
-				ui.add_space(4.0);
+		design::group(
+			ui,
+			crate::i18n::text(self.language, "Window effects"),
+			|ui| {
 				design::switch(
 					ui,
-					crate::i18n::text(self.language, "Apply to all surfaces"),
-					Some(crate::i18n::text(self.language, "Include sidebars, server rail, headers, and composer.")),
-					&mut self.transparent_all,
+					crate::i18n::text(self.language, "Transparency & blur"),
+					Some(crate::i18n::text(
+						self.language,
+						"Restart SereinExt after changing this. Themes can customize effects while enabled.",
+					)),
+					&mut self.transparency_blur,
 				);
-			}
-		});
+				if self.transparency_blur {
+					design::card_divider(ui);
+					design::slider_row(
+						ui,
+						crate::i18n::text(self.language, "Transparency"),
+						None,
+						&mut self.transparency,
+						0..=100,
+						"%",
+					);
+					ui.add_space(8.0);
+					design::slider_row(
+						ui,
+						crate::i18n::text(self.language, "Blur"),
+						Some(crate::i18n::text(
+							self.language,
+							"Zero disables blur; the native compositor controls its exact strength.",
+						)),
+						&mut self.blur,
+						0..=100,
+						"%",
+					);
+					ui.add_space(4.0);
+					design::switch(
+						ui,
+						crate::i18n::text(self.language, "Apply to all surfaces"),
+						Some(crate::i18n::text(
+							self.language,
+							"Include sidebars, server rail, headers, and composer.",
+						)),
+						&mut self.transparent_all,
+					);
+				}
+			},
+		);
 		self.layout_settings(ui, demo);
 	}
 
@@ -954,7 +1066,10 @@ impl MessagingUi {
 			design::switch(
 				ui,
 				crate::i18n::text(self.language, "Show hidden channels"),
-				Some(crate::i18n::text(self.language, "Show channels you cannot currently access.")),
+				Some(crate::i18n::text(
+					self.language,
+					"Show channels you cannot currently access.",
+				)),
 				&mut self.show_hidden_channels,
 			);
 		});
@@ -997,31 +1112,34 @@ impl MessagingUi {
 			})
 			.map_or(current.label(), |(_, _, label, _)| label.as_str())
 			.to_owned();
-		design::group(ui, crate::i18n::text(self.language, "Colour preset"), |ui| {
-			ui.horizontal_wrapped(|ui| {
-				ui.spacing_mut().item_spacing = egui::vec2(12.0, 10.0);
-				for (variant, id, label, swatch) in presets {
-					let selected = if let Some(active) = &self.extensions.active_theme {
-						id.as_ref() == Some(active)
-					} else {
-						variant == Some(current)
-					};
-					let response = preset_swatch(ui, &label, &swatch, selected);
-					if response.on_hover_text(&label).clicked()
-						&& !selected && !self.extensions.busy
-					{
-						if let Some(variant) = variant {
-							design::set_variant(variant);
-							design::apply(ui.ctx());
-							self.theme_variant_changed = Some(variant);
+		design::group(
+			ui,
+			crate::i18n::text(self.language, "Colour preset"),
+			|ui| {
+				ui.horizontal_wrapped(|ui| {
+					ui.spacing_mut().item_spacing = egui::vec2(12.0, 10.0);
+					for (variant, id, label, swatch) in presets {
+						let selected = if let Some(active) = &self.extensions.active_theme {
+							id.as_ref() == Some(active)
+						} else {
+							variant == Some(current)
+						};
+						let response = preset_swatch(ui, &label, &swatch, selected);
+						if response.on_hover_text(&label).clicked()
+							&& !selected && !self.extensions.busy
+						{
+							if let Some(variant) = variant {
+								design::set_variant(variant);
+								design::apply(ui.ctx());
+								self.theme_variant_changed = Some(variant);
+							}
+							self.extensions
+								.queue(ui.ctx(), crate::ExtensionRequest::SelectTheme { id });
 						}
-						self.extensions
-							.queue(ui.ctx(), crate::ExtensionRequest::SelectTheme { id });
 					}
-				}
-			});
-			ui.add_space(4.0);
-			ui.label(
+				});
+				ui.add_space(4.0);
+				ui.label(
 				RichText::new(match self.language {
 					model::Language::English => format!(
 						"{active_label} · saved with your appearance. Gradient presets always use dark text."
@@ -1036,7 +1154,8 @@ impl MessagingUi {
 				.size(12.0)
 				.color(colors.muted),
 			);
-		});
+			},
+		);
 	}
 
 	fn activity_settings(&mut self, ui: &mut egui::Ui, state: &State) {
@@ -1044,7 +1163,10 @@ impl MessagingUi {
 			design::switch(
 				ui,
 				crate::i18n::text(self.language, "Share game activity"),
-				Some(crate::i18n::text(self.language, "Detect running games and ask Discord to share them as activity.")),
+				Some(crate::i18n::text(
+					self.language,
+					"Detect running games and ask Discord to share them as activity.",
+				)),
 				&mut self.share_game_activity,
 			);
 			design::card_divider(ui);
@@ -1091,33 +1213,51 @@ impl MessagingUi {
 	}
 
 	fn storage_page(&mut self, ui: &mut egui::Ui, state: &State) {
-		design::group(ui, crate::i18n::text(self.language, "Local storage"), |ui| {
-			design::row(
-				ui,
-				crate::i18n::text(self.language, "Clear cache"),
-				Some(crate::i18n::text(self.language, "Removes cached messages and media. Drafts and your login stay.")),
-				|ui| {
-					ui.add_enabled_ui(!state.demo, |ui| {
-						if design::button(ui, crate::i18n::text(self.language, "Clear cache"), design::ButtonKind::Outline).clicked()
-						{
-							self.clear_cache_requested = true;
-						}
-					});
-				},
-			);
-			if !state.demo && !self.storage_status.is_empty() {
-				design::hint(ui, self.storage_status);
-			}
-			design::card_divider(ui);
-			design::hint(
-				ui,
-				crate::i18n::text(self.language, "Messages and drafts are cached on this device inside bounded, account-isolated files. Cache data is not encrypted by SereinExt; saved login tokens use the OS credential store."),
-			);
-		});
+		design::group(
+			ui,
+			crate::i18n::text(self.language, "Local storage"),
+			|ui| {
+				design::row(
+					ui,
+					crate::i18n::text(self.language, "Clear cache"),
+					Some(crate::i18n::text(
+						self.language,
+						"Removes cached messages and media. Drafts and your login stay.",
+					)),
+					|ui| {
+						ui.add_enabled_ui(!state.demo, |ui| {
+							if design::button(
+								ui,
+								crate::i18n::text(self.language, "Clear cache"),
+								design::ButtonKind::Outline,
+							)
+							.clicked()
+							{
+								self.clear_cache_requested = true;
+							}
+						});
+					},
+				);
+				if !state.demo && !self.storage_status.is_empty() {
+					design::hint(ui, self.storage_status);
+				}
+				design::card_divider(ui);
+				design::hint(
+					ui,
+					crate::i18n::text(
+						self.language,
+						"Messages and drafts are cached on this device inside bounded, account-isolated files. Cache data is not encrypted by SereinExt; saved login tokens use the OS credential store.",
+					),
+				);
+			},
+		);
 		design::group(ui, crate::i18n::text(self.language, "Your privacy"), |ui| {
 			design::hint(
 				ui,
-				crate::i18n::text(self.language, "SereinExt does not collect telemetry or upload diagnostics. Discord retains service-side data according to its own policies."),
+				crate::i18n::text(
+					self.language,
+					"SereinExt does not collect telemetry or upload diagnostics. Discord retains service-side data according to its own policies.",
+				),
 			);
 		});
 	}

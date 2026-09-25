@@ -281,13 +281,8 @@ impl State {
 		if self.pending.iter().any(|p| {
 			self.channel(p.channel)
 				.is_some_and(|c| c.guild == Some(guild))
-		}) || self
-			.voice
-			.active
-			.as_ref()
-			.is_some_and(|call| call.guild == Some(guild))
-		{
-			return Some("Finish pending messages and leave the call before leaving this server");
+		}) {
+			return Some("Finish pending messages before leaving this server");
 		}
 		None
 	}
@@ -321,6 +316,7 @@ impl State {
 			self.server_actions.status = Some((guild, reason));
 			return None;
 		}
+		self.end_call_in_guild(guild);
 		self.request_server_action(Action::Leave(guild))
 	}
 	pub fn can_delete_server(&self, guild: Id) -> bool {
@@ -375,6 +371,12 @@ impl State {
 		self.server_actions.pending = Some((action, request, false));
 		self.clear_server_action_result(action.guild());
 		Some(Command::ServerAction { action, request })
+	}
+	pub fn leaving_guild(&self) -> Option<Id> {
+		match self.server_actions.pending {
+			Some((Action::Leave(guild) | Action::Delete(guild), _, _)) => Some(guild),
+			_ => None,
+		}
 	}
 	pub(crate) fn cancel_server_action(&mut self) {
 		if let Some((guild, user, _, _)) = self.server_actions.sending.take() {
@@ -795,5 +797,145 @@ mod tests {
 			}),
 		});
 		assert_eq!(state.created_invite(Id(2)), None);
+	}
+
+	#[test]
+	fn leaving_one_server_does_not_fail_a_call_in_another() {
+		let mut current = state();
+		current.guilds.push(model::Guild {
+			stickers: None,
+			id: Id(8),
+			name: "Other".into(),
+			icon: None,
+			emojis: None,
+		});
+		current.channels.push(model::Channel {
+			id: Id(20),
+			guild: Some(Id(2)),
+			name: "Voice".into(),
+			kind: 2,
+			parent_id: None,
+			position: 1,
+			recipients: vec![],
+			last_message: None,
+			icon: None,
+			member_list_id: None,
+			message_count: None,
+		});
+		current.channels.push(model::Channel {
+			id: Id(21),
+			guild: Some(Id(8)),
+			name: "Elsewhere".into(),
+			kind: 2,
+			parent_id: None,
+			position: 0,
+			recipients: vec![],
+			last_message: None,
+			icon: None,
+			member_list_id: None,
+			message_count: None,
+		});
+		current.permissions.guilds.insert(
+			Id(8),
+			model::permissions::Guild {
+				id: Id(8),
+				owner: Some(Id(9)),
+				roles: Some(vec![model::permissions::Role {
+					id: Id(8),
+					bits: VIEW_CHANNEL | model::permissions::CONNECT,
+					name: String::new(),
+					color: 0,
+					position: 0,
+					hoist: false,
+				}]),
+				member: Some(model::permissions::Member {
+					roles: vec![],
+					timeout_until: None,
+				}),
+			},
+		);
+		current.permissions.channels.insert(
+			Id(21),
+			model::permissions::Channel {
+				id: Id(21),
+				guild: Id(8),
+				overwrites: Some(vec![]),
+			},
+		);
+		let connected = |channel, guild| crate::voice::Call {
+			channel,
+			guild: Some(guild),
+			connected_at: None,
+			server_muted: false,
+			server_deafened: false,
+			request: 1,
+			phase: crate::voice::Phase::Connected,
+			muted: false,
+			deafened: false,
+			participants: vec![],
+			camera: false,
+			watching: None,
+			error: None,
+		};
+		current.voice.active = Some(connected(Id(20), Id(2)));
+		let leave = current.leave_server(Id(2)).unwrap();
+		assert!(
+			current.voice.active.is_none(),
+			"leaving this server hangs up its call instead of leaving a failed card"
+		);
+		current.voice.active = Some(connected(Id(21), Id(8)));
+		finish(&mut current, leave, Ok(None));
+		assert!(
+			current.channel(Id(21)).is_some(),
+			"other server voice channel"
+		);
+		assert_eq!(
+			current.voice.active.as_ref().map(|call| call.channel),
+			Some(Id(21))
+		);
+		assert_eq!(
+			current.voice.active.as_ref().map(|call| call.phase),
+			Some(crate::voice::Phase::Connected)
+		);
+		current.apply_voice(crate::voice::Event::State {
+			guild: Some(Id(2)),
+			channel: None,
+			user: Id(1),
+			request: Some(1),
+			session: None,
+			member: None,
+			muted: false,
+			deafened: false,
+			server_muted: false,
+			server_deafened: false,
+			video: false,
+			streaming: false,
+		});
+		assert_eq!(
+			current.voice.active.as_ref().map(|call| call.channel),
+			Some(Id(21)),
+			"a voice state from the server we left must not end the other call"
+		);
+		current.voice.active.as_mut().unwrap().phase = crate::voice::Phase::Failed;
+		current.voice.active.as_mut().unwrap().error =
+			Some("Discord voice connection closed; rejoin the call");
+		current.apply_voice(crate::voice::Event::State {
+			guild: Some(Id(8)),
+			channel: None,
+			user: Id(1),
+			request: Some(1),
+			session: None,
+			member: None,
+			muted: false,
+			deafened: false,
+			server_muted: false,
+			server_deafened: false,
+			video: false,
+			streaming: false,
+		});
+		assert!(
+			current.voice.active.is_none(),
+			"Discord confirming we left this channel clears a failed card"
+		);
 	}
 }

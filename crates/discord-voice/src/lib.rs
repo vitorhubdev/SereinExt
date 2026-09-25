@@ -59,6 +59,8 @@ pub enum Status {
 	Ready {
 		privacy_code: String,
 	},
+	/// Voice-server heartbeat round trip, in milliseconds.
+	Ping(u32),
 	RemoteAudio,
 	/// Latest active user IDs, zero-padded to the 64-participant limit.
 	Speaking(Box<[u64; 64]>),

@@ -2612,6 +2612,19 @@ pub fn slider<T: egui::emath::Numeric>(
 	range: std::ops::RangeInclusive<T>,
 	suffix: &str,
 ) -> egui::Response {
+	marked_slider(ui, value, range, suffix, 0.0, &[])
+}
+
+/// [`slider`] whose pointer drags land on multiples of `step` (0 for none) and stick to
+/// `marks`, which are drawn as ticks on the track. Keys and typing stay exact.
+pub fn marked_slider<T: egui::emath::Numeric>(
+	ui: &mut egui::Ui,
+	value: &mut T,
+	range: std::ops::RangeInclusive<T>,
+	suffix: &str,
+	step: f64,
+	marks: &[T],
+) -> egui::Response {
 	let p = palette(ui);
 	let (min, max) = (range.start().to_f64(), range.end().to_f64());
 	let span = (max - min).max(f64::EPSILON);
@@ -2635,6 +2648,16 @@ pub fn slider<T: egui::emath::Numeric>(
 		{
 			let t = ((pointer.x - track.left()) / track.width()).clamp(0.0, 1.0) as f64;
 			current = min + t * span;
+			if step > 0.0 {
+				current = min + ((current - min) / step).round() * step;
+			}
+			if let Some(mark) = marks
+				.iter()
+				.map(|mark| mark.to_f64())
+				.find(|mark| (current - mark).abs() <= span * 0.025)
+			{
+				current = mark;
+			}
 		}
 		if response.has_focus() {
 			let step = if T::INTEGRAL { 1.0 } else { span / 100.0 };
@@ -2678,6 +2701,14 @@ pub fn slider<T: egui::emath::Numeric>(
 		3,
 		p.accent.gamma_multiply(alpha),
 	);
+	for mark in marks {
+		let x = track.left() + track.width() * ((mark.to_f64() - min) / span) as f32;
+		painter.rect_filled(
+			egui::Rect::from_center_size(egui::pos2(x, track.center().y), egui::vec2(2.0, 12.0)),
+			1,
+			p.text.gamma_multiply(0.55 * alpha),
+		);
+	}
 	if hot {
 		painter.circle_filled(knob, 13.0, p.accent.gamma_multiply(0.18));
 	}

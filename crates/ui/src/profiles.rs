@@ -227,7 +227,11 @@ pub(crate) fn activity_list(
 	let key = |activity: &model::RichActivity| egui::Id::unique((activity.kind, &activity.name));
 	let chosen = ui.data(|data| data.get_temp::<egui::Id>(id));
 	let main = chosen
-		.and_then(|chosen| activities.iter().position(|activity| key(activity) == chosen))
+		.and_then(|chosen| {
+			activities
+				.iter()
+				.position(|activity| key(activity) == chosen)
+		})
 		.unwrap_or(0);
 	let Some(activity) = activities.get(main) else {
 		return;
@@ -606,10 +610,7 @@ pub(crate) fn presence_badge(
 		let phone = Rect::from_center_size(center, vec2(radius * 1.15, radius * 1.8));
 		ui.painter().rect_filled(phone.expand(2.0), 3.0, ring);
 		ui.painter().rect_filled(phone, 2.0, presence_color(status));
-		let screen = Rect::from_min_max(
-			phone.min + vec2(2.0, 2.0),
-			phone.max - vec2(2.0, 3.0),
-		);
+		let screen = Rect::from_min_max(phone.min + vec2(2.0, 2.0), phone.max - vec2(2.0, 3.0));
 		ui.painter().rect_filled(screen, 1.0, ring);
 	} else {
 		design::presence_dot(ui, rect, presence_color(status), ring);
@@ -1555,7 +1556,10 @@ pub fn show(
 												ui.label(RichText::new(platform).size(11.0));
 											})
 											.response
-											.on_hover_text(format!("{platform} · {}", status.label()));
+											.on_hover_text(format!(
+												"{platform} · {}",
+												status.label()
+											));
 									}
 								});
 							}
@@ -1585,9 +1589,11 @@ pub fn show(
 							if deleted {
 								ui.add_space(4.0);
 								ui.label(
-									RichText::new("This account was deleted. The conversation stays so you can read it.")
-										.size(13.0)
-										.color(theme.muted),
+									RichText::new(
+										"This account was deleted. The conversation stays so you can read it.",
+									)
+									.size(13.0)
+									.color(theme.muted),
 								);
 							} else if !user.webhook && view.is_none_or(|v| v.loading) {
 								ui.add_space(4.0);
@@ -1600,8 +1606,7 @@ pub fn show(
 									);
 								});
 							}
-							if !deleted
-								&& let Some(error) = view.and_then(|v| v.error) {
+							if !deleted && let Some(error) = view.and_then(|v| v.error) {
 								ui.add_space(4.0);
 								if ui
 									.small_button("Retry profile")
@@ -1776,7 +1781,8 @@ pub fn show(
 							action = Some(Action::Edit);
 						}
 					} else if !user.deleted_account()
-						&& let Some(channel) = dm_channel {
+						&& let Some(channel) = dm_channel
+					{
 						if ui
 							.add_sized(
 								[ui.available_width(), 32.0],
@@ -1908,7 +1914,10 @@ mod tests {
 			mobile: Some(model::ClientPresence::Idle),
 			..desktop
 		};
-		assert_eq!(presence_description("online", mobile), "Online · Mobile Idle");
+		assert_eq!(
+			presence_description("online", mobile),
+			"Online · Mobile Idle"
+		);
 	}
 
 	#[test]

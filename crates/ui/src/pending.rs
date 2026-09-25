@@ -86,10 +86,7 @@ pub fn show(
 							&& pending.attachments.is_empty())
 					{
 						let file_alert = !pending.attachments.is_empty()
-							&& matches!(
-								pending.delivery,
-								Delivery::Rejected | Delivery::Ambiguous
-							);
+							&& matches!(pending.delivery, Delivery::Rejected | Delivery::Ambiguous);
 						ui.horizontal_wrapped(|ui| {
 							ui.spacing_mut().item_spacing.x = 8.0;
 							if !compact {
@@ -180,7 +177,13 @@ pub fn show(
 							ui.set_max_width(ui.available_width().min(MAX_WIDTH));
 							// Discord fades the optimistic row until the server echoes it.
 							ui.set_opacity(if sending { 0.6 } else { 1.0 });
-							files(ui, pending, upload, pending.delivery != Delivery::Sending && pending.delivery != Delivery::Confirmed);
+							files(
+								ui,
+								pending,
+								upload,
+								pending.delivery != Delivery::Sending
+									&& pending.delivery != Delivery::Confirmed,
+							);
 						});
 					}
 					if sending && !artwork {

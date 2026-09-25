@@ -644,7 +644,9 @@ fn proxy_base(source: &str) -> Option<url::Url> {
 			&& parts[0] == "vi"
 			&& parts[2] == "hqdefault.jpg"
 			&& (1..=32).contains(&id.len())
-			&& id.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')))
+			&& id
+				.bytes()
+				.all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')))
 		.then_some(url);
 	}
 	let valid_path = if path.starts_with("/attachments/") {

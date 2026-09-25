@@ -55,7 +55,7 @@ fn main() {
 				.iter()
 				.any(|(_, node)| {
 					node.label()
-						.is_some_and(|label| label.ends_with(" · Speaking"))
+						.is_some_and(|label| label.ends_with(" | Speaking"))
 				});
 			output.drop_without_applying_deltas();
 		}

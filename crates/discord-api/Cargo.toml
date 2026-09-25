@@ -9,6 +9,7 @@ model.workspace = true
 client-core.workspace = true
 discord-protocol.workspace = true
 reqwest.workspace = true
+rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

@@ -10,8 +10,8 @@ use std::{
 
 const MAX_MEDIA_JSON: usize = 256 * 1024;
 const MAX_WINDOW_BYTES: usize = 4 * 1024 * 1024;
-const NATIVE_SCHEMA: u32 = 24;
-const READABLE_SCHEMA: u32 = 24;
+const NATIVE_SCHEMA: u32 = 25;
+const READABLE_SCHEMA: u32 = 25;
 #[derive(serde::Deserialize)]
 struct CachedMentions(#[serde(deserialize_with = "model::deserialize_mentions")] Vec<User>);
 fn parse_author_roles(raw: &str) -> std::result::Result<Vec<Id>, StoreError> {
@@ -72,13 +72,63 @@ pub struct AppPreferences {
 	pub user_volumes: Vec<(u64, u16)>,
 	/// Voice participants silenced on this device only, bounded like the volume overrides.
 	pub muted_users: Vec<u64>,
+	/// Hearing protection: bots without a chosen volume play at half volume.
+	pub voice_bot_safe_volume: bool,
+	/// Last joined call, so the next launch can offer an explicit reconnect.
+	/// Channel, optional guild, account and timestamp only — never a voice token.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub reconnect_call: Option<ReconnectCallHint>,
+	/// The owner has seen the in-app notice that this build is unofficial and
+	/// includes other people's licenses. Not a waiver of those licenses.
+	#[serde(default)]
+	pub notices_accepted: bool,
+}
+/// Non-secret identifiers for a recent call that survived an abrupt close.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ReconnectCallHint {
+	pub channel: u64,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub guild: Option<u64>,
+	pub user: u64,
+	pub at_unix: u64,
+}
+impl ReconnectCallHint {
+	pub const WINDOW_SECS: u64 = 15 * 60;
+	pub const TOUCH_SECS: u64 = 60;
+	pub fn new(
+		channel: model::Id,
+		guild: Option<model::Id>,
+		user: model::Id,
+		at_unix: u64,
+	) -> Option<Self> {
+		let hint = Self {
+			channel: channel.0,
+			guild: guild.map(|id| id.0),
+			user: user.0,
+			at_unix,
+		};
+		hint.is_valid().then_some(hint)
+	}
+	pub fn is_valid(self) -> bool {
+		self.channel != 0 && self.user != 0 && self.guild != Some(0)
+	}
+	pub fn is_recent(self, now_unix: u64) -> bool {
+		self.is_valid() && now_unix.saturating_sub(self.at_unix) < Self::WINDOW_SECS
+	}
+	pub fn same_target(self, other: Self) -> bool {
+		self.channel == other.channel && self.guild == other.guild && self.user == other.user
+	}
+	pub fn offer(self, user: model::Id, now_unix: u64) -> Option<(model::Id, Option<model::Id>)> {
+		(self.is_recent(now_unix) && self.user == user.0)
+			.then_some((model::Id(self.channel), self.guild.map(model::Id)))
+	}
 }
 impl Default for AppPreferences {
 	fn default() -> Self {
 		Self {
 			notifications_enabled: true,
 			auto_update: false,
-			update_nightly: true,
+			update_nightly: false,
 			notification_options: Default::default(),
 			show_hidden_channels: false,
 			hide_title_bar: false,
@@ -103,6 +153,9 @@ impl Default for AppPreferences {
 			expanded_folders: Vec::new(),
 			user_volumes: Vec::new(),
 			muted_users: Vec::new(),
+			voice_bot_safe_volume: true,
+			reconnect_call: None,
+			notices_accepted: false,
 		}
 	}
 }
@@ -119,6 +172,7 @@ impl AppPreferences {
 			&& self.user_volumes.len() <= 64
 			&& self.user_volumes.iter().all(|(_, volume)| *volume <= 200)
 			&& self.muted_users.len() <= 64
+			&& self.reconnect_call.is_none_or(ReconnectCallHint::is_valid)
 			&& self.keybinds.is_valid()
 			&& [&self.voice_input, &self.voice_output]
 				.into_iter()
@@ -138,10 +192,28 @@ pub enum StoreError {
 	Unavailable,
 	Capacity,
 	Incompatible,
+	Full,
+	Corrupt,
 }
 type Result<T> = std::result::Result<T, StoreError>;
 impl From<rusqlite::Error> for StoreError {
-	fn from(_: rusqlite::Error) -> Self {
+	fn from(error: rusqlite::Error) -> Self {
+		let full = error
+			.sqlite_error()
+			.is_some_and(|sqlite| sqlite.extended_code == 13 || sqlite.extended_code == 3594);
+		if full
+			|| matches!(
+				error.sqlite_error_code(),
+				Some(rusqlite::ErrorCode::DiskFull)
+			) {
+			return Self::Full;
+		}
+		if matches!(
+			error.sqlite_error_code(),
+			Some(rusqlite::ErrorCode::DatabaseCorrupt)
+		) {
+			return Self::Corrupt;
+		}
 		Self::Unavailable
 	}
 }
@@ -200,7 +272,7 @@ impl LocalStore {
 		if version > READABLE_SCHEMA {
 			return Err(StoreError::Incompatible);
 		}
-		connection.execute_batch("PRAGMA page_size=4096; PRAGMA max_page_count=16384; PRAGMA cache_size=-2048; PRAGMA temp_store=MEMORY; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=256; PRAGMA journal_size_limit=8388608; PRAGMA secure_delete=ON; PRAGMA auto_vacuum=INCREMENTAL;
+		connection.execute_batch("PRAGMA page_size=4096; PRAGMA max_page_count=65536; PRAGMA cache_size=-2048; PRAGMA temp_store=MEMORY; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA wal_autocheckpoint=256; PRAGMA journal_size_limit=8388608; PRAGMA secure_delete=ON; PRAGMA auto_vacuum=INCREMENTAL;
             CREATE TABLE IF NOT EXISTS messages(account TEXT NOT NULL,channel TEXT NOT NULL,id TEXT NOT NULL,author TEXT NOT NULL,name TEXT NOT NULL,content TEXT NOT NULL,edited INTEGER NOT NULL,reply TEXT,unsupported INTEGER NOT NULL,PRIMARY KEY(account,channel,id));
             CREATE INDEX IF NOT EXISTS messages_channel_order ON messages(account,channel,length(id),id);
             CREATE TABLE IF NOT EXISTS channels(account TEXT NOT NULL,channel TEXT NOT NULL,touched INTEGER NOT NULL,PRIMARY KEY(account,channel));
@@ -446,6 +518,11 @@ impl LocalStore {
 			transaction.execute_batch("ALTER TABLE messages ADD COLUMN author_nick TEXT;")?;
 		}
 		transaction.commit()?;
+		connection.execute_batch(
+			"CREATE TABLE IF NOT EXISTS stats(singleton INTEGER PRIMARY KEY CHECK(singleton=1), content_bytes INTEGER NOT NULL DEFAULT 0, message_count INTEGER NOT NULL DEFAULT 0);
+			 INSERT INTO stats(singleton) SELECT 1 WHERE NOT EXISTS(SELECT 1 FROM stats WHERE singleton=1);",
+		)?;
+		enable_incremental_vacuum(&connection)?;
 		Ok(Self(connection))
 	}
 	pub fn app_preferences(&self) -> Result<AppPreferences> {
@@ -700,7 +777,14 @@ impl LocalStore {
 			return Err(StoreError::Capacity);
 		}
 		let existing = self.load_channel(account, channel)?;
-		self.save_channel_loaded(account, channel, messages, &existing)
+		match self.save_channel_loaded(account, channel, messages, &existing) {
+			Err(StoreError::Full) => {
+				self.emergency_reclaim()?;
+				let existing = self.load_channel(account, channel)?;
+				self.save_channel_loaded(account, channel, messages, &existing)
+			}
+			result => result,
+		}
 	}
 	fn save_channel_loaded(
 		&mut self,
@@ -741,8 +825,12 @@ impl LocalStore {
 				.prepare_cached("DELETE FROM messages WHERE account=?1 AND channel=?2 AND id=?3")?;
 			for message in existing {
 				if !retained.contains(&message.id) {
-					deleted |=
-						delete.execute(params![account, channel, message.id.to_string()])? > 0;
+					let id = message.id.to_string();
+					let payload = message_payload(&transaction, &account, &channel, &id)?;
+					if delete.execute(params![account, channel, id])? > 0 {
+						deleted = true;
+						adjust_stats(&transaction, -payload, -1)?;
+					}
 				}
 			}
 		}
@@ -755,6 +843,8 @@ impl LocalStore {
 			{
 				continue;
 			}
+			let stored_id = message.id.to_string();
+			let previous_payload = message_payload(&transaction, &account, &channel, &stored_id)?;
 			let mentions =
 				serde_json::to_string(&message.mentions).map_err(|_| StoreError::Incompatible)?;
 			if mentions.len() > 128 * 1024 {
@@ -824,10 +914,13 @@ impl LocalStore {
 			if embeds.len() > MAX_MEDIA_JSON || attachments.len() > MAX_MEDIA_JSON {
 				return Err(StoreError::Capacity);
 			}
+			if previous_payload > 0 {
+				adjust_stats(&transaction, -previous_payload, -1)?;
+			}
 			insert.execute(params![
 				account,
 				channel,
-				message.id.to_string(),
+				stored_id,
 				message.author.id.to_string(),
 				message.author.name,
 				message.content,
@@ -855,45 +948,38 @@ impl LocalStore {
 				interaction,
 				reactions,
 			])?;
+			let stored_payload = message_payload(&transaction, &account, &channel, &stored_id)?;
+			adjust_stats(&transaction, stored_payload, 1)?;
 		}
 		drop(insert);
 		transaction.execute("INSERT INTO channels VALUES(?1,?2,unixepoch('subsec')*1000) ON CONFLICT(account,channel) DO UPDATE SET touched=excluded.touched",params![account,channel])?;
-		// Global limit: 20 channel windows, 10000 messages AND 48 MiB content, below the 64 MiB database page ceiling.
-		loop {
+		// Stop when at most 20 channels, 10000 messages and 48 MiB of message payload remain.
+		for _ in 0..40 {
 			let channels: i64 =
 				transaction.query_row("SELECT count(*) FROM channels", [], |row| row.get(0))?;
-			let page_count: i64 =
-				transaction.pragma_query_value(None, "page_count", |row| row.get(0))?;
-			let free_pages: i64 =
-				transaction.pragma_query_value(None, "freelist_count", |row| row.get(0))?;
-			let page_size: i64 =
-				transaction.pragma_query_value(None, "page_size", |row| row.get(0))?;
-			let bytes = if (page_count - free_pages) * page_size <= 48 * 1024 * 1024 {
-				0
-			} else {
-				transaction.query_row("SELECT coalesce(sum(length(CAST(content AS BLOB))+length(CAST(name AS BLOB))+length(CAST(original_flags AS BLOB))+length(CAST(components AS BLOB))+length(CAST(sticker_items AS BLOB))+coalesce(length(CAST(application_id AS BLOB)),0)+length(CAST(embeds AS BLOB))+length(CAST(attachments AS BLOB))+length(CAST(mentions AS BLOB))+length(CAST(author_roles AS BLOB))+coalesce(length(CAST(author_nick AS BLOB)),0)+coalesce(length(CAST(interaction AS BLOB)),0)+coalesce(length(CAST(reactions AS BLOB)),0)+256),0) FROM messages",[],|row|row.get(0))?
-			};
-			if channels <= 20 && bytes <= 48 * 1024 * 1024 {
+			let (bytes, message_count): (i64, i64) = transaction.query_row(
+				"SELECT content_bytes, message_count FROM stats WHERE singleton=1",
+				[],
+				|row| Ok((row.get(0)?, row.get(1)?)),
+			)?;
+			if channels <= 20 && message_count <= 10_000 && bytes <= 48 * 1024 * 1024 {
 				break;
 			}
-			let (a, c): (String, String) = transaction.query_row(
+			let (oldest_account, oldest_channel): (String, String) = transaction.query_row(
 				"SELECT account,channel FROM channels ORDER BY touched,account,channel LIMIT 1",
 				[],
-				|r| Ok((r.get(0)?, r.get(1)?)),
+				|row| Ok((row.get(0)?, row.get(1)?)),
 			)?;
-			transaction.execute(
-				"DELETE FROM messages WHERE account=?1 AND channel=?2",
-				params![a, c],
-			)?;
-			transaction.execute(
-				"DELETE FROM channels WHERE account=?1 AND channel=?2",
-				params![a, c],
-			)?;
+			if oldest_account == account && oldest_channel == channel && channels == 1 {
+				trim_oldest_messages(&transaction, &account, &channel, 200)?;
+			} else {
+				forget_channel_rows(&transaction, &oldest_account, &oldest_channel)?;
+			}
 			deleted = true;
 		}
 		transaction.commit()?;
 		if deleted {
-			self.0.execute_batch("PRAGMA incremental_vacuum(64);")?;
+			reclaim_free_pages(&self.0)?;
 		}
 		Ok(())
 	}
@@ -1172,8 +1258,8 @@ impl LocalStore {
 			[account.to_string()],
 		)?;
 		transaction.commit()?;
-		self.0
-			.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA incremental_vacuum(64);")?;
+		resync_stats(&self.0)?;
+		reclaim_free_pages(&self.0)?;
 		Ok(())
 	}
 	pub fn delete_messages(&mut self, account: Id, channel: Id, ids: &[Id]) -> Result<()> {
@@ -1181,20 +1267,21 @@ impl LocalStore {
 			return Err(StoreError::Capacity);
 		}
 		let transaction = self.0.transaction()?;
+		let account = account.to_string();
+		let channel = channel.to_string();
 		{
 			let mut statement = transaction
 				.prepare("DELETE FROM messages WHERE account=?1 AND channel=?2 AND id=?3")?;
 			for id in ids {
-				statement.execute(params![
-					account.to_string(),
-					channel.to_string(),
-					id.to_string()
-				])?;
+				let stored = id.to_string();
+				let payload = message_payload(&transaction, &account, &channel, &stored)?;
+				if statement.execute(params![&account, &channel, &stored])? > 0 {
+					adjust_stats(&transaction, -payload, -1)?;
+				}
 			}
 		}
 		transaction.commit()?;
-		self.0
-			.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA incremental_vacuum(64);")?;
+		reclaim_free_pages(&self.0)?;
 		Ok(())
 	}
 	/// Saved GIF favorites for one account, newest first. Rejected rows are skipped.
@@ -1359,11 +1446,131 @@ impl LocalStore {
 			)?;
 		}
 		transaction.commit()?;
-		self.0
-			.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); PRAGMA incremental_vacuum(64);")?;
+		resync_stats(&self.0)?;
+		reclaim_free_pages(&self.0)?;
 		Ok(())
 	}
+	fn emergency_reclaim(&mut self) -> Result<()> {
+		let transaction = self.0.transaction()?;
+		if let Ok((account, channel)) = transaction.query_row(
+			"SELECT account,channel FROM channels ORDER BY touched,account,channel LIMIT 1",
+			[],
+			|row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+		) {
+			forget_channel_rows(&transaction, &account, &channel)?;
+		}
+		transaction.commit()?;
+		self.0.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+		reclaim_free_pages(&self.0)
+	}
 }
+
+const MESSAGE_PAYLOAD: &str = "length(CAST(content AS BLOB))+length(CAST(name AS BLOB))+length(CAST(original_flags AS BLOB))+length(CAST(components AS BLOB))+length(CAST(sticker_items AS BLOB))+coalesce(length(CAST(application_id AS BLOB)),0)+length(CAST(embeds AS BLOB))+length(CAST(attachments AS BLOB))+length(CAST(mentions AS BLOB))+length(CAST(author_roles AS BLOB))+coalesce(length(CAST(author_nick AS BLOB)),0)+coalesce(length(CAST(interaction AS BLOB)),0)+coalesce(length(CAST(reactions AS BLOB)),0)+256";
+
+fn message_payload(
+	tx: &rusqlite::Transaction<'_>,
+	account: &str,
+	channel: &str,
+	id: &str,
+) -> Result<i64> {
+	let sql = format!(
+		"SELECT ({MESSAGE_PAYLOAD}) FROM messages WHERE account=?1 AND channel=?2 AND id=?3"
+	);
+	match tx.query_row(&sql, rusqlite::params![account, channel, id], |row| {
+		row.get(0)
+	}) {
+		Ok(bytes) => Ok(bytes),
+		Err(rusqlite::Error::QueryReturnedNoRows) => Ok(0),
+		Err(error) => Err(error.into()),
+	}
+}
+fn adjust_stats(tx: &rusqlite::Transaction<'_>, bytes: i64, count: i64) -> Result<()> {
+	tx.execute(
+		"UPDATE stats SET content_bytes=max(0, content_bytes+?1), message_count=max(0, message_count+?2) WHERE singleton=1",
+		rusqlite::params![bytes, count],
+	)?;
+	Ok(())
+}
+fn forget_channel_rows(tx: &rusqlite::Transaction<'_>, account: &str, channel: &str) -> Result<()> {
+	let sql = format!(
+		"SELECT coalesce(sum({MESSAGE_PAYLOAD}),0), count(*) FROM messages WHERE account=?1 AND channel=?2"
+	);
+	let (bytes, count): (i64, i64) =
+		tx.query_row(&sql, rusqlite::params![account, channel], |row| {
+			Ok((row.get(0)?, row.get(1)?))
+		})?;
+	tx.execute(
+		"DELETE FROM messages WHERE account=?1 AND channel=?2",
+		rusqlite::params![account, channel],
+	)?;
+	tx.execute(
+		"DELETE FROM channels WHERE account=?1 AND channel=?2",
+		rusqlite::params![account, channel],
+	)?;
+	adjust_stats(tx, -bytes, -count)
+}
+fn trim_oldest_messages(
+	tx: &rusqlite::Transaction<'_>,
+	account: &str,
+	channel: &str,
+	limit: i64,
+) -> Result<()> {
+	let sql = format!(
+		"SELECT coalesce(sum(payload),0), count(*) FROM (SELECT ({MESSAGE_PAYLOAD}) AS payload FROM messages WHERE account=?1 AND channel=?2 ORDER BY length(id), id LIMIT ?3)"
+	);
+	let (bytes, count): (i64, i64) =
+		tx.query_row(&sql, rusqlite::params![account, channel, limit], |row| {
+			Ok((row.get(0)?, row.get(1)?))
+		})?;
+	tx.execute(
+		"DELETE FROM messages WHERE rowid IN (SELECT rowid FROM messages WHERE account=?1 AND channel=?2 ORDER BY length(id), id LIMIT ?3)",
+		rusqlite::params![account, channel, limit],
+	)?;
+	adjust_stats(tx, -bytes, -count)
+}
+fn resync_stats(connection: &Connection) -> Result<()> {
+	let sql = format!(
+		"UPDATE stats SET content_bytes=(SELECT coalesce(sum({MESSAGE_PAYLOAD}),0) FROM messages), message_count=(SELECT count(*) FROM messages) WHERE singleton=1"
+	);
+	connection.execute(&sql, [])?;
+	Ok(())
+}
+fn reclaim_free_pages(connection: &Connection) -> Result<()> {
+	for _ in 0..64 {
+		let before: i64 =
+			connection.pragma_query_value(None, "freelist_count", |row| row.get(0))?;
+		if before == 0 {
+			break;
+		}
+		connection.execute_batch("PRAGMA incremental_vacuum(64);")?;
+		let after: i64 = connection.pragma_query_value(None, "freelist_count", |row| row.get(0))?;
+		if after >= before {
+			break;
+		}
+	}
+	Ok(())
+}
+fn enable_incremental_vacuum(connection: &Connection) -> Result<()> {
+	let mode: i64 = connection.pragma_query_value(None, "auto_vacuum", |row| row.get(0))?;
+	let free: i64 = connection.pragma_query_value(None, "freelist_count", |row| row.get(0))?;
+	let rows: i64 = connection.query_row("SELECT count(*) FROM messages", [], |row| row.get(0))?;
+	if mode == 0 && free > 0 && rows > 0 {
+		connection.execute_batch("PRAGMA journal_mode=DELETE;")?;
+		connection.pragma_update(None, "auto_vacuum", 2)?;
+		connection.execute_batch("VACUUM; PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
+	}
+	connection.pragma_update(None, "max_page_count", 65536)?;
+	let seeded: i64 = connection.query_row(
+		"SELECT message_count FROM stats WHERE singleton=1",
+		[],
+		|row| row.get(0),
+	)?;
+	if seeded == 0 && rows > 0 {
+		resync_stats(connection)?;
+	}
+	Ok(())
+}
+
 #[cfg(test)]
 mod tests {
 	#[test]
@@ -1756,6 +1963,45 @@ mod tests {
 			store.app_preferences().unwrap().gpu_preference,
 			model::GpuPreference::PowerSaving
 		);
+	}
+	#[test]
+	fn reconnect_call_hint_is_recent_account_scoped_and_survives_preferences() {
+		let joined = 1_700_000_000;
+		let hint = ReconnectCallHint::new(model::Id(22), Some(model::Id(10)), model::Id(1), joined)
+			.expect("synthetic identifiers");
+		assert_eq!(
+			hint.offer(model::Id(1), joined + ReconnectCallHint::WINDOW_SECS - 1),
+			Some((model::Id(22), Some(model::Id(10))))
+		);
+		assert_eq!(
+			hint.offer(model::Id(1), joined + ReconnectCallHint::WINDOW_SECS),
+			None,
+			"a 15-minute-old hint must not prompt"
+		);
+		assert_eq!(
+			hint.offer(model::Id(9), joined + 30),
+			None,
+			"another account must not see this call"
+		);
+		assert!(ReconnectCallHint::new(model::Id(0), None, model::Id(1), joined).is_none());
+		let store = LocalStore::initialize(Connection::open_in_memory().unwrap()).unwrap();
+		let mut value = AppPreferences {
+			reconnect_call: Some(hint),
+			..Default::default()
+		};
+		store.save_app_preferences(&value).unwrap();
+		assert_eq!(store.app_preferences().unwrap().reconnect_call, Some(hint));
+		value.reconnect_call = Some(ReconnectCallHint {
+			channel: 0,
+			guild: None,
+			user: 1,
+			at_unix: joined,
+		});
+		assert!(store.save_app_preferences(&value).is_err());
+		assert_eq!(store.app_preferences().unwrap().reconnect_call, Some(hint));
+		value.reconnect_call = None;
+		store.save_app_preferences(&value).unwrap();
+		assert_eq!(store.app_preferences().unwrap().reconnect_call, None);
 	}
 	#[test]
 	fn app_preferences_tolerate_an_unknown_gpu_preference() {

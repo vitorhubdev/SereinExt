@@ -312,7 +312,7 @@ impl Cache {
 			.is_ok()
 	}
 	pub fn start(ctx: egui::Context) -> Self {
-		let (send, commands) = mpsc::sync_channel::<(u64, Id, u64, Operation, Reservation)>(16);
+		let (send, commands) = mpsc::sync_channel::<(u64, Id, u64, Operation, Reservation)>(64);
 		let (events, receive) = mpsc::sync_channel(16);
 		let budget = Arc::new(Budget::default());
 		let history = Arc::new(HistorySafety::default());

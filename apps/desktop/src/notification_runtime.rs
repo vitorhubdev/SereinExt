@@ -50,6 +50,10 @@ impl Runtime {
 		}
 		None
 	}
+	/// Direct pings last counted for the taskbar badge; zero while unread badges are off.
+	pub fn pings(&self) -> u32 {
+		self.badge.unwrap_or(0)
+	}
 	pub fn clear(&mut self, window: &winit::window::Window) {
 		self.sounds.stop();
 		self.ring = None;

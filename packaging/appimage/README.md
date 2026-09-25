@@ -43,8 +43,8 @@ package. Systems that cannot mount AppImages can run:
 ./serein-<version>-Linux-X64.AppImage --appimage-extract-and-run
 ```
 
-Settings → Updates uses the same Production/Nightly channels and automatic-download
-preference as Windows/macOS. Restart applies a checked download to the original
+Settings → Updates uses the production GitHub latest release, the same as
+Windows/macOS. Restart applies a checked download to the original
 AppImage filename. Both the file and its directory must be writable, and the
 filesystem must support hard links for the rollback copy (for example ext4 or
 Btrfs; FAT/exFAT require manual replacement). An extracted
@@ -58,7 +58,7 @@ unchanged blocks from your existing image, reducing update downloads. Production
 images track `latest`; prerelease images track `latest-pre`. This follows the
 [AppImage update specification](https://github.com/AppImage/AppImageSpec/blob/master/draft.md#github-releases).
 Serein's Settings → Updates also reuses local blocks when the selected release has
-a verified `.zsync` asset. It uses the selected Production/Nightly channel and
+a verified `.zsync` asset. It uses the production GitHub latest release and
 checks the reconstructed image against the release SHA-256 before staging it.
 Missing or incompatible metadata, unsupported HTTP ranges, or failed reconstruction
 automatically fall back to a full download. No external updater needs to be installed.

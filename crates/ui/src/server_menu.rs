@@ -27,13 +27,19 @@ pub(super) struct ServerMenu {
 }
 
 impl ServerMenu {
-	pub fn read_item(&mut self, ui: &mut egui::Ui, state: &State, guild: Id) -> bool {
+	pub fn read_item(
+		&mut self,
+		ui: &mut egui::Ui,
+		state: &State,
+		guild: Id,
+		language: model::Language,
+	) -> bool {
 		if ui
 			.add_enabled_ui(state.can_mark_guild_read(guild), |ui| {
 				menu_row(
 					ui,
 					icons::Icon::Check,
-					"Mark As Read",
+					crate::i18n::text(language, "Mark As Read"),
 					design::palette(ui).text,
 				)
 			})
@@ -46,7 +52,13 @@ impl ServerMenu {
 		}
 		false
 	}
-	pub fn settings_item(&mut self, ui: &mut egui::Ui, state: &State, guild: Id) -> bool {
+	pub fn settings_item(
+		&mut self,
+		ui: &mut egui::Ui,
+		state: &State,
+		guild: Id,
+		language: model::Language,
+	) -> bool {
 		if (state.can_manage_guild(guild)
 			|| state.can_open_role_settings(guild)
 			|| state.can_open_emoji_settings(guild)
@@ -56,7 +68,7 @@ impl ServerMenu {
 			&& menu_row(
 				ui,
 				icons::Icon::Gear,
-				"Server Settings",
+				crate::i18n::text(language, "Server Settings"),
 				design::palette(ui).text,
 			)
 			.clicked()
@@ -67,7 +79,13 @@ impl ServerMenu {
 		}
 		false
 	}
-	pub fn leave_item(&mut self, ui: &mut egui::Ui, state: &mut State, guild: Id) -> bool {
+	pub fn leave_item(
+		&mut self,
+		ui: &mut egui::Ui,
+		state: &mut State,
+		guild: Id,
+		language: model::Language,
+	) -> bool {
 		if state.leave_server_reason(guild).is_some() {
 			return false;
 		}
@@ -79,7 +97,7 @@ impl ServerMenu {
 				menu_row(
 					ui,
 					icons::Icon::ArrowRight,
-					"Leave server",
+					crate::i18n::text(language, "Leave server"),
 					design::palette(ui).danger,
 				)
 			})
@@ -112,6 +130,7 @@ impl ServerMenu {
 		state: &mut State,
 		guild: Id,
 		title: &str,
+		language: model::Language,
 	) -> egui::Response {
 		ui.push_id(("server-menu", guild), |ui| {
 			let colors = design::palette(ui);
@@ -155,12 +174,17 @@ impl ServerMenu {
 					let available = !state.server_action_pending()
 						&& !state.server_invite_pending()
 						&& (state.demo || state.gateway_connected);
-					self.read_item(ui, state, guild);
+					self.read_item(ui, state, guild, language);
 					ui.separator();
-					self.settings_item(ui, state, guild);
+					self.settings_item(ui, state, guild, language);
 					if ui
 						.add_enabled_ui(available, |ui| {
-							menu_row(ui, icons::Icon::AddPeople, "Create invite", colors.text)
+							menu_row(
+								ui,
+								icons::Icon::AddPeople,
+								crate::i18n::text(language, "Create invite"),
+								colors.text,
+							)
 						})
 						.inner
 						.clicked()
@@ -175,7 +199,7 @@ impl ServerMenu {
 						ui.close();
 					}
 					ui.separator();
-					self.leave_item(ui, state, guild);
+					self.leave_item(ui, state, guild, language);
 					if !available {
 						ui.small(if state.server_action_pending() {
 							"A server action is in progress."
@@ -196,6 +220,7 @@ impl ServerMenu {
 		active: Option<Id>,
 		commands: &mut Vec<Command>,
 		avatars: &mut Avatars,
+		language: model::Language,
 	) {
 		let Some(mut dialog) = self.dialog else {
 			return;
@@ -230,7 +255,10 @@ impl ServerMenu {
 		let reason = state.leave_server_reason(guild);
 		let mut leave = false;
 		let mut close = false;
-		let response = dialog::Dialog::new("server-action-dialog", "Leave server?")
+		let response = dialog::Dialog::new(
+			"server-action-dialog",
+			crate::i18n::text(language, "Leave server?"),
+		)
 			.danger()
 			.width(440.0)
 			.show(ctx, |d| {
@@ -240,7 +268,12 @@ impl ServerMenu {
 					ui.add(
 						egui::Label::new(
 							egui::RichText::new(format!(
-								"Are you sure you want to leave {name}? You will not be able to rejoin this server unless you are re-invited."
+								"{} {name}? {}",
+								crate::i18n::text(language, "Are you sure you want to leave"),
+								crate::i18n::text(
+									language,
+									"You will not be able to rejoin this server unless you are re-invited.",
+								)
 							))
 							.size(14.0)
 							.color(colors.text),
@@ -254,28 +287,50 @@ impl ServerMenu {
 						dialog::notice(ui, dialog::Level::Error, status);
 					}
 					if state.demo {
-						dialog::hint(ui, "Offline preview · no server changes");
+						dialog::hint(
+							ui,
+							crate::i18n::text(language, "Offline preview · no server changes"),
+						);
 					}
 				});
 				d.footer(|ui| {
 					ui.add_enabled_ui(!pending && reason.is_none(), |ui| {
 						leave = dialog::action(
 							ui,
-							if pending { "Leaving…" } else { "Leave Server" },
+							if pending {
+								crate::i18n::text(language, "Leaving…")
+							} else {
+								crate::i18n::text(language, "Leave Server")
+							},
 							dialog::Action::Danger,
 						)
 						.clicked();
 					});
 					close |= dialog::action(
 						ui,
-						if pending { "Close" } else { "Cancel" },
+						if pending {
+							crate::i18n::text(language, "Close")
+						} else {
+							crate::i18n::text(language, "Cancel")
+						},
 						dialog::Action::Neutral,
 					)
 					.clicked();
 				});
 			});
-		if leave && let Some(command) = state.leave_server(guild) {
-			commands.push(command);
+		if leave {
+			if state
+				.voice
+				.active
+				.as_ref()
+				.is_some_and(|call| call.guild == Some(guild))
+				&& let Some(command) = state.leave_call()
+			{
+				commands.push(command);
+			}
+			if let Some(command) = state.leave_server(guild) {
+				commands.push(command);
+			}
 		}
 		self.dialog = if close || response.close {
 			None
@@ -366,6 +421,7 @@ mod tests {
 					state,
 					Id(10),
 					"A long synthetic server name for the narrow sidebar",
+					model::Language::English,
 				));
 				menu.show(
 					ui.ctx(),
@@ -373,6 +429,7 @@ mod tests {
 					Some(Id(10)),
 					commands,
 					&mut Avatars::default(),
+					model::Language::English,
 				);
 			},
 		);
@@ -417,8 +474,8 @@ mod tests {
 			let mut menu = ServerMenu::default();
 			let output = ctx.run_ui(egui::RawInput::default(), |ui| {
 				ui.set_width(232.0);
-				menu.settings_item(ui, &state, guild);
-				menu.leave_item(ui, &mut state, guild);
+				menu.settings_item(ui, &state, guild, model::Language::English);
+				menu.leave_item(ui, &mut state, guild, model::Language::English);
 			});
 			let mut text = vec![];
 			for shape in &output.shapes {

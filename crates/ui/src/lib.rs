@@ -27,7 +27,7 @@ mod components;
 mod composer_text;
 pub mod design;
 mod embeds;
-pub use embeds::take_web_media_request;
+pub use embeds::{WebMediaRequest, take_web_media_request};
 mod extension_account_actions;
 mod extension_actions;
 mod extension_admin_actions;
@@ -47,9 +47,9 @@ mod friends;
 mod group_menu;
 mod guild_folders;
 mod highlight;
+pub mod i18n;
 pub mod icons;
 mod invites;
-pub mod i18n;
 mod local_time;
 mod markdown;
 mod member_search;
@@ -101,6 +101,7 @@ pub mod updates;
 mod user_menu;
 mod verification;
 mod voice;
+pub use voice::voice_server_place;
 use client_core::{Command, MAX_CONTENT, MAX_DRAFT_BYTES, NavStep, State};
 use egui::{RichText, TextEdit};
 use model::{Freshness, Id};
@@ -316,6 +317,10 @@ pub struct MessagingUi {
 	pending_upload: Option<pending::Upload>,
 	pub clear_cache_requested: bool,
 	pub voice_available: bool,
+	/// Recent call the owner may explicitly rejoin after an abrupt close.
+	pub reconnect_offer: Option<(Id, Option<Id>)>,
+	/// Clear the persisted reconnect hint after an explicit dismiss.
+	pub reconnect_dismissed: bool,
 	pub voice_switch_ready: bool,
 	voice_switch: Option<voice::CallSwitch>,
 	pub screen: screen::ScreenUi,
@@ -359,6 +364,8 @@ pub struct MessagingUi {
 	pub voice_output: Option<String>,
 	pub voice_gain: VoiceGain,
 	voice_user_volumes: Option<Box<[(u64, u16); 64]>>,
+	/// Hearing protection: bots without a chosen volume are mixed at half volume.
+	pub voice_bot_safe_volume: bool,
 	/// Speakers silenced on this device only; never sent to Discord.
 	voice_user_muted: Vec<u64>,
 	pub voice_refresh_devices: bool,
@@ -369,6 +376,10 @@ pub struct MessagingUi {
 	pub voice_muted: bool,
 	pub voice_deafened: bool,
 	pub voice_processing: model::voice_settings::VoiceProcessing,
+	/// Level the call-panel button restores when noise suppression is turned back on.
+	voice_noise_restore: model::voice_settings::NoiseSuppression,
+	/// Maximum suppression could not keep up on this machine, so Standard took over.
+	voice_noise_fell_back: bool,
 	pub voice_preview_requested: bool,
 	pub voice_preview_level: Option<f32>,
 	pub voice_preview_status: &'static str,
@@ -380,6 +391,10 @@ pub struct MessagingUi {
 	pub expanded_folders: Vec<u64>,
 	pub voice_ptt_active: bool,
 	pub voice_privacy_code: Option<String>,
+	/// Latest voice-server heartbeat round trip, when a call is connected.
+	pub voice_ping_ms: Option<u32>,
+	/// English place name for the connected voice server, translated at draw time.
+	pub voice_server_place: String,
 	/// Latest media activity, capped at 64 IDs (512 bytes) by the voice host.
 	pub voice_speaking: Vec<Id>,
 	pub notifications_enabled: bool,
@@ -1409,7 +1424,7 @@ impl MessagingUi {
 				let rect = ui.max_rect();
 				ui.horizontal_centered(|ui| {
 					if let Some(guild) = self.guild {
-						self.server_menu.header(ui, state, guild, title);
+						self.server_menu.header(ui, state, guild, title, self.language);
 						return;
 					}
 					ui.add(
@@ -1493,9 +1508,16 @@ impl MessagingUi {
 							},
 						);
 						response.widget_info(|| {
-							egui::WidgetInfo::selected(egui::Role::Button, true, friends, "Friends")
+							egui::WidgetInfo::selected(
+								egui::Role::Button,
+								true,
+								friends,
+								crate::i18n::text(self.language, "Friends"),
+							)
 						});
-						if response.on_hover_text("Friends").clicked() {
+						if response
+							.on_hover_text(crate::i18n::text(self.language, "Friends"))
+							.clicked() {
 							state.open_home();
 							self.guild = None;
 							self.search.open = false;
@@ -1537,10 +1559,22 @@ impl MessagingUi {
 				{
 					commands.push(command);
 				}
-				if let Some(id) = select
-					&& let Some(command) = state.select(id)
-				{
-					commands.push(command);
+				if let Some(id) = select {
+					let join_voice = state
+						.channel(id)
+						.is_some_and(|channel| channel.guild.is_some() && channel.kind == 2);
+					if let Some(command) = state.select(id) {
+						commands.push(command);
+					}
+					if join_voice
+						&& state
+							.voice
+							.active
+							.as_ref()
+							.is_none_or(|call| call.channel != id)
+					{
+						self.request_call(state, id, false, commands);
+					}
 				}
 				if let Some(parent) = self.archive_parent.take()
 					&& let Some(command) =
@@ -1989,9 +2023,10 @@ impl MessagingUi {
 						}
 						ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
 							// Centre the name block in the fixed-height header even without a subtitle.
-							let name = channel
-								.as_ref()
-								.map_or("Direct Messages", |c| state.conversation_name(c));
+							let name = channel.as_ref().map_or(
+								crate::i18n::text(self.language, "Direct Messages"),
+								|c| state.conversation_name(c),
+							);
 							let subtitle = channel
 								.as_ref()
 								.filter(|_| dm)
@@ -3199,7 +3234,8 @@ impl MessagingUi {
 			} else {
 				self.batch_delete_next =
 					Some(ui.input(|input| input.time) + batch_delete_gap_secs());
-				self.timeline.batch_progress = Some((self.batch_delete_sent, self.batch_delete_total));
+				self.timeline.batch_progress =
+					Some((self.batch_delete_sent, self.batch_delete_total));
 				ui.ctx()
 					.request_repaint_after(std::time::Duration::from_millis(200));
 			}
@@ -3394,7 +3430,10 @@ impl MessagingUi {
 		let title = self
 			.guild
 			.and_then(|id| state.guild(id))
-			.map_or_else(|| "Direct Messages".to_owned(), |g| g.name.clone());
+			.map_or_else(
+				|| crate::i18n::text(self.language, "Direct Messages").to_owned(),
+				|g| g.name.clone(),
+			);
 		if self.shows_title_bar() {
 			self.title_bar(ui, state, &title);
 		}
@@ -3471,7 +3510,7 @@ impl MessagingUi {
 			self.server_menu.open_invite(state, guild, channel);
 		}
 		self.server_menu
-			.show(&ctx, state, self.guild, &mut commands, &mut self.avatars);
+			.show(&ctx, state, self.guild, &mut commands, &mut self.avatars, self.language);
 		if let Some(guild) = self.server_menu.settings_requested.take()
 			&& let Some(command) = self.preview_server_settings(state, guild)
 		{
@@ -3646,6 +3685,7 @@ impl MessagingUi {
 							);
 						});
 				}
+				self.reconnect_call_banner(ui, state, &mut commands);
 				if state.selected.is_none() && self.guild.is_none() {
 					self.call_bar(ui, state, &mut commands);
 					self.timeline.download.show_status(ui);
@@ -3730,6 +3770,7 @@ impl MessagingUi {
 						&mut commands,
 						(&mut self.scroll, &mut staged),
 						(&mut self.channel_menu, view),
+						self.language,
 					);
 					return;
 				}
@@ -3882,7 +3923,8 @@ impl MessagingUi {
 						if self.timeline.batch_delete_requested {
 							self.timeline.batch_delete_requested = false;
 							if let Some(channel) = state.selected {
-								let ids: Vec<_> = self.timeline.batch_delete.iter().copied().collect();
+								let ids: Vec<_> =
+									self.timeline.batch_delete.iter().copied().collect();
 								if !ids.is_empty() && ids.len() <= 5 {
 									self.deleting_batch = Some((channel, ids));
 								}
@@ -4087,8 +4129,7 @@ impl MessagingUi {
 		if let Some(pending) = self.timeline.leave_read.take() {
 			if ctx.will_discard() {
 				self.timeline.leave_read = Some(pending);
-			} else if let Some(command) =
-				state.prepare_mark_left_channel_read(pending.0, pending.1)
+			} else if let Some(command) = state.prepare_mark_left_channel_read(pending.0, pending.1)
 			{
 				commands.push(command);
 			}
@@ -4417,10 +4458,7 @@ impl MessagingUi {
 			match confirm.show(&ctx) {
 				Some(dialog::Choice::Confirmed) if allowed => {
 					let now = ctx.input(|input| input.time);
-					self.batch_delete_queue = ids
-						.into_iter()
-						.map(|id| (channel, id))
-						.collect();
+					self.batch_delete_queue = ids.into_iter().map(|id| (channel, id)).collect();
 					self.batch_delete_total = self.batch_delete_queue.len();
 					self.batch_delete_sent = 0;
 					self.batch_delete_next = Some(now + batch_delete_gap_secs());

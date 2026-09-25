@@ -357,6 +357,7 @@ async fn run_inner(
 	let mut heartbeat_ms: Option<u64> = None;
 	let mut heartbeat_at = Instant::now();
 	let mut awaiting_ack = None;
+	let mut heartbeat_sent: Option<Instant> = None;
 	let mut heartbeat_nonce = 0u64;
 	let mut deadline = Some(Instant::now() + Duration::from_secs(90));
 	let mut ready_announced = false;
@@ -411,8 +412,9 @@ async fn run_inner(
 				if let Some(interval)=heartbeat_ms && now>=heartbeat_at {
 					if awaiting_ack.is_some() {return Err("Discord voice heartbeat was not acknowledged; rejoin the call");}
 					heartbeat_nonce=heartbeat_nonce.wrapping_add(1);
+					let sent=Instant::now();
 					json_send(&mut ws,json!({"op":3,"d":{"t":heartbeat_nonce,"seq_ack":seq_ack}})).await?;
-					awaiting_ack=Some(heartbeat_nonce);heartbeat_at=now+Duration::from_millis(interval);
+					heartbeat_sent=Some(sent);awaiting_ack=Some(heartbeat_nonce);heartbeat_at=now+Duration::from_millis(interval);
 				}
 				if secured_at.is_some_and(|at| now>=at+PEER_GRACE) && !discovering && !resuming && dave.should_wait_for_peer() {dave.enter_sole_member_waiting()?;}
 				let enabled=dave.ready && encryption.is_some() && !discovering && !resuming;
@@ -557,7 +559,7 @@ async fn run_inner(
 						video.clear();video.announced=false;
 						resume_attempts+=1;resuming=true;ready_announced=false;waiting_announced=false;capture_reset=true;
 						emit(Status::Securing).map_err(|_|"Call interface closed")?;
-						deadline=Some(Instant::now()+Duration::from_secs(30));heartbeat_ms=None;awaiting_ack=None;
+						deadline=Some(Instant::now()+Duration::from_secs(30));heartbeat_ms=None;awaiting_ack=None;heartbeat_sent=None;
 						let config=WebSocketConfig::default().max_message_size(Some(MAX_SIGNAL)).max_frame_size(Some(MAX_SIGNAL)).write_buffer_size(0).max_write_buffer_size(MAX_SIGNAL*2);
 						let (replacement,_)=timeout(Duration::from_secs(15),tokio_tungstenite::connect_async_with_config(&url,Some(config),false)).await.map_err(|_|"Voice resume timed out; rejoin the call")?.map_err(|_|"Voice resume failed; rejoin the call")?;
 						ws=replacement;
@@ -580,7 +582,14 @@ async fn run_inner(
 								if !(100..=120000).contains(&interval) || heartbeat_ms.is_some(){return Err("Invalid voice heartbeat negotiation");}
 								heartbeat_ms=Some(interval.min(5000));heartbeat_at=Instant::now();
 							},
-							6=>{if awaiting_ack.is_none() || data["t"].as_u64()!=awaiting_ack {return Err("Invalid voice heartbeat acknowledgement");}awaiting_ack=None;},
+							6=>{
+								if awaiting_ack.is_none() || data["t"].as_u64()!=awaiting_ack {return Err("Invalid voice heartbeat acknowledgement");}
+								if let Some(sent)=heartbeat_sent.take() {
+									let ms=u32::try_from(sent.elapsed().as_millis().min(9_999)).unwrap_or(9_999);
+									emit(Status::Ping(ms)).map_err(|_| "Call interface closed")?;
+								}
+								awaiting_ack=None;
+							},
 							2=>{
 								if udp.is_some(){return Err("Unexpected voice transport replacement; rejoin the call");}
 								ssrc=u32::try_from(number(data,"ssrc")?).map_err(|_|"Invalid voice SSRC")?;
@@ -2155,7 +2164,8 @@ mod tests {
 							if let Some(sender) = waiting_tx.take() { sender.send(()).unwrap(); }
 						}
 						Status::Connecting | Status::Discovering | Status::Securing
-						| Status::TransportReady | Status::Speaking(_) | Status::CameraAvailable(_) => {}
+						| Status::TransportReady | Status::Speaking(_) | Status::CameraAvailable(_)
+						| Status::Ping(_) => {}
 					},
 					result = &mut captured_rx, if !captured => {
 						result.unwrap();

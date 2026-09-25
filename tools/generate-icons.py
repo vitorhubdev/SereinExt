@@ -121,6 +121,8 @@ ICONS = [
     ("sliders-horizontal", "bold/sliders-horizontal-bold.svg", "e409a5fb3c2c134e46d51e48ac395e392223e04535c5ec664253f3e7e78cd7a9"),
     ("arrows-down-up", "bold/arrows-down-up-bold.svg", "174464c54af7273e46a6fc204ebd0fc1da75906573880687836b314e3fbdb85e"),
     ("thread", "repo:assets/icons/thread.svg", "dfd7daf80375504a5af37b95bee1773af55a9eabe7c802e7f4152905f123c72c"),
+    ("robot", "fill/robot-fill.svg", "c969f03339114964a2e7ac516616c3620695ade3aab8411c9f355f3afacf631d"),
+    ("eye", "fill/eye-fill.svg", "86381b51cb6f305019503b4c5d4b02fe8df5941bab3f1475ee873006a8708420"),
 ]
 LICENSE_SHA256 = "ddbe6082ec3cf979db47e5af549d2849c5d6182b3e005ef91ce1dbb9eb122f11"
 
@@ -192,7 +194,8 @@ def main():
     for cell, (name, asset, sha256, simple) in enumerate(sources):
         local = asset.startswith("repo:")
         if local:
-            svg = (root / asset.removeprefix("repo:")).read_bytes()
+            # Hashes are of LF files; Windows checkouts may convert repository SVGs to CRLF.
+            svg = (root / asset.removeprefix("repo:")).read_bytes().replace(b"\r\n", b"\n")
         else:
             svg = fetch(asset, SIMPLE_BASE) if simple else fetch(f"assets/{asset}")
         digest = hashlib.sha256(svg).hexdigest()

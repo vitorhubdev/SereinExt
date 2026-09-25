@@ -130,3 +130,18 @@ no PulseAudio server is bundled.
 | enum-primitive-derive-0.3.0-LICENSE | [registry source](https://docs.rs/crate/enum-primitive-derive/0.3.0/source/LICENSE) | `819e0555b295079201b0670bb3302855303bdbbcc739f3819b13e1b3d2ec03bb` |
 | futures-0.3.34-LICENSE-MIT | [registry source](https://docs.rs/crate/futures/0.3.34/source/LICENSE-MIT) | `6652c868f35dfe5e8ef636810a4e576b9d663f3a17fb0f5613ad73583e1b88fd` |
 | futures-0.3.34-LICENSE-APACHE | [registry source](https://docs.rs/crate/futures/0.3.34/source/LICENSE-APACHE) | `275c491d6d1160553c32fd6127061d7f9606c3ea25abfad6ca3f6ed088785427` |
+
+## DeepFilterNet noise suppression — September 25, 2026
+
+Unmodified license files from the DeepFilterNet repository at tag v0.5.6
+(`978576aa8400552a4ce9730838c635aa30db5e61`), which also provides the bundled
+DeepFilterNet3 model (`models/DeepFilterNet3_onnx.tar.gz`) embedded by the
+`default-model` feature. The tract 0.19.16 runtime and the other support crates it
+pulls in (see `Cargo.lock`) still need their retained texts staged by the existing
+per-artifact release review.
+
+| File | Exact source | SHA-256 |
+|---|---|---|
+| deep_filter-LICENSE.txt | [repository source](https://github.com/Rikorose/DeepFilterNet/blob/978576aa8400552a4ce9730838c635aa30db5e61/LICENSE) | `f7ef673bf046d823dcd775bdd0768432bd8855f81d0e5e1290a0a48c42e2dca3` |
+| deep_filter-LICENSE-APACHE.txt | [repository source](https://github.com/Rikorose/DeepFilterNet/blob/978576aa8400552a4ce9730838c635aa30db5e61/LICENSE-APACHE) | `1eaee808c5fb6b4e895ba30425285a5cdc5dd25bba2cd230f264c2200c331aec` |
+| deep_filter-LICENSE-MIT.txt | [repository source](https://github.com/Rikorose/DeepFilterNet/blob/978576aa8400552a4ce9730838c635aa30db5e61/LICENSE-MIT) | `24e6bb09c928af8d8e56268082f87413247ce36b39dd5d33add2f9893968065e` |

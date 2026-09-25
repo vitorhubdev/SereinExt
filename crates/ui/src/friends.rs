@@ -107,16 +107,17 @@ impl MessagingUi {
 		commands: &mut Vec<Command>,
 	) {
 		let colors = design::palette(ui);
+		let t = |english: &'static str| crate::i18n::text(self.language, english);
 		egui::Frame::new().inner_margin(24).show(ui, |ui| {
-			ui.label(design::semibold(ui, "Add Friend", 24.0));
-			ui.label("You can add friends with their Discord username.");
+			ui.label(design::semibold(ui, t("Add Friend"), 24.0));
+			ui.label(t("You can add friends with their Discord username."));
 			ui.add_space(18.0);
-			let label = ui.label("Username");
+			let label = ui.label(t("Username"));
 			let input = ui
 				.add_sized(
 					[ui.available_width(), 48.0],
 					egui::TextEdit::singleline(&mut self.friends.username)
-						.hint_text("Enter a username")
+						.hint_text(t("Enter a username"))
 						.char_limit(33)
 						.align(egui::Align2::LEFT_CENTER)
 						.frame(
@@ -148,9 +149,9 @@ impl MessagingUi {
 					enabled,
 					egui::Button::new(
 						RichText::new(if busy {
-							"Sending…"
+							t("Sending…")
 						} else {
-							"Send Friend Request"
+							t("Send Friend Request")
 						})
 						.color(colors.accent_text),
 					)
@@ -162,9 +163,9 @@ impl MessagingUi {
 				commands.push(command);
 			}
 			if state.demo {
-				ui.colored_label(colors.muted, "Offline demo · actions are simulated.");
+				ui.colored_label(colors.muted, t("Offline demo · actions are simulated."));
 			} else if !state.gateway_connected {
-				ui.label("Reconnect before sending a friend request.");
+				ui.label(t("Reconnect before sending a friend request."));
 			}
 			ui.add_space(8.0);
 			ui.colored_label(
@@ -330,6 +331,7 @@ impl MessagingUi {
 		commands: &mut Vec<Command>,
 	) {
 		let colors = design::palette(ui);
+		let t = |english: &'static str| crate::i18n::text(self.language, english);
 		egui::Frame::new()
 			.inner_margin(egui::Margin::symmetric(24, 8))
 			.show(ui, |ui| {
@@ -337,7 +339,7 @@ impl MessagingUi {
 					ui.set_min_height(32.0);
 					ui.spacing_mut().item_spacing.x = 16.0;
 					icons::inline(ui, Icon::People, 22.0, colors.muted);
-					ui.label(design::semibold(ui, "Friends", 16.0));
+					ui.label(design::semibold(ui, t("Friends"), 16.0));
 					ui.separator();
 					for (tab, title) in [
 						(Tab::Online, "Online"),
@@ -348,7 +350,7 @@ impl MessagingUi {
 					] {
 						if ui
 							.add(
-								egui::Button::new(RichText::new(title).color(if tab == Tab::Add {
+								egui::Button::new(RichText::new(t(title)).color(if tab == Tab::Add {
 									colors.accent_text
 								} else {
 									colors.text
@@ -382,13 +384,13 @@ impl MessagingUi {
 					ui.horizontal_top(|ui| {
 						icons::inline(ui, Icon::ShieldWarning, 18.0, colors.warning);
 						ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-							if icons::button(ui, Icon::Close, 22.0, "Dismiss friend status warning")
+							if icons::button(ui, Icon::Close, 22.0, t("Dismiss friend status warning"))
 								.clicked()
 							{
 								self.friends.presence_warning_dismissed = Some(state.generation);
 							}
 							ui.with_layout(egui::Layout::left_to_right(egui::Align::TOP), |ui| {
-								ui.add(egui::Label::new("Some friends’ online status and activity couldn’t be loaded. The Online list may be incomplete.").wrap());
+								ui.add(egui::Label::new(t("Some friends’ online status and activity couldn’t be loaded. The Online list may be incomplete.")).wrap());
 							});
 						});
 					});
@@ -416,7 +418,7 @@ impl MessagingUi {
 							let search = ui.add(
 								egui::TextEdit::singleline(&mut self.friends.query)
 									.id(egui::Id::unique("friends-search"))
-									.hint_text("Search")
+									.hint_text(t("Search"))
 									.char_limit(128)
 									.frame(egui::Frame::NONE)
 									.desired_width(ui.available_width()),
@@ -434,11 +436,11 @@ impl MessagingUi {
 				ui.label(
 					RichText::new(format!(
 						"{} \u{2014} {}",
-						match self.friends.tab {
+						t(match self.friends.tab {
 							Tab::All => "All friends",
 							Tab::Restricted => "Blocked & ignored",
 							_ => "Online",
-						},
+						}),
 						self.friends.list.len()
 					))
 					.size(13.0)
@@ -449,7 +451,7 @@ impl MessagingUi {
 				if self.friends.list.is_empty() {
 					ui.add_space(20.0);
 					ui.label(
-						RichText::new(
+						RichText::new(t(
 							if self.friends.tab == Tab::Restricted
 								&& !state.restricted_users_known()
 							{
@@ -470,7 +472,7 @@ impl MessagingUi {
 							} else {
 								"No friends are currently online."
 							},
-						)
+						))
 						.color(colors.muted),
 					);
 					return;
@@ -497,7 +499,8 @@ impl MessagingUi {
 								continue;
 							};
 							ui.push_id(user.id.0, |ui| {
-								let (status, custom, activities, clients) = if restricted.is_some() {
+								let (status, custom, activities, clients) = if restricted.is_some()
+								{
 									(None, None, &[][..], model::ClientPlatforms::default())
 								} else {
 									profiles::presence(state, user.id, None)

@@ -33,38 +33,43 @@ pub(super) fn show(
 	bindings: &mut Keybinds,
 	capturing: &mut Option<KeybindAction>,
 	global_status: &str,
+	language: model::Language,
 ) {
 	let colors = design::palette(ui);
+	let t = |english: &'static str| crate::i18n::text(language, english);
 	section(
 		ui,
-		"Navigation",
-		"Move around Serein without reaching for the mouse.",
+		t("Navigation"),
+		t("Move around Serein without reaching for the mouse."),
 		NAVIGATION,
 		bindings,
 		capturing,
+		language,
 	);
 	section(
 		ui,
-		"Messages",
-		"Composer shortcuts are only active while you are writing.",
+		t("Messages"),
+		t("Composer shortcuts are only active while you are writing."),
 		MESSAGES,
 		bindings,
 		capturing,
+		language,
 	);
 	section(
 		ui,
-		"Text Formatting",
-		"Apply or remove formatting in the composer.",
+		t("Text Formatting"),
+		t("Apply or remove formatting in the composer."),
 		FORMATTING,
 		bindings,
 		capturing,
+		language,
 	);
-	voice_section(ui, bindings, capturing);
+	voice_section(ui, bindings, capturing, language);
 	ui.add_space(10.0);
-	ui.label(design::eyebrow(ui, "Global availability", colors.muted));
+	ui.label(design::eyebrow(ui, t("Global availability"), colors.muted));
 	design::hint(ui, global_status);
 
-	capture(ui, bindings, capturing);
+	capture(ui, bindings, capturing, language);
 }
 
 pub(super) fn show_voice(
@@ -72,27 +77,37 @@ pub(super) fn show_voice(
 	bindings: &mut Keybinds,
 	capturing: &mut Option<KeybindAction>,
 	global_status: &str,
+	language: model::Language,
 ) {
 	let colors = design::palette(ui);
-	voice_section(ui, bindings, capturing);
+	voice_section(ui, bindings, capturing, language);
 	ui.add_space(10.0);
-	ui.label(design::eyebrow(ui, "Global availability", colors.muted));
+	ui.label(design::eyebrow(
+		ui,
+		crate::i18n::text(language, "Global availability"),
+		colors.muted,
+	));
 	design::hint(ui, global_status);
-	capture(ui, bindings, capturing);
+	capture(ui, bindings, capturing, language);
 }
 
 fn voice_section(
 	ui: &mut egui::Ui,
 	bindings: &mut Keybinds,
 	capturing: &mut Option<KeybindAction>,
+	language: model::Language,
 ) {
 	section(
 		ui,
-		"Voice",
-		"Control your microphone and incoming audio during a connected call.",
+		crate::i18n::text(language, "Voice"),
+		crate::i18n::text(
+			language,
+			"Control your microphone and incoming audio during a connected call.",
+		),
 		VOICE,
 		bindings,
 		capturing,
+		language,
 	);
 }
 
@@ -113,7 +128,12 @@ impl Default for ConflictNotice {
 	}
 }
 
-fn capture(ui: &mut egui::Ui, bindings: &mut Keybinds, capturing: &mut Option<KeybindAction>) {
+fn capture(
+	ui: &mut egui::Ui,
+	bindings: &mut Keybinds,
+	capturing: &mut Option<KeybindAction>,
+	_language: model::Language,
+) {
 	if let Some(action) = *capturing {
 		let mut captured = None;
 		let mut cancelled = false;
@@ -172,6 +192,7 @@ fn section(
 	actions: &[KeybindAction],
 	bindings: &mut Keybinds,
 	capturing: &mut Option<KeybindAction>,
+	language: model::Language,
 ) {
 	design::group(ui, title, |ui| {
 		design::hint(ui, description);
@@ -180,7 +201,7 @@ fn section(
 			if index > 0 {
 				design::card_divider(ui);
 			}
-			row(ui, action, bindings, capturing);
+			row(ui, action, bindings, capturing, language);
 		}
 	});
 }
@@ -190,6 +211,7 @@ fn row(
 	action: KeybindAction,
 	bindings: &mut Keybinds,
 	capturing: &mut Option<KeybindAction>,
+	language: model::Language,
 ) {
 	let colors = design::palette(ui);
 	let active = *capturing == Some(action);
@@ -217,8 +239,9 @@ fn row(
 					(1.0 - (elapsed - FADE_START) / (TOTAL_DURATION - FADE_START)).clamp(0.0, 1.0);
 			}
 			conflict_text = Some(format!(
-				"Already bound to {}.",
-				n.conflicting_action.label()
+				"{} {}.",
+				crate::i18n::text(language, "Already bound to"),
+				crate::i18n::text(language, n.conflicting_action.label())
 			));
 		}
 	}
@@ -229,7 +252,7 @@ fn row(
 			egui::vec2((ui.available_width() - 210.0).max(0.0), 46.0),
 			egui::Layout::left_to_right(egui::Align::Center),
 			|ui| {
-				ui.label(action.label());
+				ui.label(crate::i18n::text(language, action.label()));
 				if action.is_global() {
 					ui.label(RichText::new("GLOBAL").size(10.0).color(colors.accent));
 				}
@@ -620,7 +643,7 @@ mod tests {
 				..Default::default()
 			},
 			|ui| {
-				capture(ui, &mut bindings, &mut capturing);
+				capture(ui, &mut bindings, &mut capturing, model::Language::English);
 			},
 		);
 		output.textures_delta.clear();

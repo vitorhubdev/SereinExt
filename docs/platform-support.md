@@ -191,15 +191,14 @@ interaction; an actual Windows sign-out/sign-in has not been exercised.
 
 ## In-app updates
 
-Settings → Updates provides automatic checking/downloading, Production and Nightly
-release channels, a manual check and an explicit restart action. The title strip
-shows an available or downloaded update on macOS, Windows and Linux. Update controls are
-also accessible from the signed-out screen. Automatic checking runs at startup
-once saved preferences are available, then every hour while running; turning
-it off disables automatic downloads while background checks and title-bar notices
-remain active. Nightly is the default channel and automatic downloads are off by
-default. Switching channels never installs an
-older semantic version. Nightly checks inspect the latest 100 published releases.
+Settings → Updates checks GitHub production releases, shows in-app status, and
+offers Check / Download / Restart. The title strip shows an available or
+downloaded update on macOS, Windows and Linux. Update controls are also
+accessible from the signed-out screen. A background check runs at startup
+once saved preferences are available, then every hour while running. Automatic
+downloads stay off unless a leftover `auto_update` preference is already saved.
+The production channel is forced; Nightly is not selectable. A leftover Nightly
+preference never installs an older semantic version.
 
 Packages come from this repository's existing GitHub releases and must match the
 platform/architecture asset name, published length and `SHA256SUMS.txt`. Downloads

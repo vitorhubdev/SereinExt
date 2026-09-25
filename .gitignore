@@ -1,6 +1,53 @@
+# Build outputs
 /target/
 /dist/
-.DS_Store
+
+# Dependencies & caches
 node_modules/
 __pycache__/
-PLAN*.MD
+*.pyc
+*.rs.bk
+
+# Local audits, plans, notes & scratch files (only official docs/README belong in repo)
+audit/
+audits/
+scratch/
+[pP][lL][aA][nN]*.[mM][dD]
+[pP][lL][aA][nN][oO]*.[mM][dD]
+[tT][oO][dD][oO]*.[mM][dD]
+[nN][oO][tT][eE][sS]*.[mM][dD]
+*audit*.[mM][dD]
+*auditoria*.[mM][dD]
+
+# Release bundles, archives & checksums
+*.zip
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+SHA256SUMS*.txt
+
+# Logs & crash reports
+*.log
+*.crash
+*.dmp
+
+# Environment & local credentials
+.env
+.env.*
+!.env.example
+
+# IDEs & editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# Operating System files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+[dD]esktop.ini

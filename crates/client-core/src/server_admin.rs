@@ -376,8 +376,7 @@ impl State {
 			&& !self.server_admin.pending
 			&& !self.server_settings.saving
 			&& !self.server_admin.needs_refresh
-			&& (self.demo
-				|| (self.auth == AuthState::Authenticated && self.gateway_connected))
+			&& (self.demo || (self.auth == AuthState::Authenticated && self.gateway_connected))
 			&& self
 				.channel(from)
 				.is_some_and(|channel| channel.guild == Some(guild) && channel.kind == 2)
@@ -386,28 +385,17 @@ impl State {
 				model::permissions::VIEW_CHANNEL | model::permissions::MOVE_MEMBERS,
 			) == Some(true)
 			&& self.voice.roster.iter().any(|entry| {
-				entry.guild == guild
-					&& entry.channel == from
-					&& entry.participant.user == user
+				entry.guild == guild && entry.channel == from && entry.participant.user == user
 			})
 	}
 	/// Permission and freshness fence used both when dropping and immediately before the
 	/// REST write. The voice roster is authoritative for the source channel.
-	pub fn can_move_voice_member(
-		&self,
-		guild: Id,
-		user: Id,
-		from: Id,
-		channel: Id,
-	) -> bool {
+	pub fn can_move_voice_member(&self, guild: Id, user: Id, from: Id, channel: Id) -> bool {
 		user.0 != 0
-			&& (self.demo
-				|| (self.auth == AuthState::Authenticated && self.gateway_connected))
+			&& (self.demo || (self.auth == AuthState::Authenticated && self.gateway_connected))
 			&& self.voice_move_scope_allowed(guild, from, channel)
 			&& self.voice.roster.iter().any(|entry| {
-				entry.guild == guild
-					&& entry.channel == from
-					&& entry.participant.user == user
+				entry.guild == guild && entry.channel == from && entry.participant.user == user
 			})
 	}
 
@@ -1032,7 +1020,9 @@ mod member_kick_tests {
 				id: guild,
 				owner: Some(owner),
 				member: Some(p::Member {
-					roles: (!owner_actor).then_some(vec![actor_role]).unwrap_or_default(),
+					roles: (!owner_actor)
+						.then_some(vec![actor_role])
+						.unwrap_or_default(),
 					timeout_until: None,
 				}),
 				roles: Some(vec![
@@ -1052,7 +1042,14 @@ mod member_kick_tests {
 				admin_member(3, vec![older_peer]),
 				admin_member(5, vec![newer_peer]),
 				admin_member(4, vec![higher]),
-				admin_member(actor.0, if owner_actor { vec![] } else { vec![actor_role] }),
+				admin_member(
+					actor.0,
+					if owner_actor {
+						vec![]
+					} else {
+						vec![actor_role]
+					},
+				),
 			],
 			total: 5,
 			..Default::default()
@@ -1092,7 +1089,11 @@ mod member_kick_tests {
 					.roles
 					.as_mut()
 					.unwrap();
-				roles.iter_mut().find(|role| role.id == Id(20)).unwrap().bits = 0;
+				roles
+					.iter_mut()
+					.find(|role| role.id == Id(20))
+					.unwrap()
+					.bits = 0;
 				moderator.permissions.clear_cache();
 				assert!(!moderator.can_kick_guild_member(guild, Id(2)));
 			}

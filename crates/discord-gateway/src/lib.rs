@@ -19,11 +19,7 @@ pub use discord_protocol::activity_sessions::Observation as ActivityObservation;
 use discord_protocol::*;
 use futures_util::{SinkExt, StreamExt};
 use model::{Freshness, Id, Member, MemberList};
-use std::{
-	collections::BTreeMap,
-	sync::Arc,
-	time::{Duration, SystemTime, UNIX_EPOCH},
-};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use tokio::{
 	sync::{mpsc, watch},
 	time::{Instant, interval_at, sleep, timeout},
@@ -160,11 +156,12 @@ fn next_attempt(attempt: u32, ready_for: Option<Duration>) -> u32 {
 	}
 }
 fn jitter_ms(max: u64) -> u64 {
-	SystemTime::now()
-		.duration_since(UNIX_EPOCH)
-		.unwrap_or_default()
-		.subsec_nanos() as u64
-		% max.max(1)
+	let mut buf = [0u8; 4];
+	if getrandom::fill(&mut buf).is_err() {
+		return 0;
+	}
+	let bound = max.max(1) as u32;
+	(u32::from_le_bytes(buf) % bound) as u64
 }
 
 // Explicit troubleshooting only. Each scope shares its budgets across reconnects.
@@ -2596,6 +2593,12 @@ mod tests {
             },Some(&endpoint));
             let ((),result)=tokio::join!(server,client);assert_eq!(result,Err(Failure::Expired));
         }).await.unwrap();
+	}
+	#[test]
+	fn jitter_stays_within_max() {
+		for max in [1_u64, 1000, 4000] {
+			assert!(jitter_ms(max) < max);
+		}
 	}
 	#[test]
 	fn heartbeat_resume_and_origin_boundaries() {

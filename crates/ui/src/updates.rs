@@ -24,7 +24,7 @@ impl Default for Updates {
 	fn default() -> Self {
 		Self {
 			auto_update: false,
-			nightly: true,
+			nightly: false,
 			status: "Updates have not been checked yet.".into(),
 			busy: false,
 			available: false,
@@ -63,11 +63,20 @@ impl MessagingUi {
 		let ready = self.updates.ready;
 		let colors = design::palette(ui);
 		let (label, icon) = if ready {
-			("Restart to update", icons::Icon::Reload)
+			(
+				crate::i18n::text(self.language, "Restart to update"),
+				icons::Icon::Reload,
+			)
 		} else if self.updates.busy {
-			("Updating…", icons::Icon::Download)
+			(
+				crate::i18n::text(self.language, "Updating…"),
+				icons::Icon::Download,
+			)
 		} else {
-			("Update available", icons::Icon::Download)
+			(
+				crate::i18n::text(self.language, "Update available"),
+				icons::Icon::Download,
+			)
 		};
 		let status = self.updates.status.clone();
 		// Reserve the row and interact with it *before* the dismiss button below is added, so

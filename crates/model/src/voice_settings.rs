@@ -9,12 +9,26 @@ pub enum InputProfile {
 	Custom,
 }
 
+/// Ordered from lightest to heaviest CPU cost, which is also how the UI presents them.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum NoiseSuppression {
 	Off,
+	WebRtc,
 	#[default]
 	RnNoise,
-	WebRtc,
+	DeepFilter,
+}
+impl NoiseSuppression {
+	pub const ALL: [Self; 4] = [Self::Off, Self::WebRtc, Self::RnNoise, Self::DeepFilter];
+	/// 0 for off through 3 for the heaviest model.
+	pub fn level(self) -> u8 {
+		match self {
+			Self::Off => 0,
+			Self::WebRtc => 1,
+			Self::RnNoise => 2,
+			Self::DeepFilter => 3,
+		}
+	}
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

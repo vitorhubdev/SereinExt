@@ -68,6 +68,7 @@ pub struct Gate {
 	echo_reset: AtomicBool,
 	preview_level: AtomicU16,
 	processing_ready: AtomicBool,
+	deep_fallback: AtomicBool,
 }
 impl Default for Gate {
 	fn default() -> Self {
@@ -88,6 +89,7 @@ impl Default for Gate {
 			echo_reset: AtomicBool::new(false),
 			preview_level: AtomicU16::new(0),
 			processing_ready: AtomicBool::new(true),
+			deep_fallback: AtomicBool::new(false),
 		}
 	}
 }
@@ -192,7 +194,7 @@ impl Audio {
 				let mut opened_once = false;
 				// Unplugged headphones or a changed system default reopen devices instead of
 				// ending the call; only a persistent failure is reported.
-				let mut recovery_attempts = 0u8;
+				let mut recovery_since: Option<Instant> = None;
 				let mut next_default_check = Instant::now();
 				let mut next_input_retry = Instant::now() + Duration::from_secs(2);
 				'audio: while !worker_gate.stopped.load(Ordering::Acquire) {
@@ -200,12 +202,12 @@ impl Audio {
 					let current = selected.borrow_and_update().clone();
 					if last_selection.as_ref() != Some(&current) {
 						last_selection = Some(current.clone());
-						recovery_attempts = 0;
+						recovery_since = None;
 					}
 					if streams.is_some()
 						&& opened_at.is_some_and(|at| at.elapsed() >= Duration::from_secs(5))
 					{
-						recovery_attempts = 0;
+						recovery_since = None;
 					}
 					if streams
 						.as_ref()
@@ -238,13 +240,14 @@ impl Audio {
 					if worker_gate.failed_revision.load(Ordering::Acquire) == revision
 						&& worker_gate.revision.load(Ordering::Acquire) == revision
 					{
-						if recovery_attempts >= MAX_RECOVERY_ATTEMPTS {
-							emit(Err(
-								"Audio device stopped or disconnected; choose a device and call again",
-							));
+						let now = Instant::now();
+						if recovery_since.is_none() {
+							recovery_since = Some(now);
+						}
+						if recovery_window_elapsed(recovery_since, now) {
+							emit(Err(RECOVERY_FAILURE));
 							break;
 						}
-						recovery_attempts += 1;
 						worker_gate.revision.fetch_add(1, Ordering::AcqRel);
 						streams = None;
 						std::thread::park_timeout(RECOVERY_DELAY);
@@ -255,7 +258,7 @@ impl Audio {
 							&current,
 							worker_gate.clone(),
 							revision,
-							recovery_attempts > 0,
+							recovery_since.is_some(),
 						) {
 							Ok(value) => {
 								if !worker_gate.acknowledge(revision) {
@@ -265,6 +268,7 @@ impl Audio {
 								worker_gate.echo_reset.store(true, Ordering::Release);
 								opened_at = Some(Instant::now());
 								opened_once = true;
+								recovery_since = None;
 								emit(Ok(()));
 							}
 							Err(error) => {
@@ -273,10 +277,15 @@ impl Audio {
 								{
 									continue;
 								}
-								if opened_once && recovery_attempts < MAX_RECOVERY_ATTEMPTS {
-									recovery_attempts += 1;
-									std::thread::park_timeout(RECOVERY_DELAY);
-									continue;
+								if opened_once {
+									let now = Instant::now();
+									if recovery_since.is_none() {
+										recovery_since = Some(now);
+									}
+									if !recovery_window_elapsed(recovery_since, now) {
+										std::thread::park_timeout(RECOVERY_DELAY);
+										continue;
+									}
 								}
 								emit(Err(error));
 								break;
@@ -409,6 +418,13 @@ impl Audio {
 							drops += u64::from(active.output.push(frame).is_err());
 						}
 					}
+					let deep_fallback = echo.deep_fallback();
+					let reported = worker_gate
+						.deep_fallback
+						.swap(deep_fallback, Ordering::AcqRel);
+					if deep_fallback && !reported {
+						emit(Ok(())); // Wake the UI to switch the saved choice and explain why.
+					}
 					metrics.poll(reset, drops, false, noise_frames);
 					std::thread::park_timeout(Duration::from_millis(5));
 				}
@@ -466,6 +482,10 @@ impl Audio {
 	pub fn is_ready(&self) -> bool {
 		self.gate.is_ready() && self.gate.processing_ready.load(Ordering::Acquire)
 	}
+	/// DeepFilterNet was selected but could not load or keep up; RNNoise is running instead.
+	pub fn deep_filter_fallback(&self) -> bool {
+		self.gate.deep_fallback.load(Ordering::Acquire)
+	}
 	pub fn microphone_unavailable(&self) -> bool {
 		self.gate.input_enabled.load(Ordering::Acquire)
 			&& self.gate.input_failed_revision.load(Ordering::Acquire)
@@ -513,9 +533,15 @@ impl Drop for Audio {
 	}
 }
 
-/// Six seconds of reopen attempts before a device loss ends the call.
-const MAX_RECOVERY_ATTEMPTS: u8 = 24;
+/// Two minutes of reopen attempts before a device loss ends the call.
+const RECOVERY_WINDOW: Duration = Duration::from_secs(120);
 const RECOVERY_DELAY: Duration = Duration::from_millis(250);
+const RECOVERY_FAILURE: &str =
+	"Audio device stopped or disconnected; choose a device and call again";
+
+fn recovery_window_elapsed(since: Option<Instant>, now: Instant) -> bool {
+	since.is_some_and(|start| now.saturating_duration_since(start) >= RECOVERY_WINDOW)
+}
 
 struct Streams {
 	processing: Processing,
@@ -1406,5 +1432,27 @@ mod tests {
 		assert!(audio.microphone_unavailable());
 		gate.reopen_input(revision, || Ok(())).unwrap();
 		assert!(!audio.microphone_unavailable());
+	}
+
+	#[test]
+	fn microphone_recovery_stays_alive_through_thirty_second_outage() {
+		let start = Instant::now();
+		assert!(!recovery_window_elapsed(
+			Some(start),
+			start + Duration::from_secs(30)
+		));
+	}
+
+	#[test]
+	fn microphone_recovery_gives_up_after_two_minute_window() {
+		let start = Instant::now();
+		assert!(recovery_window_elapsed(
+			Some(start),
+			start + Duration::from_secs(150)
+		));
+		assert_eq!(
+			RECOVERY_FAILURE,
+			"Audio device stopped or disconnected; choose a device and call again"
+		);
 	}
 }

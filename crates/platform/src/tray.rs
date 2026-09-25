@@ -19,6 +19,91 @@ pub const fn supported() -> bool {
 	))
 }
 
+/// Call state shown on the tray icon, like Discord's tray variants.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Voice {
+	#[default]
+	Idle,
+	Connected,
+	Muted,
+	Deafened,
+}
+
+/// Square straight-alpha RGBA tray icon: the app icon scaled to `size`, with a red dot for
+/// unread mentions (top right) and a call dot (bottom right: green, or red with a slash when
+/// muted and a bar when deafened). Each dot is cut out of the icon so it reads at 16 px.
+pub fn status_icon(png: &[u8], size: u32, mentions: bool, voice: Voice) -> Option<Vec<u8>> {
+	let base = image::load_from_memory_with_format(png, image::ImageFormat::Png).ok()?;
+	let mut pixels = base
+		.resize_exact(size, size, image::imageops::FilterType::Lanczos3)
+		.into_rgba8()
+		.into_raw();
+	let scale = size as f32 / 32.0;
+	const GREEN: [u8; 3] = [0x23, 0xa5, 0x5a];
+	const RED: [u8; 3] = [0xf2, 0x3f, 0x43];
+	let mut dots = Vec::new();
+	if mentions {
+		dots.push(((26.0, 6.0), 5.5, RED, None));
+	}
+	match voice {
+		Voice::Idle => {}
+		Voice::Connected => dots.push(((24.5, 24.5), 7.0, GREEN, None)),
+		Voice::Muted => dots.push(((24.5, 24.5), 7.0, RED, Some(true))),
+		Voice::Deafened => dots.push(((24.5, 24.5), 7.0, RED, Some(false))),
+	}
+	for y in 0..size {
+		for x in 0..size {
+			let index = ((y * size + x) * 4) as usize;
+			let pixel = &mut pixels[index..index + 4];
+			for &((cx, cy), radius, color, glyph) in &dots {
+				let (cx, cy, radius) = (cx * scale, cy * scale, radius * scale);
+				// 4x4 supersampling for smooth edges at tray sizes.
+				let cover = |inside: &dyn Fn(f32, f32) -> bool| {
+					let hits = (0..16)
+						.filter(|sample| {
+							let px = x as f32 + (sample % 4) as f32 * 0.25 + 0.125;
+							let py = y as f32 + (sample / 4) as f32 * 0.25 + 0.125;
+							inside(px, py)
+						})
+						.count();
+					hits as f32 / 16.0
+				};
+				let within =
+					|r: f32| move |px: f32, py: f32| (px - cx).powi(2) + (py - cy).powi(2) <= r * r;
+				let gap = cover(&within(radius + 1.6 * scale));
+				pixel[3] = (f32::from(pixel[3]) * (1.0 - gap)) as u8;
+				let fill = cover(&within(radius));
+				let bar = 1.1 * scale;
+				let mark = match glyph {
+					None => 0.0,
+					Some(true) => cover(&|px, py| {
+						let (dx, dy) = (px - cx, py - cy);
+						(dx + dy).abs() <= bar * std::f32::consts::SQRT_2
+							&& dx.abs() <= radius * 0.55
+							&& dy.abs() <= radius * 0.55
+					}),
+					Some(false) => {
+						cover(&|px, py| (py - cy).abs() <= bar && (px - cx).abs() <= radius * 0.55)
+					}
+				};
+				if fill > 0.0 {
+					let ink: [f32; 3] =
+						std::array::from_fn(|i| f32::from(color[i]) * (1.0 - mark) + 255.0 * mark);
+					let under = f32::from(pixel[3]) / 255.0;
+					let alpha = fill + under * (1.0 - fill);
+					for (channel, ink) in pixel[..3].iter_mut().zip(ink) {
+						let blended =
+							(ink * fill + f32::from(*channel) * under * (1.0 - fill)) / alpha;
+						*channel = blended.round().clamp(0.0, 255.0) as u8;
+					}
+					pixel[3] = (alpha * 255.0).round() as u8;
+				}
+			}
+		}
+	}
+	Some(pixels)
+}
+
 #[cfg(any(target_os = "windows", target_os = "macos", test))]
 #[derive(Default)]
 struct Events(std::cell::Cell<u8>);
@@ -98,7 +183,9 @@ mod native {
 	}
 
 	struct State {
-		icon: NOTIFYICONDATAW,
+		icon: Cell<NOTIFYICONDATAW>,
+		/// Status icon created by `set_icon`; the window's own icon is only borrowed.
+		owned: Cell<Option<HICON>>,
 		menu: HMENU,
 		previous: WNDPROC,
 		restart: u32,
@@ -174,7 +261,8 @@ mod native {
 			}
 			let tray = Self {
 				state: Rc::new(State {
-					icon: data,
+					icon: Cell::new(data),
+					owned: Cell::new(None),
 					menu,
 					previous,
 					restart,
@@ -218,17 +306,73 @@ mod native {
 		pub fn take_event(&self) -> Option<Event> {
 			self.state.events.take()
 		}
+
+		/// Replaces the tray picture with square straight-alpha RGBA pixels and sets the hover
+		/// text. False leaves the previous icon in place.
+		pub fn set_icon(&self, rgba: &[u8], size: u32, tooltip: &str) -> bool {
+			let side = size as usize;
+			if size == 0 || size > 256 || rgba.len() != side * side * 4 {
+				return false;
+			}
+			let stride = side.div_ceil(16) * 2;
+			let mut mask = vec![0u8; stride * side];
+			let mut pixels = vec![0u8; side * side * 4];
+			for (index, rgba) in rgba.chunks_exact(4).enumerate() {
+				let alpha = u32::from(rgba[3]);
+				if alpha == 0 {
+					mask[(index / side) * stride + (index % side) / 8] |= 0x80 >> (index % 8);
+				}
+				let premultiply = |value: u8| (u32::from(value) * alpha / 255) as u8;
+				pixels[index * 4..index * 4 + 4].copy_from_slice(&[
+					premultiply(rgba[2]),
+					premultiply(rgba[1]),
+					premultiply(rgba[0]),
+					rgba[3],
+				]);
+			}
+			// SAFETY: the buffers hold exactly a size x size WORD-aligned AND mask and BGRA pixels.
+			let Ok(icon) = (unsafe {
+				CreateIcon(
+					None,
+					size as i32,
+					size as i32,
+					1,
+					32,
+					mask.as_ptr(),
+					pixels.as_ptr(),
+				)
+			}) else {
+				return false;
+			};
+			let mut data = self.state.icon.get();
+			data.hIcon = icon;
+			data.szTip = [0; 128];
+			for (slot, unit) in data.szTip.iter_mut().take(127).zip(tooltip.encode_utf16()) {
+				*slot = unit;
+			}
+			self.state.icon.set(data);
+			if self.state.present.get() {
+				// SAFETY: modifies only this application's registered notification icon.
+				let _ = unsafe { Shell_NotifyIconW(NIM_MODIFY, &data) };
+			}
+			if let Some(previous) = self.state.owned.replace(Some(icon)) {
+				// SAFETY: the shell copied the new icon; the replaced one is owned and unused.
+				let _ = unsafe { DestroyIcon(previous) };
+			}
+			true
+		}
 	}
 
 	impl State {
 		fn add_icon(&self) -> bool {
+			let icon = self.icon.get();
 			// SAFETY: this initialized descriptor contains only live borrowed handles and fixed text.
 			unsafe {
-				if !Shell_NotifyIconW(NIM_ADD, &self.icon).as_bool() {
+				if !Shell_NotifyIconW(NIM_ADD, &icon).as_bool() {
 					return false;
 				}
-				if !Shell_NotifyIconW(NIM_SETVERSION, &self.icon).as_bool() {
-					let _ = Shell_NotifyIconW(NIM_DELETE, &self.icon);
+				if !Shell_NotifyIconW(NIM_SETVERSION, &icon).as_bool() {
+					let _ = Shell_NotifyIconW(NIM_DELETE, &icon);
 					return false;
 				}
 			}
@@ -238,14 +382,15 @@ mod native {
 		fn remove_icon(&self) {
 			if self.present.replace(false) {
 				// SAFETY: hwnd/uID identify only this application's owned notification icon.
-				let _ = unsafe { Shell_NotifyIconW(NIM_DELETE, &self.icon) };
+				let _ = unsafe { Shell_NotifyIconW(NIM_DELETE, &self.icon.get()) };
 			}
 		}
 		fn restore(&self) {
+			let hwnd = self.icon.get().hWnd;
 			// SAFETY: called while the retained window/subclass is live on its owning thread.
 			unsafe {
-				let _ = ShowWindow(self.icon.hWnd, SW_RESTORE);
-				let _ = SetForegroundWindow(self.icon.hWnd);
+				let _ = ShowWindow(hwnd, SW_RESTORE);
+				let _ = SetForegroundWindow(hwnd);
 			}
 		}
 		fn emit(&self, event: Event) {
@@ -254,23 +399,24 @@ mod native {
 		}
 		fn menu(&self) {
 			let mut cursor = POINT::default();
+			let hwnd = self.icon.get().hWnd;
 			// SAFETY: live owned menu/window and stack cursor; TrackPopupMenu runs a nested UI loop.
 			let command = unsafe {
 				if GetCursorPos(&mut cursor).is_err() {
 					return;
 				}
-				let _ = SetForegroundWindow(self.icon.hWnd);
+				let _ = SetForegroundWindow(hwnd);
 				let command = TrackPopupMenu(
 					self.menu,
 					TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
 					cursor.x,
 					cursor.y,
 					None,
-					self.icon.hWnd,
+					hwnd,
 					None,
 				)
 				.0 as usize;
-				let _ = PostMessageW(Some(self.icon.hWnd), WM_NULL, WPARAM(0), LPARAM(0));
+				let _ = PostMessageW(Some(hwnd), WM_NULL, WPARAM(0), LPARAM(0));
 				command
 			};
 			self.activate(command);
@@ -293,7 +439,7 @@ mod native {
 			if self.state.hooked.get() {
 				// SAFETY: Rc makes Tray !Send; only restore our hook if it is still atop the chain.
 				unsafe {
-					let hwnd = self.state.icon.hWnd;
+					let hwnd = self.state.icon.get().hWnd;
 					if GetWindowLongPtrW(hwnd, GWLP_WNDPROC) == callback as *const () as isize
 						&& SetWindowLongPtrW(
 							hwnd,
@@ -315,6 +461,10 @@ mod native {
 		fn drop(&mut self) {
 			// SAFETY: this state owns the menu; callback Rc copies keep it alive during nested menus.
 			let _ = unsafe { DestroyMenu(self.menu) };
+			if let Some(icon) = self.owned.take() {
+				// SAFETY: created by `set_icon` and owned here; the notification icon is gone.
+				let _ = unsafe { DestroyIcon(icon) };
+			}
 		}
 	}
 
@@ -336,7 +486,7 @@ mod native {
 			Rc::increment_strong_count(pointer);
 			Rc::from_raw(pointer)
 		};
-		if state.enabled.get() && message == state.icon.uCallbackMessage {
+		if state.enabled.get() && message == state.icon.get().uCallbackMessage {
 			match lparam.0 as u32 & 0xffff {
 				NIN_SELECT | NIN_KEYSELECT => {
 					state.restore();
@@ -395,8 +545,8 @@ mod native {
 			let wakes = Rc::new(Cell::new(0));
 			let wake = wakes.clone();
 			let tray = Tray::new(window.clone(), move || wake.set(wake.get() + 1)).unwrap();
-			let hwnd = tray.state.icon.hWnd;
-			let icon = tray.state.icon;
+			let icon = tray.state.icon.get();
+			let hwnd = icon.hWnd;
 			assert!(Tray::new(window.clone(), || {}).is_err());
 			// SAFETY: every API here targets only this test-owned synthetic window/menu/icon.
 			unsafe {
@@ -412,6 +562,11 @@ mod native {
 				assert!(IsWindowVisible(hwnd).as_bool());
 				assert!(!IsIconic(hwnd).as_bool());
 				assert_eq!(tray.take_event(), Some(Event::Show));
+				let status = vec![255u8; 32 * 32 * 4];
+				assert!(tray.set_icon(&status, 32, "Serein — test status"));
+				assert!(tray.set_icon(&status, 32, "Serein — replaced"));
+				assert!(!tray.set_icon(&status[..16], 32, "wrong size"));
+				assert!(tray.state.owned.get().is_some());
 				tray.state.remove_icon();
 				let _ = SendMessageW(hwnd, tray.state.restart, None, None);
 				assert!(tray.state.present.get());
@@ -447,6 +602,67 @@ mod native {
 #[cfg(test)]
 mod tests {
 	use super::*;
+
+	fn plain_png() -> Vec<u8> {
+		let image = image::RgbaImage::from_pixel(64, 64, image::Rgba([40, 120, 220, 255]));
+		let mut png = Vec::new();
+		image::DynamicImage::ImageRgba8(image)
+			.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+			.unwrap();
+		png
+	}
+
+	#[test]
+	fn status_icon_marks_mentions_and_call_state_in_the_corners() {
+		let png = plain_png();
+		let at = |pixels: &[u8], x: usize, y: usize| {
+			let index = (y * 32 + x) * 4;
+			[
+				pixels[index],
+				pixels[index + 1],
+				pixels[index + 2],
+				pixels[index + 3],
+			]
+		};
+		let idle = status_icon(&png, 32, false, Voice::Idle).unwrap();
+		assert_eq!(idle.len(), 32 * 32 * 4);
+		assert_eq!(at(&idle, 26, 6), [40, 120, 220, 255]);
+		assert_eq!(at(&idle, 24, 24), [40, 120, 220, 255]);
+
+		let pinged = status_icon(&png, 32, true, Voice::Connected).unwrap();
+		assert_eq!(
+			at(&pinged, 26, 6),
+			[0xf2, 0x3f, 0x43, 255],
+			"red mention dot"
+		);
+		assert_eq!(
+			at(&pinged, 21, 21),
+			[0x23, 0xa5, 0x5a, 255],
+			"green call dot"
+		);
+		assert_eq!(
+			at(&pinged, 16, 16),
+			[40, 120, 220, 255],
+			"the icon stays visible"
+		);
+		assert!(
+			at(&pinged, 16, 25)[3] < 255,
+			"the dot is cut out of the icon"
+		);
+
+		let muted = status_icon(&png, 32, false, Voice::Muted).unwrap();
+		let deafened = status_icon(&png, 32, false, Voice::Deafened).unwrap();
+		assert_eq!(
+			at(&muted, 21, 21),
+			[0xf2, 0x3f, 0x43, 255],
+			"red when muted"
+		);
+		assert_eq!(at(&muted, 24, 24), [255, 255, 255, 255], "muted slash");
+		assert_eq!(at(&deafened, 24, 24), [255, 255, 255, 255], "deafened bar");
+		assert_ne!(muted, deafened, "muted and deafened look different");
+		assert!(status_icon(b"not a png", 32, false, Voice::Idle).is_none());
+	}
+
 	#[test]
 	fn clicks_coalesce_without_losing_quit_or_failure() {
 		let events = Events::default();

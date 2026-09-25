@@ -66,6 +66,7 @@ enum Notice {
 	WaitingForPeer,
 	Progress(Phase),
 	MediaReady(String),
+	Ping(u32),
 	DeviceReady,
 	RemoteAudio,
 }
@@ -110,7 +111,7 @@ impl CallCues {
 		owner: Id,
 		participants: &[voice::Participant],
 	) -> Vec<Sound> {
-		self.joined |= ready;
+		self.joined |= ready && gateway_connected;
 		if !self.joined {
 			return Vec::new();
 		}
@@ -139,9 +140,12 @@ impl CallCues {
 				.iter()
 				.any(|user| *user != 0 && !peers.contains(user))
 		});
-		// The first complete roster is a silent baseline. Only later identity transitions
-		// are audible; joining the call ourselves must never masquerade as another user.
+		// The first roster is the baseline for other people. We still play once for
+		// ourselves, which covers joining and being moved into this call.
 		let mut cues = Vec::with_capacity(2);
+		if previous.is_none() {
+			cues.push(Sound::UserJoin);
+		}
 		if joined_peer {
 			cues.push(Sound::UserJoin);
 		}
@@ -410,7 +414,14 @@ impl Voice {
 	pub fn fail(&mut self, state: &mut State, message: &'static str) -> Option<Command> {
 		self.stop();
 		let call = state.voice.active.as_ref()?;
-		let (channel, request) = (call.channel, call.request);
+		let (channel, request, guild) = (call.channel, call.request, call.guild);
+		let left_with_server = guild.is_some_and(|guild| state.leaving_guild() == Some(guild))
+			|| state.channel(channel).is_none()
+			|| guild.is_some_and(|guild| state.guild(guild).is_none());
+		if left_with_server {
+			state.voice.active = None;
+			return Some(Command::Voice(voice::Command::Leave { channel, request }));
+		}
 		state.apply_voice(voice::Event::Failed {
 			channel,
 			request,
@@ -483,6 +494,8 @@ impl Voice {
 			ui.voice_camera_preview = None;
 			ui.voice_camera_status = "";
 			ui.voice_privacy_code = None;
+			ui.voice_ping_ms = None;
+			ui.voice_server_place.clear();
 			ui.voice_remote_video.clear();
 		}
 		let current = self
@@ -551,7 +564,7 @@ impl Voice {
 			live.audio.set_input_enabled(state.can_speak(call.channel));
 			live.audio
 				.set_gain(ui.voice_gain.input_percent, ui.voice_gain.output_percent);
-			let user_volumes = ui.voice_user_volumes();
+			let user_volumes = ui.voice_mix_volumes(state);
 			let stream_volume = ui.voice_stream_volume();
 			let activity_threshold_db = ui
 				.voice_processing
@@ -623,6 +636,7 @@ impl Voice {
 						ui.voice_privacy_code = Some(code);
 						live.audio.set_ready(true);
 					}
+					Notice::Ping(ms) => ui.voice_ping_ms = Some(ms),
 					// Notices wake the UI; only the current device configuration can be ready.
 					Notice::DeviceReady | Notice::RemoteAudio => {}
 				}
@@ -630,6 +644,9 @@ impl Voice {
 			failure = live.failure.get().copied();
 			let devices_ready = live.audio.is_ready();
 			ui.voice_microphone_unavailable = live.audio.microphone_unavailable();
+			if live.audio.deep_filter_fallback() {
+				ui.voice_noise_fallback();
+			}
 			if ui.voice_settings_open() {
 				ui.voice_preview_level = Some(live.audio.preview_level_db());
 				ctx.request_repaint_after(Duration::from_millis(50));
@@ -893,6 +910,9 @@ impl Voice {
 			return;
 		}
 		ui.voice_preview_level = Some(preview.audio.preview_level_db());
+		if preview.audio.deep_filter_fallback() {
+			ui.voice_noise_fallback();
+		}
 		ui.voice_preview_status = if preview.audio.microphone_unavailable() {
 			"Microphone unavailable; check permission or choose another input. Retrying…"
 		} else if preview.audio.is_ready() {
@@ -1135,7 +1155,7 @@ impl Voice {
 		&mut self,
 		runtime: &Runtime,
 		pending: Pending,
-		ui: &ui::MessagingUi,
+		ui: &mut ui::MessagingUi,
 		ctx: &egui::Context,
 		listen_only: bool,
 		input_enabled: bool,
@@ -1201,6 +1221,8 @@ impl Voice {
 		let session = pending.session.ok_or("Missing voice session")?;
 		let session_copy = Zeroizing::new(session.expose().to_owned());
 		let (token, endpoint) = pending.server.ok_or("Missing voice server")?;
+		ui.voice_ping_ms = None;
+		ui.voice_server_place = ui::voice_server_place(&endpoint).unwrap_or("").to_owned();
 		let credentials = voice::VoiceConnection {
 			channel: pending.channel,
 			request: pending.request,
@@ -1243,6 +1265,11 @@ impl Voice {
 								return Err(());
 							}
 							Notice::MediaReady(privacy_code)
+						}
+						Status::Ping(ms) => {
+							let _ = status.try_send(Notice::Ping(ms));
+							status_wake.request_repaint();
+							return Ok(());
 						}
 						Status::RemoteAudio => Notice::RemoteAudio,
 						Status::Speaking(users) => {
@@ -1402,18 +1429,26 @@ mod tests {
 		let owner = participant(1);
 		let peer = participant(2);
 		let mut cues = CallCues::default();
-		assert!(cues.poll(false, true, owner.user, &[owner, peer]).is_empty());
 		assert!(
-			cues.poll(true, true, owner.user, &[owner, peer]).is_empty(),
-			"the first complete roster is a silent baseline"
+			cues.poll(false, true, owner.user, &[owner, peer])
+				.is_empty()
+		);
+		assert_eq!(
+			cues.poll(true, true, owner.user, &[owner, peer]),
+			vec![Sound::UserJoin],
+			"connecting plays once and does not announce people already in the call"
 		);
 		let mut muted_peer = peer;
 		muted_peer.muted = true;
-		assert!(cues
-			.poll(true, true, owner.user, &[muted_peer, owner])
-			.is_empty());
+		assert!(
+			cues.poll(true, true, owner.user, &[muted_peer, owner])
+				.is_empty()
+		);
 		// Device reopening and rekeying do not announce this same call again.
-		assert!(cues.poll(false, true, owner.user, &[owner, peer]).is_empty());
+		assert!(
+			cues.poll(false, true, owner.user, &[owner, peer])
+				.is_empty()
+		);
 		assert!(cues.poll(true, true, owner.user, &[owner, peer]).is_empty());
 		// Compare identities rather than counts; departures can themselves trigger rekeying.
 		let replacement = participant(3);
@@ -1421,9 +1456,10 @@ mod tests {
 			cues.poll(false, true, owner.user, &[owner, replacement]),
 			vec![Sound::UserJoin, Sound::UserLeave]
 		);
-		assert!(cues
-			.poll(true, true, owner.user, &[owner, replacement])
-			.is_empty());
+		assert!(
+			cues.poll(true, true, owner.user, &[owner, replacement])
+				.is_empty()
+		);
 		assert!(cues.poll(false, false, owner.user, &[]).is_empty());
 		assert_eq!(
 			cues.poll(true, true, owner.user, &[owner, peer]),
@@ -1435,11 +1471,10 @@ mod tests {
 			vec![Sound::UserLeave]
 		);
 		assert!(cues.poll(true, true, owner.user, &[owner]).is_empty());
-		assert!(
-			CallCues::default()
-				.poll(true, true, owner.user, &[owner])
-				.is_empty(),
-			"joining the call ourselves is never announced as a remote user join"
+		assert_eq!(
+			CallCues::default().poll(true, true, owner.user, &[owner]),
+			vec![Sound::UserJoin],
+			"joining or being moved into a call plays once for us"
 		);
 		let moved_in = participant(4);
 		assert_eq!(

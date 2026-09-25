@@ -14,7 +14,6 @@ exclude = ["/tests"]
 members = ["traits", "libcrux_provider", "rust_crypto_provider", "."]
 
 [dependencies]
-log = "0.4"
 serde = { version = "1.0", features = ["derive"], optional = true }
 tls_codec = { version = "0.4.2", features = ["derive"], optional = true }
 subtle = { version = "2.6", default-features = false }

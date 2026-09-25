@@ -20,12 +20,15 @@ discord-gateway = { path = "crates/discord-gateway" }
 session-cache = { path = "crates/session-cache" }
 ui = { path = "crates/ui" }
 test-support = { path = "crates/test-support" }
-eframe = { git = "https://github.com/emilk/egui", rev = "99df44a801749aee958295ed96fccad8dfecb289", default-features = false, features = ["wgpu", "default_fonts", "system_fonts", "accesskit", "wayland", "x11", "links"] }
+eframe = { git = "https://github.com/emilk/egui", rev = "99df44a801749aee958295ed96fccad8dfecb289", default-features = false, features = ["wgpu_no_default_features", "default_fonts", "system_fonts", "accesskit", "wayland", "x11", "links"] }
 egui = { git = "https://github.com/emilk/egui", rev = "99df44a801749aee958295ed96fccad8dfecb289", default-features = false, features = ["default_fonts"] }
 tokio = { version = "1.50", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "fs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
-reqwest = { version = "=0.13.5", default-features = false, features = ["rustls", "json", "stream", "gzip"] }
+# reqwest 0.13 has no rustls-tls-webpki-roots; `rustls` selects aws-lc-rs.
+# rustls-no-provider + workspace rustls/ring keeps TLS on ring.
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+reqwest = { version = "=0.13.5", default-features = false, features = ["rustls-no-provider", "json", "stream", "gzip"] }
 rasterlottie = { version = "=0.2.2", default-features = false }
 tokio-tungstenite = { version = "=0.30.0", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
@@ -48,11 +51,12 @@ global-hotkey = "=0.8.0"
 unsafe_code = "forbid"
 
 [profile.release]
-# Fat LTO inlines across the bundled C libraries (libopus, sqlite, sonora) and drops their
-# unused code; stripping the symbol table removes the 7-8 MB `__LINKEDIT`/`.symtab` from the
-# shipped binary. Line tables still land in the split debug file for symbolicating crashes.
-lto = "fat"
-codegen-units = 1
+# Thin LTO still cross-crate inlines without the fat-LTO link-time cost. Stripping the
+# symbol table removes the 7-8 MB `__LINKEDIT`/`.symtab` from the shipped binary. Line
+# tables still land in the split debug file for symbolicating crashes. panic remains
+# unwind: camera discovery and capture catch panics so a worker crash does not abort.
+lto = "thin"
+codegen-units = 16
 strip = "symbols"
 debug = "line-tables-only"
 
@@ -87,6 +91,35 @@ opt-level = 3
 opt-level = 3
 
 [profile.dev.package.num-complex]
+opt-level = 3
+
+# DeepFilterNet runs a neural network through tract on every 10 ms frame; unoptimized it
+# cannot keep up with real time at all.
+[profile.dev.package.deep_filter]
+opt-level = 3
+
+[profile.dev.package.tract-core]
+opt-level = 3
+
+[profile.dev.package.tract-linalg]
+opt-level = 3
+
+[profile.dev.package.tract-data]
+opt-level = 3
+
+[profile.dev.package.tract-pulse]
+opt-level = 3
+
+[profile.dev.package.tract-onnx]
+opt-level = 3
+
+[profile.dev.package.tract-hir]
+opt-level = 3
+
+[profile.dev.package.tract-nnef]
+opt-level = 3
+
+[profile.dev.package.ndarray]
 opt-level = 3
 
 # Picker and timeline GIF/WebP decoding runs every frame through these codecs and the

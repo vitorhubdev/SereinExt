@@ -169,6 +169,13 @@ strength_reduce 0.2.4 and transpose 0.2.3. Their license declarations and retain
 texts/notices are recorded in docs/dependency-versions.md and
 assets/licenses/voice/PROVENANCE.md and staged by the existing voice packager.
 
+The "Maximum" noise suppression level uses **DeepFilterNet (deep_filter) 0.5.6**
+(MIT OR Apache-2.0), pinned to git tag v0.5.6, with its bundled DeepFilterNet3 model and
+the **tract 0.19.16** inference runtime (MIT OR Apache-2.0). Its license files are
+`assets/licenses/voice/deep_filter-*.txt`. The support crates it adds are listed in
+`Cargo.lock`; `tiny-keccak 2.0.2` is CC0-1.0. Retained texts for tract and those support
+crates remain part of the per-artifact release review.
+
 Optional screen sharing adds **screencapturekit 10.0.3** (MIT OR Apache-2.0) on macOS, **windows-capture 2.0.1** (MIT) on Windows and **openh264 / openh264-sys2 0.9.8** (BSD-2-Clause) for source-built Cisco OpenH264 encoding. It reuses **image 0.25.10** (MIT OR Apache-2.0) for bounded scaling. Native frameworks are supplied by the OS. These dependencies stay behind the existing voice feature. Unmodified available license texts and source provenance are retained in `assets/licenses/voice/PROVENANCE.md`; the noted missing binding license text and existing full per-artifact redistribution review remain outstanding.
 
 Camera sending in the macOS build uses **openh264 0.9.8** and

@@ -189,14 +189,14 @@ impl MessagingUi {
 				"custom-status-editor",
 				crate::i18n::text(self.language, "Custom status"),
 			)
-				.subtitle(crate::i18n::text(
-					self.language,
-					"Shown next to your name across Discord.",
-				))
-				.width(420.0)
-				.show(&ctx, |d| {
-					d.content(|ui| self.custom_status_editor(ui, state));
-				});
+			.subtitle(crate::i18n::text(
+				self.language,
+				"Shown next to your name across Discord.",
+			))
+			.width(420.0)
+			.show(&ctx, |d| {
+				d.content(|ui| self.custom_status_editor(ui, state));
+			});
 			if response.close {
 				self.account_menu.custom_open = false;
 			}
@@ -298,7 +298,7 @@ impl MessagingUi {
 		let others: Vec<model::SavedAccount> = self
 			.accounts
 			.iter()
-			.filter(|account| Some(account.id) != current)
+			.filter(|account| account.has_token && Some(account.id) != current)
 			.cloned()
 			.collect();
 		ui.add_space(10.0);
@@ -323,11 +323,11 @@ impl MessagingUi {
 					egui::Button::new(())
 						.left_text(
 							design::medium(
-							ui,
-							crate::i18n::text(self.language, "Add an account"),
-							14.0,
-						)
-						.color(colors.text_strong),
+								ui,
+								crate::i18n::text(self.language, "Add an account"),
+								14.0,
+							)
+							.color(colors.text_strong),
 						)
 						.frame_when_inactive(false)
 						.corner_radius(6)
@@ -533,8 +533,7 @@ impl MessagingUi {
 					);
 					if ui
 						.button(crate::i18n::text(self.language, "Reload profile"))
-						.clicked()
-						&& let Some(command) = state.load_own_profile()
+						.clicked() && let Some(command) = state.load_own_profile()
 					{
 						commands.push(command);
 					}
@@ -546,12 +545,8 @@ impl MessagingUi {
 	fn account_status_row(&mut self, ui: &mut egui::Ui) {
 		let colors = design::palette(ui);
 		let status = self.own_presence.status;
-		let label = design::medium(
-			ui,
-			crate::i18n::text(self.language, status.label()),
-			14.0,
-		)
-		.color(colors.text_strong);
+		let label = design::medium(ui, crate::i18n::text(self.language, status.label()), 14.0)
+			.color(colors.text_strong);
 		let response = ui
 			.scope(|ui| {
 				let width = ui.available_width();
@@ -597,11 +592,12 @@ impl MessagingUi {
 		for status in PresenceStatus::ALL {
 			let status_label = crate::i18n::text(self.language, status.label());
 			let description = match status {
-				PresenceStatus::DoNotDisturb => crate::i18n::text(
-					self.language,
-					"You will not receive desktop notifications",
-				),
-				PresenceStatus::Invisible => crate::i18n::text(self.language, "You will appear offline"),
+				PresenceStatus::DoNotDisturb => {
+					crate::i18n::text(self.language, "You will not receive desktop notifications")
+				}
+				PresenceStatus::Invisible => {
+					crate::i18n::text(self.language, "You will appear offline")
+				}
 				_ => "",
 			};
 			let height = if description.is_empty() { 40.0 } else { 62.0 };
@@ -611,9 +607,8 @@ impl MessagingUi {
 					.frame_when_inactive(false)
 					.corner_radius(6),
 			);
-			response.widget_info(|| {
-				egui::WidgetInfo::labeled(egui::Role::Button, true, status_label)
-			});
+			response
+				.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, status_label));
 			let x = response.rect.left() + 34.0;
 			let y = response.rect.top() + if description.is_empty() { 11.0 } else { 10.0 };
 			let background = if response.hovered() || response.has_focus() {
@@ -795,7 +790,10 @@ impl MessagingUi {
 							.truncate(),
 						);
 						let (status, color) = if draft.is_empty() {
-							(crate::i18n::text(self.language, "No custom status"), colors.muted)
+							(
+								crate::i18n::text(self.language, "No custom status"),
+								colors.muted,
+							)
 						} else {
 							(draft.as_str(), colors.text)
 						};
@@ -866,11 +864,11 @@ impl MessagingUi {
 			ui.add(
 				egui::Label::new(
 					RichText::new(format!(
-					"{} {clears}.",
-					crate::i18n::text(self.language, "Serein clears it")
-				))
-						.size(12.0)
-						.color(colors.muted),
+						"{} {clears}.",
+						crate::i18n::text(self.language, "Serein clears it")
+					))
+					.size(12.0)
+					.color(colors.muted),
 				)
 				.wrap(),
 			);
@@ -880,11 +878,11 @@ impl MessagingUi {
 			ui.add(
 				egui::Label::new(
 					RichText::new(crate::i18n::text(
-					self.language,
-					"Use up to 128 characters without control characters.",
-				))
-						.size(12.0)
-						.color(colors.danger),
+						self.language,
+						"Use up to 128 characters without control characters.",
+					))
+					.size(12.0)
+					.color(colors.danger),
 				)
 				.wrap(),
 			);
@@ -910,7 +908,9 @@ impl MessagingUi {
 			ui.allocate_ui(vec2(half, 44.0), |ui| {
 				ui.set_width(half);
 				if ui
-					.add_enabled_ui(clearable, |ui| design::secondary_button(ui, crate::i18n::text(self.language, "Clear")))
+					.add_enabled_ui(clearable, |ui| {
+						design::secondary_button(ui, crate::i18n::text(self.language, "Clear"))
+					})
 					.inner
 					.clicked()
 				{
@@ -927,7 +927,9 @@ impl MessagingUi {
 			ui.allocate_ui(vec2(half, 44.0), |ui| {
 				ui.set_width(half);
 				if ui
-					.add_enabled_ui(valid && changed, |ui| design::primary_button(ui, crate::i18n::text(self.language, "Apply")))
+					.add_enabled_ui(valid && changed, |ui| {
+						design::primary_button(ui, crate::i18n::text(self.language, "Apply"))
+					})
 					.inner
 					.clicked()
 				{

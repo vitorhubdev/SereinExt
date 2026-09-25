@@ -282,7 +282,7 @@ fn app_action_description(action: &AppAction) -> String {
 			muted,
 			deafened,
 		} => format!(
-			"Join voice in channel {channel_id}\nRing recipients: {ring}\nMicrophone muted: {muted}\nDeafened: {deafened}\nJoining with an unmuted microphone can transmit your audio. Switching calls also requires the native switch confirmation."
+			"Join voice in channel {channel_id}\nRing recipients: {ring}\nMicrophone muted: {muted}\nDeafened: {deafened}\nJoining with an unmuted microphone can transmit your audio. Switching calls leaves the current call and joins this channel."
 		),
 		AppAction::SetCamera { enabled } => {
 			if *enabled {

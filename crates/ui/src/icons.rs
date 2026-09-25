@@ -120,13 +120,15 @@ pub enum Icon {
 	Sliders,
 	SortArrows,
 	Thread,
+	Robot,
+	Eye,
 	/// Horizontally mirrored reply glyph from the shared atlas.
 	Forward,
 }
 
 impl Icon {
 	/// Canonical atlas cells; Forward reuses the mirrored Reply cell.
-	pub const ALL: [Icon; 104] = [
+	pub const ALL: [Icon; 106] = [
 		Icon::ChevronDown,
 		Icon::ChevronRight,
 		Icon::Gear,
@@ -231,6 +233,8 @@ impl Icon {
 		Icon::Sliders,
 		Icon::SortArrows,
 		Icon::Thread,
+		Icon::Robot,
+		Icon::Eye,
 	];
 	/// Upstream icon name recorded in `index.tsv`.
 	fn asset(self) -> &'static str {
@@ -339,6 +343,8 @@ impl Icon {
 			Icon::EyeSlash => "eye-slash",
 			Icon::Sliders => "sliders-horizontal",
 			Icon::SortArrows => "arrows-down-up",
+			Icon::Robot => "robot",
+			Icon::Eye => "eye",
 		}
 	}
 	fn cell(self) -> usize {

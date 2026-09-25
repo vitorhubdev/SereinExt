@@ -75,6 +75,7 @@ impl ChannelMenu {
 		state: &State,
 		channel: &Channel,
 		view: ShortcutView<'_>,
+		language: model::Language,
 	) {
 		let Some(guild) = channel.guild else { return };
 		// Forum posts and text-channel threads both use the thread menu (close, rename, delete).
@@ -98,18 +99,14 @@ impl ChannelMenu {
 				.corner_radius(8),
 		)
 		.show(|ui| {
+			let t = |english: &'static str| crate::i18n::text(language, english);
 			ui.set_width(232.0);
 			ui.spacing_mut().button_padding = egui::vec2(12.0, 8.0);
 			let available = (state.demo || state.gateway_connected)
 				&& !state.channel_action_pending()
 				&& state.can_view(channel.id);
 			let mut intent = None;
-			if row(
-				ui,
-				"Mark As Read",
-				state.can_mark_channel_read(channel.id),
-				false,
-			)
+			if row(ui, t("Mark As Read"), state.can_mark_channel_read(channel.id), false)
 			.clicked()
 			{
 				intent = Some(Intent::Read);
@@ -119,14 +116,14 @@ impl ChannelMenu {
 				&& row(
 					ui,
 					if view.contains(Shortcut::Favorite, channel.id) {
-						"Remove From Favorites"
+						t("Remove From Favorites")
 					} else {
-						"Add To Favorites"
+						t("Add To Favorites")
 					},
 					view.available(),
 					false,
 				)
-				.on_hover_text("Favorites are saved on this device.")
+				.on_hover_text(t("Favorites are saved on this device."))
 				.clicked()
 			{
 				self.shortcut_requested = Some(view.toggle(Shortcut::Favorite, channel.id));
@@ -137,7 +134,7 @@ impl ChannelMenu {
 			if state.can_create_server_invite(guild, channel.id)
 				&& row(
 					ui,
-					"Invite to Channel",
+					t("Invite to Channel"),
 					available && !state.server_invite_pending() && !state.server_action_pending(),
 					false,
 				)
@@ -147,7 +144,7 @@ impl ChannelMenu {
 				self.generation = state.generation;
 				ui.close();
 			}
-			if row(ui, "Copy Link", true, false).clicked() {
+			if row(ui, t("Copy Link"), true, false).clicked() {
 				ui.ctx().copy_text(format!(
 					"https://discord.com/channels/{guild}/{}",
 					channel.id
@@ -157,11 +154,11 @@ impl ChannelMenu {
 			ui.separator();
 			ui.add_enabled_ui(available, |ui| {
 				if state.guild_channel_muted(channel.id) == Some(true)
-					&& row(ui, "Unmute Channel", true, false).clicked()
+					&& row(ui, t("Unmute Channel"), true, false).clicked()
 				{
 					intent = Some(Intent::Write(Action::Mute(Mute::Unmute)));
 				}
-				ui.menu_button("Mute Channel", |ui| {
+				ui.menu_button(t("Mute Channel"), |ui| {
 					for (label, seconds) in [
 						("For 15 Minutes", 900),
 						("For 1 Hour", 3600),
@@ -169,11 +166,11 @@ impl ChannelMenu {
 						("For 8 Hours", 28800),
 						("For 24 Hours", 86400),
 					] {
-						if row(ui, label, true, false).clicked() {
+						if row(ui, t(label), true, false).clicked() {
 							intent = Some(Intent::Write(Action::Mute(Mute::For(seconds))));
 						}
 					}
-					if row(ui, "Until I Turn It Back On", true, false).clicked() {
+					if row(ui, t("Until I Turn It Back On"), true, false).clicked() {
 						intent = Some(Intent::Write(Action::Mute(Mute::Forever)));
 					}
 				});
@@ -234,7 +231,7 @@ impl ChannelMenu {
 				}
 			}
 			ui.separator();
-			if row(ui, "Copy Channel ID", true, false).clicked() {
+			if row(ui, t("Copy Channel ID"), true, false).clicked() {
 				ui.ctx().copy_text(channel.id.to_string());
 				ui.close();
 			}
@@ -252,6 +249,7 @@ impl ChannelMenu {
 		state: &State,
 		guild: Id,
 		hide_muted: &mut bool,
+		language: model::Language,
 	) {
 		let colors = design::palette_for(&response.ctx);
 		user_menu::popup(
@@ -265,9 +263,10 @@ impl ChannelMenu {
 				.corner_radius(8),
 		)
 		.show(|ui| {
+			let t = |english: &'static str| crate::i18n::text(language, english);
 			ui.set_width(232.0);
 			ui.spacing_mut().button_padding = egui::vec2(12.0, 8.0);
-			if toggle_row(ui, "Hide Muted Channels", hide_muted).changed() {
+			if toggle_row(ui, t("Hide Muted Channels"), hide_muted).changed() {
 				ui.close();
 			}
 			ui.separator();
@@ -1000,6 +999,7 @@ mod tests {
 						&self.state,
 						self.state.channel(Id(20)).unwrap(),
 						ShortcutView::new(&self.prefs, true),
+						model::Language::English,
 					);
 					row = Some(response);
 					self.menu.show(

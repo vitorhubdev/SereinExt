@@ -914,14 +914,15 @@ pub fn viewer(
 					);
 				}
 			}
-			// Caption: file name, size and dimensions, plus the browser link.
-			let caption_width = image_rect.width().max(360.0).min(stage.width());
+			// Caption stays in the footer under the picture, aligned to its left edge.
+			let caption_width = image_rect.width().max(280.0).min(full.width() - 32.0);
+			let caption_left = image_rect.left().clamp(
+				full.left() + 16.0,
+				(full.right() - 16.0 - caption_width).max(full.left() + 16.0),
+			);
 			let caption = Rect::from_min_size(
-				egui::pos2(
-					image_rect.left().min(stage.right() - caption_width),
-					(image_rect.bottom() + 8.0).min(stage.bottom()),
-				),
-				egui::vec2(caption_width, 44.0),
+				egui::pos2(caption_left, stage.bottom() + 8.0),
+				egui::vec2(caption_width, 36.0),
 			);
 			ui.scope_builder(
 				egui::UiBuilder::new()

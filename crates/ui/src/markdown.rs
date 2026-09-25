@@ -2,7 +2,7 @@
 use egui::{FontId, Stroke, TextFormat, text::LayoutJob};
 use model::Id;
 use pulldown_cmark::{CodeBlockKind, Event, Options, Parser, Tag, TagEnd};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use unicode_segmentation::UnicodeSegmentation;
 
 const MAX_INPUT: usize = 8192;
@@ -202,6 +202,7 @@ pub struct Formatted {
 #[derive(Default)]
 pub struct FormatCache {
 	entries: HashMap<(Id, u16), (String, Formatted, u64)>,
+	order: VecDeque<((Id, u16), u64)>,
 	bytes: usize,
 	clock: u64,
 }
@@ -215,6 +216,8 @@ impl FormatCache {
 				false
 			}
 		});
+		self.order
+			.retain(|(id, stamp)| self.entries.get(id).is_some_and(|entry| entry.2 == *stamp));
 	}
 	pub fn get(&mut self, id: Id, source: &str) -> &Formatted {
 		self.get_part(id, 0, source)
@@ -229,6 +232,7 @@ impl FormatCache {
 		{
 			let entry = self.entries.get_mut(&id).expect("cached message");
 			entry.2 = self.clock;
+			self.order.push_back((id, self.clock));
 		} else {
 			if let Some((source, parsed, _)) = self.entries.remove(&id) {
 				self.bytes -= source.capacity() + parsed.bytes();
@@ -241,13 +245,15 @@ impl FormatCache {
 			let source = source[..end].to_owned();
 			self.bytes += source.capacity() + parsed.bytes();
 			self.entries.insert(id, (source, parsed, self.clock));
+			self.order.push_back((id, self.clock));
 			while self.entries.len() > 512 || self.bytes > 1024 * 1024 {
-				let oldest = *self
-					.entries
-					.iter()
-					.min_by_key(|(_, entry)| entry.2)
-					.expect("cache over budget")
-					.0;
+				let Some((oldest, stamp)) = self.order.pop_front() else {
+					break;
+				};
+				let current = self.entries.get(&oldest).map(|entry| entry.2);
+				if current != Some(stamp) {
+					continue;
+				}
 				let (source, parsed, _) = self.entries.remove(&oldest).expect("oldest entry");
 				self.bytes -= source.capacity() + parsed.bytes();
 			}

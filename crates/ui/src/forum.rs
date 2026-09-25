@@ -68,6 +68,7 @@ impl ForumUi {
 			&mut crate::channel_menu::ChannelMenu,
 			crate::shortcuts::ShortcutView<'_>,
 		),
+		language: model::Language,
 	) {
 		if self.forum != Some(forum) {
 			self.forum = Some(forum);
@@ -180,7 +181,7 @@ impl ForumUi {
 							{
 								author_lookup.push(latest.author_id);
 							}
-							menu.context(&response, state, post, view);
+							menu.context(&response, state, post, view, language);
 							if response.clicked() {
 								open = Some(Open::Active(post.id));
 							}
@@ -195,7 +196,7 @@ impl ForumUi {
 							{
 								summary_requests.push(post.id);
 							}
-							menu.context(&response, state, post, view);
+							menu.context(&response, state, post, view, language);
 							if response.clicked() {
 								open = Some(Open::Archived(post.id));
 							}
@@ -940,6 +941,7 @@ mod tests {
 							&mut crate::channel_menu::ChannelMenu::default(),
 							crate::shortcuts::ShortcutView::new(&Default::default(), true),
 						),
+						model::Language::English,
 					);
 				},
 			);
@@ -1006,6 +1008,7 @@ mod tests {
 						&mut crate::channel_menu::ChannelMenu::default(),
 						crate::shortcuts::ShortcutView::new(&Default::default(), true),
 					),
+					model::Language::English,
 				)
 			});
 			assert!(
@@ -1027,6 +1030,7 @@ mod tests {
 						&mut crate::channel_menu::ChannelMenu::default(),
 						crate::shortcuts::ShortcutView::new(&Default::default(), true),
 					),
+					model::Language::English,
 				)
 			});
 			assert!(commands.is_empty());
@@ -1046,6 +1050,7 @@ mod tests {
 						&mut crate::channel_menu::ChannelMenu::default(),
 						crate::shortcuts::ShortcutView::new(&Default::default(), true),
 					),
+					model::Language::English,
 				)
 			});
 			let draft = forum.draft.as_mut().unwrap();
@@ -1095,6 +1100,7 @@ mod tests {
 						&mut crate::channel_menu::ChannelMenu::default(),
 						crate::shortcuts::ShortcutView::new(&Default::default(), true),
 					),
+					model::Language::English,
 				)
 			});
 			assert!(
@@ -1133,6 +1139,7 @@ mod tests {
 						&mut crate::channel_menu::ChannelMenu::default(),
 						crate::shortcuts::ShortcutView::new(&Default::default(), true),
 					),
+					model::Language::English,
 				)
 			});
 			let Some(Command::ForumPosts {
@@ -1159,6 +1166,7 @@ mod tests {
 						&mut crate::channel_menu::ChannelMenu::default(),
 						crate::shortcuts::ShortcutView::new(&Default::default(), true),
 					),
+					model::Language::English,
 				)
 			});
 			assert!(commands.is_empty(), "A pending page is never re-requested");
@@ -1197,6 +1205,7 @@ mod tests {
 						&mut crate::channel_menu::ChannelMenu::default(),
 						crate::shortcuts::ShortcutView::new(&Default::default(), true),
 					),
+					model::Language::English,
 				)
 			});
 			assert!(commands.is_empty(), "A loaded forum stays quiet");
