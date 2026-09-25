@@ -49,6 +49,7 @@ struct CacheKey {
 	selected: Option<Id>,
 	show_hidden: bool,
 	hide_muted: bool,
+	hide_bot_dms: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -401,6 +402,24 @@ fn category_header(
 	response
 }
 
+fn bot_dm(channel: &Channel) -> bool {
+	channel.guild.is_none()
+		&& channel.kind == 1
+		&& channel
+			.recipients
+			.first()
+			.is_some_and(|user| user.kind == model::AccountKind::Bot)
+}
+
+fn bot_dm_unread(state: &State, channel: &Channel) -> u32 {
+	let count = state.unread_count(channel.id);
+	if count > 0 {
+		count
+	} else {
+		u32::from(state.channel_unread(channel) == Some(true))
+	}
+}
+
 fn eyebrow_row(ui: &mut egui::Ui, label: &str, row_height: f32) -> egui::Rect {
 	let colors = design::palette(ui);
 	ui.allocate_ui_with_layout(
@@ -464,6 +483,79 @@ fn kind_label(kind: u8) -> &'static str {
 }
 
 impl MessagingUi {
+	fn direct_messages_heading(
+		&mut self,
+		ui: &mut egui::Ui,
+		state: &State,
+		row_height: f32,
+	) -> egui::Rect {
+		let colors = design::palette(ui);
+		let unread: u32 = state
+			.channels
+			.iter()
+			.filter(|channel| bot_dm(channel))
+			.map(|channel| bot_dm_unread(state, channel))
+			.sum();
+		let (rect, _) = ui.allocate_exact_size(
+			egui::vec2(ui.available_width(), row_height),
+			egui::Sense::hover(),
+		);
+		let galley = ui.painter().layout_no_wrap(
+			"DIRECT MESSAGES".into(),
+			egui::FontId::new(12.0, design::semibold_family(ui.ctx())),
+			colors.muted,
+		);
+		ui.painter().galley(
+			egui::pos2(rect.left() + 8.0, rect.bottom() - 8.0 - galley.size().y),
+			galley,
+			colors.muted,
+		);
+		let hidden = self.hide_bot_dms;
+		let caption = if hidden {
+			if unread > 0 {
+				format!("{unread}")
+			} else {
+				"Bots".into()
+			}
+		} else {
+			"Bots".into()
+		};
+		let button = egui::Rect::from_min_size(
+			egui::pos2(rect.right() - 52.0, rect.bottom() - 26.0),
+			egui::vec2(44.0, 18.0),
+		);
+		let response = ui.interact(button, ui.id().with("hide-bot-dms"), egui::Sense::click());
+		let hot = response.hovered() || response.has_focus() || hidden;
+		ui.painter().rect_filled(
+			button,
+			9.0,
+			if hidden {
+				colors.accent.gamma_multiply(0.22)
+			} else if hot {
+				colors.hover
+			} else {
+				colors.raised
+			},
+		);
+		ui.painter().text(
+			button.center(),
+			egui::Align2::CENTER_CENTER,
+			caption,
+			egui::FontId::proportional(11.0),
+			if hidden { colors.accent } else { colors.muted },
+		);
+		let hint = if hidden {
+			format!("Show bot conversations. {unread} unread.")
+		} else {
+			"Hide bot conversations".into()
+		};
+		if response.on_hover_text(hint).clicked() {
+			self.hide_bot_dms = !self.hide_bot_dms;
+			self.channel_cache.key = None;
+		}
+		rect
+	}
+
 	pub(super) fn channel_list(&mut self, ui: &mut egui::Ui, state: &mut State) -> Option<Id> {
 		let hide_muted = self
 			.guild
@@ -478,6 +570,7 @@ impl MessagingUi {
 			selected: state.selected,
 			show_hidden: self.show_hidden_channels,
 			hide_muted,
+			hide_bot_dms: self.hide_bot_dms,
 		};
 		if self.channel_cache.key != Some(key) {
 			let categories: BTreeSet<_> = state
@@ -520,6 +613,11 @@ impl MessagingUi {
 						index += 1;
 					}
 				}
+			}
+			if self.hide_bot_dms && self.guild.is_none() {
+				channel_rows.retain(|row| {
+					!matches!(row, Row::Channel(channel, ..) if bot_dm(channel))
+				});
 			}
 			let mut participants = BTreeMap::<Id, Vec<_>>::new();
 			for entry in &state.voice.roster {
@@ -594,7 +692,11 @@ impl MessagingUi {
 					};
 					match row {
 						CachedRow::Heading(heading) => {
-							let rect = eyebrow_row(ui, heading.label(), row_height);
+							let rect = if heading == crate::shortcuts::Heading::DirectMessages {
+								self.direct_messages_heading(ui, state, row_height)
+							} else {
+								eyebrow_row(ui, heading.label(), row_height)
+							};
 							paint_shelf_rule(ui, rect, &self.channel_cache.rows, index);
 						}
 						CachedRow::Participant(entry) => {

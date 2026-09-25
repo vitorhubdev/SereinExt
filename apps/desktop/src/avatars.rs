@@ -635,8 +635,18 @@ fn proxy_base(source: &str) -> Option<url::Url> {
 	{
 		return None;
 	}
-	let host = url.host_str()?;
 	let path = url.path();
+	let host = url.host_str()?.to_ascii_lowercase();
+	if host == "i.ytimg.com" {
+		let parts: Vec<_> = url.path().trim_matches('/').split('/').collect();
+		let id = parts.get(1).copied().unwrap_or("");
+		return (parts.len() == 3
+			&& parts[0] == "vi"
+			&& parts[2] == "hqdefault.jpg"
+			&& (1..=32).contains(&id.len())
+			&& id.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')))
+		.then_some(url);
+	}
 	let valid_path = if path.starts_with("/attachments/") {
 		let mut parts = path.trim_start_matches('/').split('/');
 		parts.next();

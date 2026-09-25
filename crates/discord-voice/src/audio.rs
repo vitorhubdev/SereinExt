@@ -358,9 +358,8 @@ impl Audio {
 							let start = metrics.start();
 							let result = echo.render(&frame);
 							metrics.finish(Stage::EchoRender, start);
-							if let Err(error) = result {
-								emit(Err(error));
-								break 'audio;
+							if let Err(_error) = result {
+								// One bad speaker frame must not stop the call.
 							}
 						}
 					}
@@ -375,9 +374,8 @@ impl Audio {
 							noise_frames += u64::from(noise);
 							match result {
 								Ok(noise_time) => metrics.add(Stage::Noise, noise_time),
-								Err(error) => {
-									emit(Err(error));
-									break 'audio;
+								Err(_error) => {
+									// Keep the clamped microphone frame and the call.
 								}
 							}
 							let gain =

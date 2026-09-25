@@ -1425,8 +1425,10 @@ pub fn show(
 						.show(ui, |ui| {
 							ui.set_width(ui.available_width());
 							ui.spacing_mut().item_spacing = vec2(6.0, 3.0);
-							if view.is_some_and(|v| v.error.is_some())
-								|| data.is_some_and(|data| data.limited)
+							let deleted = user.deleted_account();
+							if !deleted
+								&& (view.is_some_and(|v| v.error.is_some())
+									|| data.is_some_and(|data| data.limited))
 							{
 								design::notice(
 									ui,
@@ -1435,15 +1437,18 @@ pub fn show(
 								);
 								ui.add_space(6.0);
 							}
-							let display = data
-								.and_then(|p| {
+							let display = if deleted {
+								"Deleted User"
+							} else {
+								data.and_then(|p| {
 									p.guild
 										.as_ref()
 										.and_then(|g| g.nick.as_deref())
 										.or(state.friend_nickname(user.id))
 										.or(p.global_name.as_deref())
 								})
-								.unwrap_or_else(|| state.user_display_name(user));
+								.unwrap_or_else(|| state.user_display_name(user))
+							};
 							let display = display.split_whitespace().collect::<Vec<_>>().join(" ");
 							// Ordinary user payloads already carry the server identity. Keep it visible
 							// while the extended profile loads or when that optional request fails.
@@ -1503,7 +1508,7 @@ pub fn show(
 								}
 							});
 							let mut identity = Vec::new();
-							if let Some(data) = data {
+							if !deleted && let Some(data) = data {
 								identity.push(if data.user.discriminator > 0 {
 									format!("{}#{:04}", data.username, data.user.discriminator)
 								} else {
@@ -1518,9 +1523,9 @@ pub fn show(
 								if !pronouns.is_empty() {
 									identity.push(pronouns.to_owned());
 								}
-							} else if user.webhook {
+							} else if !deleted && user.webhook {
 								identity.push("Webhook".into());
-							} else {
+							} else if !deleted {
 								identity.push(user.name.clone());
 							}
 							ui.add(
@@ -1577,7 +1582,14 @@ pub fn show(
 								ui.add_space(4.0);
 								ui.add(egui::Label::new(RichText::new(custom).size(13.0)).wrap());
 							}
-							if !user.webhook && view.is_none_or(|v| v.loading) {
+							if deleted {
+								ui.add_space(4.0);
+								ui.label(
+									RichText::new("This account was deleted. The conversation stays so you can read it.")
+										.size(13.0)
+										.color(theme.muted),
+								);
+							} else if !user.webhook && view.is_none_or(|v| v.loading) {
 								ui.add_space(4.0);
 								ui.horizontal(|ui| {
 									ui.spinner();
@@ -1588,7 +1600,8 @@ pub fn show(
 									);
 								});
 							}
-							if let Some(error) = view.and_then(|v| v.error) {
+							if !deleted
+								&& let Some(error) = view.and_then(|v| v.error) {
 								ui.add_space(4.0);
 								if ui
 									.small_button("Retry profile")
@@ -1762,7 +1775,8 @@ pub fn show(
 						{
 							action = Some(Action::Edit);
 						}
-					} else if let Some(channel) = dm_channel {
+					} else if !user.deleted_account()
+						&& let Some(channel) = dm_channel {
 						if ui
 							.add_sized(
 								[ui.available_width(), 32.0],

@@ -121,12 +121,18 @@ impl Runtime {
 		if self.ring.is_some() {
 			ctx.request_repaint_after(Duration::from_millis(250));
 		}
-		// Live call cues are automatic notifications: honor DND and each cue's preference.
-		if let Some(cue) = ui.notification_cue.take()
-			&& audible
-			&& options.allows(cue)
-		{
-			sound = Some(cue);
+		// Call membership sounds are part of the call, including while Do Not Disturb is on.
+		while let Some(cue) = ui.notification_cues.first().copied() {
+			let membership = matches!(cue, Sound::UserJoin | Sound::UserLeave);
+			if (audible || membership) && options.allows(cue) {
+				ui.notification_cues.remove(0);
+				sound = Some(cue);
+				break;
+			}
+			ui.notification_cues.remove(0);
+		}
+		if !ui.notification_cues.is_empty() {
+			ctx.request_repaint();
 		}
 		// Explicit previews are allowed in the offline demo and intentionally ignore automatic mute choices.
 		if let Some(preview) = ui.notification_preview.take() {

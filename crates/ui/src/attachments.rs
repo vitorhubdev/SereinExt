@@ -259,6 +259,20 @@ fn file_card(
 					surface.keep(&download);
 				});
 			});
+		})
+		.response
+		.context_menu(|ui| {
+			if let Some(url) = attachment
+				.media
+				.url
+				.as_deref()
+				.or(attachment.media.proxy_url.as_deref())
+				.and_then(external_url)
+				&& ui.button("Copy download link").clicked()
+			{
+				ui.ctx().copy_text(url);
+				ui.close();
+			}
 		});
 }
 

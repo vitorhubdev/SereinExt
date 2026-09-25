@@ -55,6 +55,10 @@ pub struct TimelineView {
 	/// Up to five messages authored by the current account, selected for one confirmed delete action.
 	pub(super) batch_delete: BTreeSet<Id>,
 	pub(super) batch_delete_requested: bool,
+	/// Escape asked to drop the selection and any deletes still waiting.
+	pub(super) batch_delete_cancel: bool,
+	/// Messages already sent and the confirmed total, while deletes are spaced out.
+	pub(super) batch_progress: Option<(usize, usize)>,
 	pub(super) channel_reference: Option<Id>,
 	pub(super) pending_channel_reference: Option<Id>,
 	pub(super) reply_target: Option<Id>,
@@ -808,6 +812,33 @@ fn message_actions(
 		if ui.button("Copy message").clicked() {
 			ui.ctx().copy_text(message.display_text().into_owned());
 			ui.close();
+		}
+		let files: Vec<_> = message
+			.attachments
+			.iter()
+			.filter(|attachment| {
+				!attachment.is_image() && !attachment.is_video() && !attachment.is_audio()
+			})
+			.filter_map(|attachment| {
+				attachment
+					.media
+					.url
+					.as_deref()
+					.or(attachment.media.proxy_url.as_deref())
+					.and_then(crate::markdown::external_url)
+					.map(|url| (attachment.filename.as_str(), url))
+			})
+			.collect();
+		for (filename, url) in &files {
+			let label = if files.len() == 1 {
+				"Copy download link".to_owned()
+			} else {
+				format!("Copy download link · {filename}")
+			};
+			if ui.button(label).clicked() {
+				ui.ctx().copy_text(url.clone());
+				ui.close();
+			}
 		}
 		if ui
 			.add_enabled(can_reply, egui::Button::new("Reply"))
@@ -2662,6 +2693,34 @@ impl TimelineView {
 							surface.finish(ui);
 						});
 					let rect = row.response.rect;
+					let own_message = state
+						.user
+						.as_ref()
+						.is_some_and(|user| message.author.id == user.id);
+					if !self.batch_delete.is_empty()
+						&& own_message
+						&& state.can_delete(message.channel, id)
+					{
+						let hit = egui::Rect::from_min_size(rect.min, egui::vec2(36.0, rect.height()));
+						let toggle = ui.interact(
+							hit,
+							ui.id().with(("batch-select", id)),
+							egui::Sense::click(),
+						);
+						let on = self.batch_delete.contains(&id);
+						let center = egui::pos2(rect.left() + 18.0, rect.center().y);
+						ui.painter().circle_stroke(
+							center,
+							8.0,
+							egui::Stroke::new(1.5, if on { colors.accent } else { colors.muted }),
+						);
+						if on {
+							ui.painter().circle_filled(center, 4.5, colors.accent);
+						}
+						if toggle.clicked() {
+							let _ = toggle_batch_delete(&mut self.batch_delete, id);
+						}
+					}
 					let mentioned = mentions_viewer(message, state);
 					// Mentions mark the row in the warning colour; a private command response in
 					// the house accent, as in the official client.
@@ -3273,8 +3332,13 @@ impl TimelineView {
 				now,
 			);
 		}
-		if !self.batch_delete.is_empty() {
-			let height = 38.0;
+		if !self.batch_delete.is_empty() || self.batch_progress.is_some() {
+			if ui.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+				self.batch_delete.clear();
+				self.batch_delete_cancel = true;
+				self.batch_progress = None;
+			}
+			let height = 44.0;
 			let bottom_inset = if typing.is_some() {
 				crate::typing::OVERLAY_HEIGHT + 10.0
 			} else {
@@ -3287,26 +3351,50 @@ impl TimelineView {
 				),
 				egui::vec2((area.width() - 32.0).max(1.0), height),
 			);
+			let deleting = self.batch_progress;
 			overlay_bar(
 				ui,
 				rect,
 				colors.raised.to_opaque(),
 				egui::CornerRadius::same(8),
 				|ui| {
-					ui.label(
-						crate::design::medium(
-							ui,
-							&format!("{} / {MAX_BATCH_DELETE} selected", self.batch_delete.len()),
-							13.0,
-						)
-						.color(colors.text_strong),
-					);
+					ui.vertical(|ui| {
+						ui.spacing_mut().item_spacing.y = 0.0;
+						let (title, hint) = if let Some((done, total)) = deleting {
+							(
+								format!("Deleting {done} of {total}"),
+								"Esc stops the rest",
+							)
+						} else {
+							(
+								format!("{} of {MAX_BATCH_DELETE}", self.batch_delete.len()),
+								"Click beside a message to add it · Esc cancels",
+							)
+						};
+						ui.label(
+							crate::design::medium(ui, &title, 13.0).color(colors.text_strong),
+						);
+						ui.label(
+							egui::RichText::new(hint).size(11.0).color(colors.muted),
+						);
+					});
+					if let Some((done, total)) = deleting.filter(|(_, total)| *total > 0) {
+						ui.add(
+							egui::ProgressBar::new(done as f32 / total as f32)
+								.desired_width(72.0)
+								.desired_height(6.0)
+								.fill(colors.accent),
+						);
+					}
 					ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-						if ui.button("Delete selected…").clicked() {
+						if deleting.is_none() && ui.button("Delete selected…").clicked() {
 							self.batch_delete_requested = true;
 						}
-						if ui.button("Clear").clicked() {
+						if ui.button(if deleting.is_some() { "Stop" } else { "Cancel" }).clicked()
+						{
 							self.batch_delete.clear();
+							self.batch_delete_cancel = true;
+							self.batch_progress = None;
 						}
 					});
 				},

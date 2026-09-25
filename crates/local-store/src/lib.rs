@@ -42,6 +42,9 @@ pub struct AppPreferences {
 	pub show_hidden_channels: bool,
 	pub hide_title_bar: bool,
 	pub language: model::Language,
+	/// False until the owner picks a language or the first launch copies the system language.
+	#[serde(default)]
+	pub language_chosen: bool,
 	pub primary_color: Option<[u8; 3]>,
 	pub transparency_blur: bool,
 	pub transparency: u8,
@@ -80,6 +83,7 @@ impl Default for AppPreferences {
 			show_hidden_channels: false,
 			hide_title_bar: false,
 			language: Default::default(),
+			language_chosen: false,
 			primary_color: None,
 			transparency_blur: false,
 			transparency: 15,

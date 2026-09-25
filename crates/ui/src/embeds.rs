@@ -32,7 +32,43 @@ fn web_media_target(embed: &Embed) -> Option<&str> {
 	.find(|url| supported_web_media(url))
 }
 
-fn request_web_media(ctx: &egui::Context, url: &str) {
+fn youtube_id(value: &str) -> Option<String> {
+	let url = url::Url::parse(value).ok()?;
+	if url.scheme() != "https" {
+		return None;
+	}
+	let host = url
+		.host_str()?
+		.trim_start_matches("www.")
+		.to_ascii_lowercase();
+	let id = match host.as_str() {
+		"youtu.be" => url.path_segments()?.next()?.to_owned(),
+		"youtube.com" | "m.youtube.com" if url.path() == "/watch" => url
+			.query_pairs()
+			.find_map(|(key, value)| (key == "v").then(|| value.into_owned()))?,
+		"youtube.com" | "m.youtube.com" => {
+			let mut parts = url.path_segments()?;
+			let kind = parts.next()?;
+			if !matches!(kind, "shorts" | "embed") {
+				return None;
+			}
+			parts.next()?.to_owned()
+		}
+		_ => return None,
+	};
+	(id.len() <= 32 && id.bytes().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')))
+		.then_some(id)
+}
+
+fn youtube_thumb(value: &str) -> Option<model::EmbedMedia> {
+	let id = youtube_id(value)?;
+	Some(model::EmbedMedia {
+		url: Some(format!("https://i.ytimg.com/vi/{id}/hqdefault.jpg")),
+		width: 480,
+		height: 360,
+		..Default::default()
+	})
+}
 	ctx.data_mut(|data| data.insert_temp(egui::Id::new(WEB_MEDIA_REQUEST), url.to_owned()));
 }
 
@@ -599,30 +635,59 @@ pub fn show(
 								);
 							}
 							let web_media = web_media_target(embed);
-							if embed.video.is_some()
-								|| matches!(embed.kind.as_str(), "video" | "gifv")
-								|| web_media.is_some()
-							{
-								if let Some(target) = web_media {
-									ui.small("Web video preview · isolated player inside Serein");
-									ui.horizontal_wrapped(|ui| {
-										if ui.small_button("Play in Serein").clicked() {
-											request_web_media(ui.ctx(), target);
-										}
-										link(ui, "Open in browser…", Some(target), opening, false);
-									});
-								} else {
-									ui.small("Video preview · playback opens in your browser");
-									link(
-										ui,
-										"Open video…",
-										embed.url.as_deref().or_else(|| {
-											embed.video.as_ref().and_then(|v| v.url.as_deref())
-										}),
-										opening,
-										false,
+							if let Some(target) = web_media {
+								if let Some(thumb) = youtube_thumb(target) {
+									let painted = images
+										.show_media(
+											ui,
+											&thumb,
+											egui::vec2(
+												ui.available_width(),
+												crate::avatars::media::MEDIA_MAX_HEIGHT,
+											),
+											demo,
+											Surface::Inline,
+										)
+										.response;
+									let play = ui.interact(
+										painted.rect,
+										painted.id.with("youtube-preview"),
+										egui::Sense::click(),
 									);
+									if play.hovered() {
+										ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+									}
+									if play.on_hover_text("Play in chat").clicked() {
+										request_web_media(ui.ctx(), target);
+									}
+								} else {
+									let label = if target.contains("x.com") || target.contains("twitter.com")
+									{
+										"Post on X"
+									} else {
+										"Video"
+									};
+									if ui
+										.button(label)
+										.on_hover_text("Play in chat")
+										.clicked()
+									{
+										request_web_media(ui.ctx(), target);
+									}
 								}
+							} else if embed.video.is_some()
+								|| matches!(embed.kind.as_str(), "video" | "gifv")
+							{
+								ui.small("Video preview · playback opens in your browser");
+								link(
+									ui,
+									"Open video…",
+									embed.url.as_deref().or_else(|| {
+										embed.video.as_ref().and_then(|v| v.url.as_deref())
+									}),
+									opening,
+									false,
+								);
 							} else if embed.title.is_none()
 								&& let Some(url) = embed.url.as_deref()
 							{

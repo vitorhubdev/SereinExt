@@ -173,7 +173,16 @@ pub fn user_row(
 				let avatar = avatars.show(ui, user, 24.0, demo);
 				ui.add(
 					egui::Label::new(
-						design::semibold(ui, &user.name, 14.0).color(colors.text_strong),
+						design::semibold(
+							ui,
+							if user.deleted_account() {
+								"Deleted User"
+							} else {
+								user.name.as_str()
+							},
+							14.0,
+						)
+						.color(colors.text_strong),
 					)
 					.truncate()
 					.selectable(false),

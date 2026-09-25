@@ -228,6 +228,9 @@ impl State {
 		self.user_actions.nicknames.get(&user).map(String::as_str)
 	}
 	pub fn user_display_name<'a>(&'a self, user: &'a model::User) -> &'a str {
+		if user.deleted_account() {
+			return "Deleted User";
+		}
 		self.friend_nickname(user.id).unwrap_or(&user.name)
 	}
 	pub fn message_author_name<'a>(&'a self, message: &'a model::Message) -> &'a str {
@@ -265,7 +268,11 @@ impl State {
 		if channel.kind == 1
 			&& let Some(user) = channel.recipients.first()
 		{
-			self.friend_nickname(user.id).unwrap_or(&channel.name)
+			if user.deleted_account() {
+				"Deleted User"
+			} else {
+				self.friend_nickname(user.id).unwrap_or(&channel.name)
+			}
 		} else {
 			&channel.name
 		}

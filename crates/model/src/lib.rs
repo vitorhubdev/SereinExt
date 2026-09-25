@@ -157,6 +157,10 @@ impl User {
 			format!("default-{index}")
 		}
 	}
+	/// Discord replaces a deleted account's username with `deleted_user_` plus an id fragment.
+	pub fn deleted_account(&self) -> bool {
+		self.name.starts_with("deleted_user_")
+	}
 	pub fn avatar_url(&self) -> String {
 		let key = self.avatar_key();
 		if let Some(index) = key.strip_prefix("default-") {

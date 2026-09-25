@@ -244,6 +244,8 @@ pub struct MessagingUi {
 	profile_formatted: markdown::FormatCache,
 	pub reading_preferences: model::ReadingPreferences,
 	pub show_hidden_channels: bool,
+	/// Direct messages with bots stay visible until this is turned on.
+	pub hide_bot_dms: bool,
 	pub hide_title_bar: bool,
 	/// Device-local UI language. English is the migration/default locale.
 	pub language: model::Language,
@@ -382,8 +384,8 @@ pub struct MessagingUi {
 	pub voice_speaking: Vec<Id>,
 	pub notifications_enabled: bool,
 	pub notification_options: model::notification_preferences::Device,
-	/// Automatic live-client cue. The desktop runtime applies DND and per-sound preferences.
-	pub notification_cue: Option<model::notification_preferences::Sound>,
+	/// Automatic live-client cues, at most four, so a join and a leave in one update both play.
+	pub notification_cues: Vec<model::notification_preferences::Sound>,
 	/// Explicit settings preview; intentionally allowed to bypass automatic mute policy.
 	pub notification_preview: Option<model::notification_preferences::Sound>,
 	pub notification_sound_status: &'static str,
@@ -403,6 +405,11 @@ pub struct MessagingUi {
 	deleting: Option<(Id, Id)>,
 	/// One confirmed delete action over at most five messages authored by this account.
 	deleting_batch: Option<(Id, Vec<Id>)>,
+	/// Own-message deletes waiting to be sent one at a time.
+	batch_delete_queue: Vec<(Id, Id)>,
+	batch_delete_total: usize,
+	batch_delete_sent: usize,
+	batch_delete_next: Option<f64>,
 	ime_active: bool,
 	mention_menu: mentions::Menu,
 	slash_commands: slash_commands::Menu,
@@ -1899,14 +1906,15 @@ impl MessagingUi {
 								}
 							}
 							ui.add_space(4.0);
-							if icons::toggle(
-								ui,
-								icons::Icon::People,
-								32.0,
-								show_members,
-								"Show member list",
-							)
-							.clicked()
+							if !dm
+								&& icons::toggle(
+									ui,
+									icons::Icon::People,
+									32.0,
+									show_members,
+									"Show member list",
+								)
+								.clicked()
 							{
 								if wide_members {
 									self.reading_preferences.show_members =
@@ -3169,6 +3177,35 @@ impl MessagingUi {
 		self.timeline.video.seen = false;
 		let side = self.drain_side_press();
 		let mut commands = Vec::new();
+		if self.timeline.batch_delete_cancel {
+			self.timeline.batch_delete_cancel = false;
+			self.batch_delete_queue.clear();
+			self.batch_delete_next = None;
+			self.timeline.batch_progress = None;
+		}
+		if let Some(due) = self.batch_delete_next
+			&& ui.input(|input| input.time) >= due
+			&& let Some((channel, message)) = self.batch_delete_queue.first().copied()
+		{
+			self.batch_delete_queue.remove(0);
+			if let Some(command) = state.prepare_delete(channel, message) {
+				commands.push(command);
+			}
+			self.batch_delete_sent += 1;
+			if self.batch_delete_queue.is_empty() {
+				self.batch_delete_next = None;
+				self.timeline.batch_progress = None;
+			} else {
+				self.batch_delete_next =
+					Some(ui.input(|input| input.time) + batch_delete_gap_secs());
+				self.timeline.batch_progress = Some((self.batch_delete_sent, self.batch_delete_total));
+				ui.ctx()
+					.request_repaint_after(std::time::Duration::from_millis(200));
+			}
+		} else if self.batch_delete_next.is_some() {
+			ui.ctx()
+				.request_repaint_after(std::time::Duration::from_millis(200));
+		}
 		if (side.back || side.forward)
 			&& !self.timeline.video.is_fullscreen()
 			&& !self.channel_menu.is_open()
@@ -3458,7 +3495,12 @@ impl MessagingUi {
 		self.search.sync(&ctx, state, &mut commands);
 		let search_open =
 			self.search.results_visible(state) && state.selected.is_some() && !selected_voice;
-		let show_members = !selected_voice
+		let direct_message = state
+			.selected
+			.and_then(|id| state.channel(id))
+			.is_some_and(|channel| channel.kind == 1 && channel.guild.is_none());
+		let show_members = !direct_message
+			&& !selected_voice
 			&& !search_open
 			&& state.selected.is_some()
 			&& if wide_members {
@@ -4372,12 +4414,16 @@ impl MessagingUi {
 			}
 			match confirm.show(&ctx) {
 				Some(dialog::Choice::Confirmed) if allowed => {
-					for id in ids {
-						if let Some(command) = state.prepare_delete(channel, id) {
-							commands.push(command);
-						}
-					}
+					let now = ctx.input(|input| input.time);
+					self.batch_delete_queue = ids
+						.into_iter()
+						.map(|id| (channel, id))
+						.collect();
+					self.batch_delete_total = self.batch_delete_queue.len();
+					self.batch_delete_sent = 0;
+					self.batch_delete_next = Some(now + batch_delete_gap_secs());
 					self.timeline.batch_delete.clear();
+					self.timeline.batch_progress = Some((0, self.batch_delete_total));
 					self.deleting_batch = None;
 				}
 				Some(dialog::Choice::Cancelled) => self.deleting_batch = None,
@@ -4396,6 +4442,15 @@ impl MessagingUi {
 		}
 		commands
 	}
+}
+
+/// One second, plus 100–600 ms, so confirmed deletes are not sent together.
+fn batch_delete_gap_secs() -> f64 {
+	let nanos = std::time::SystemTime::now()
+		.duration_since(std::time::UNIX_EPOCH)
+		.map(|duration| duration.subsec_nanos())
+		.unwrap_or(0);
+	(1000 + 100 + (nanos % 501)) as f64 / 1000.0
 }
 
 #[cfg(test)]

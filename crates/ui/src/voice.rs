@@ -2328,7 +2328,9 @@ impl MessagingUi {
 		};
 		// This is a live client event, not the explicit Settings preview.
 		// DND and per-sound preferences are applied by the desktop notification runtime.
-		self.notification_cue = Some(cue);
+		if self.notification_cues.len() < 4 {
+			self.notification_cues.push(cue);
+		}
 	}
 
 	/// Mute or deafen toggle: red slashed glyph while active, like Discord's user area.
@@ -3376,7 +3378,7 @@ fn call_failure(ui: &mut egui::Ui, error: Option<&str>, color: egui::Color32) {
 				.clicked()
 			{
 				ui.ctx()
-					.copy_text(format!("Serein call failed\nReason: {error}"));
+					.copy_text(format!("SereinExt call failed\nReason: {error}"));
 			}
 			ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
 				ui.add(

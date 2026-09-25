@@ -305,6 +305,7 @@ fn main() -> eframe::Result {
 	let options = eframe::NativeOptions {
 		viewport: {
 			let builder = egui::ViewportBuilder::default()
+				.with_title("SereinExt")
 				.with_transparent(transparency_available)
 				.with_inner_size([1120.0, 760.0])
 				.with_min_inner_size([760.0, 520.0])
@@ -817,6 +818,8 @@ struct Desktop {
 	close_approved: bool,
 	fixture_only: bool,
 	authorized: bool,
+	/// The owner tried to continue before checking the confirmation.
+	consent_prompt: bool,
 	/// Sign-in screen disclosures, folded away until the owner opens them.
 	about_open: bool,
 	token_open: bool,
@@ -1955,6 +1958,7 @@ impl Desktop {
 			close_approved: false,
 			fixture_only: demo,
 			authorized,
+			consent_prompt: false,
 			about_open: sign_in_panels,
 			token_open: sign_in_panels,
 			sign_in_height: 0.0,
@@ -3953,6 +3957,28 @@ impl Desktop {
 							ui.add_space(24.0);
 						});
 					});
+				let globe = egui::Rect::from_min_size(
+					egui::pos2(ui.max_rect().left() + 16.0, ui.max_rect().bottom() - 48.0),
+					egui::vec2(180.0, 32.0),
+				);
+				ui.scope_builder(egui::UiBuilder::new().max_rect(globe), |ui| {
+					ui.horizontal(|ui| {
+						ui.spacing_mut().item_spacing.x = 6.0;
+						ui::icons::inline(ui, ui::icons::Icon::Globe, 16.0, p.muted);
+						egui::ComboBox::from_id_salt("sign-in-language")
+							.selected_text(self.messaging.language.label())
+							.width(140.0)
+							.show_ui(ui, |ui| {
+								for language in model::Language::ALL {
+									ui.selectable_value(
+										&mut self.messaging.language,
+										language,
+										language.label(),
+									);
+								}
+							});
+					});
+				});
 			});
 	}
 	/// Sign-in card: saved accounts first for returning owners, one clear primary action,
@@ -3981,16 +4007,14 @@ impl Desktop {
 				let returning = !self.messaging.accounts.is_empty();
 				let waiting = self.state.auth == AuthState::Authenticating;
 				let idle = !waiting && !self.forgetting;
-				// A new sign-in needs explicit authorization; a saved account was already
-				// authorized once and restores unattended on launch, so it only waits for idle.
-				// Fixture builds render the enabled state for captures; the actions stay inert.
-				let ready = self.authorized && idle;
 				self.sign_in_header(ui, returning);
 				ui.add_space(16.0);
 				if returning {
 					self.sign_in_accounts(ui, idle);
 					ui.add_space(10.0);
 				}
+				self.sign_in_consent(ui);
+				ui.add_space(10.0);
 				let label = if waiting {
 					"Waiting for Discord…"
 				} else if returning {
@@ -3999,7 +4023,7 @@ impl Desktop {
 					"Continue with Discord"
 				};
 				let button = ui
-					.add_enabled_ui(ready, |ui| {
+					.add_enabled_ui(idle, |ui| {
 						if returning {
 							ui::design::secondary_icon_button(ui, ui::icons::Icon::Plus, label)
 						} else {
@@ -4008,28 +4032,31 @@ impl Desktop {
 					})
 					.inner;
 				if button.clicked() && !self.fixture_only {
-					if let Some(store) = &mut self.store {
-						store.cancel_load();
-					}
-					self.credential_status = "Sign in through Discord; saved-login lookup stopped";
-					let wake = ctx.clone();
-					match platform::LoginView::open(self.window.clone(), move || {
-						wake.request_repaint()
-					}) {
-						Ok(login) => {
-							self.login = Some(login);
-							self.state.auth = AuthState::Authenticating;
-							self.state.status = "Waiting for Discord login";
+					if !self.authorized {
+						self.consent_prompt = true;
+					} else {
+						if let Some(store) = &mut self.store {
+							store.cancel_load();
 						}
-						Err(_) => {
-							self.state.auth = AuthState::Failed;
-							self.state.status =
-								"Platform login webview unavailable; see platform-support.md";
+						self.credential_status = "Sign in through Discord; saved-login lookup stopped";
+						let wake = ctx.clone();
+						match platform::LoginView::open(self.window.clone(), move || {
+							wake.request_repaint()
+						}) {
+							Ok(login) => {
+								self.login = Some(login);
+								self.state.auth = AuthState::Authenticating;
+								self.state.status = "Waiting for Discord login";
+							}
+							Err(_) => {
+								self.state.auth = AuthState::Failed;
+								self.state.status =
+									"Platform login webview unavailable; see platform-support.md";
+							}
 						}
 					}
 				}
-				ui.add_space(10.0);
-				self.sign_in_consent(ui);
+				ui.add_space(12.0);
 				self.sign_in_status(ui);
 				ui.add_space(12.0);
 				let (line, _) = ui.allocate_exact_size(
@@ -4062,7 +4089,7 @@ impl Desktop {
 					if returning {
 						"Welcome back"
 					} else {
-						"Welcome to Serein"
+						"Welcome to SereinExt"
 					},
 					22.0,
 				)
@@ -4074,7 +4101,7 @@ impl Desktop {
 					egui::RichText::new(if returning {
 						"Continue with a saved account, or sign in with another one."
 					} else {
-						"Sign in with your Discord account to get started."
+						"Sign in with Discord."
 					})
 					.size(14.0)
 					.color(p.muted),
@@ -4171,28 +4198,36 @@ impl Desktop {
 	/// Owner authorization, with the token handling spelled out next to the checkbox.
 	fn sign_in_consent(&mut self, ui: &mut egui::Ui) {
 		let p = ui::design::palette(ui);
+		if self.authorized {
+			self.consent_prompt = false;
+		}
+		let prompt = self.consent_prompt && !self.authorized;
 		egui::Frame::NONE
-			.fill(p.base)
+			.fill(if prompt {
+				p.accent.gamma_multiply(0.16)
+			} else {
+				p.base
+			})
+			.stroke(egui::Stroke::new(
+				if prompt { 1.5 } else { 1.0 },
+				if prompt { p.accent } else { p.border },
+			))
 			.corner_radius(10)
 			.inner_margin(egui::Margin::symmetric(12, 9))
 			.show(ui, |ui| {
 				ui.set_width(ui.available_width());
 				ui.checkbox(
 					&mut self.authorized,
-					ui::design::medium(ui, "I own this account and authorize this session.", 13.0)
-						.color(p.text_strong),
+					ui::design::medium(ui, "This is my account", 13.0).color(p.text_strong),
 				);
-				ui.add_space(4.0);
-				ui.add(
-					egui::Label::new(
-						egui::RichText::new(
-							"Passwords and 2FA stay on Discord's own login page; only the session token is kept, in your OS credential store.",
-						)
-						.size(12.0)
-						.color(p.muted),
-					)
-					.wrap(),
-				);
+				if prompt {
+					ui.add_space(4.0);
+					ui.label(
+						egui::RichText::new("Check this to continue.")
+							.size(13.0)
+							.color(p.accent),
+					);
+				}
 			});
 	}
 	/// One banner, only while something is happening or went wrong.
@@ -4343,7 +4378,7 @@ impl Desktop {
 	/// Secondary panels: what this client is, and the owner's own session token.
 	fn sign_in_disclosures(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
 		let p = ui::design::palette(ui);
-		if ui::design::disclosure(ui, "About Serein", self.about_open).clicked() {
+		if ui::design::disclosure(ui, "About SereinExt", self.about_open).clicked() {
 			self.about_open = !self.about_open;
 		}
 		if self.about_open {
@@ -4548,7 +4583,7 @@ impl Desktop {
 						{
 							self.messaging.channel_preferences_reload = false;
 							self.messaging.channel_preferences_load_pending = false;
-							self.messaging.channel_preferences_status = "Local storage worker stopped; restart Serein to restore channel preferences.";
+							self.messaging.channel_preferences_status = "Local storage worker stopped; restart SereinExt to restore channel preferences.";
 						}
 						presence_cache_stopped = self.presence_load_pending;
 						break;
@@ -5264,6 +5299,22 @@ impl Desktop {
 			.then(|| Duration::from_secs_f64(1000.0 / f64::from(millihertz)))
 	}
 }
+
+fn monitor_refresh_due(
+	previous: Option<(Option<egui::Rect>, Option<f32>)>,
+	next: (Option<egui::Rect>, Option<f32>),
+) -> bool {
+	let Some((previous_rect, previous_scale)) = previous else {
+		return true;
+	};
+	if previous_scale != next.1 {
+		return true;
+	}
+	match (previous_rect, next.0) {
+		(Some(before), Some(after)) => (after.center() - before.center()).length_sq() > 320.0 * 320.0,
+		_ => true,
+	}
+}
 impl eframe::App for Desktop {
 	fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
 		if self.window_transparent {
@@ -5277,10 +5328,12 @@ impl eframe::App for Desktop {
 		false
 	}
 	fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
-		// Viewport position/scale comes from native events; avoid an OS monitor query on paints.
+		// A window move changes outer_rect on every pixel. Querying the monitor then
+		// stalls the drag. Refresh only when the scale changes or the window has
+		// traveled far enough to have reached another display.
 		if let Some(viewport) = raw_input.viewports.get(&raw_input.viewport_id) {
 			let geometry = (viewport.outer_rect, viewport.native_pixels_per_point);
-			if self.monitor_geometry != Some(geometry) {
+			if monitor_refresh_due(self.monitor_geometry, geometry) {
 				self.monitor_geometry = Some(geometry);
 				self.monitor_period = self.refresh_frame_period();
 			}

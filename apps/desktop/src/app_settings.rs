@@ -34,6 +34,7 @@ impl Settings {
 			show_hidden_channels: ui.show_hidden_channels,
 			hide_title_bar: ui.hide_title_bar,
 			language: ui.language,
+			language_chosen: self.loaded,
 			gpu_preference: ui.gpu_preference,
 			primary_color: ui.primary_color,
 			transparency_blur: ui.transparency_blur,
@@ -72,7 +73,11 @@ impl Settings {
 		ui.notification_options = value.notification_options;
 		ui.show_hidden_channels = value.show_hidden_channels;
 		ui.hide_title_bar = value.hide_title_bar;
-		ui.language = value.language;
+		ui.language = if value.language_chosen {
+			value.language
+		} else {
+			system_language()
+		};
 		ui.gpu_preference = value.gpu_preference;
 		ui.primary_color = value.primary_color;
 		ui.transparency_blur = value.transparency_blur;
@@ -93,6 +98,37 @@ impl Settings {
 		ui.expanded_folders.clone_from(&value.expanded_folders);
 		ui.set_voice_user_volume_overrides(&value.user_volumes);
 		ui.set_voice_user_mutes(&value.muted_users);
+	}
+}
+
+/// First launch follows the operating system when that language exists in the app.
+pub fn system_language() -> model::Language {
+	#[cfg(windows)]
+	{
+		#[link(name = "kernel32")]
+		extern "system" {
+			fn GetUserDefaultUILanguage() -> u16;
+		}
+		let id = unsafe { GetUserDefaultUILanguage() };
+		return match id & 0x3ff {
+			0x16 => model::Language::PortugueseBrazil,
+			0x0a => model::Language::Spanish,
+			_ => model::Language::English,
+		};
+	}
+	#[cfg(not(windows))]
+	{
+		let name = std::env::var("LC_ALL")
+			.or_else(|_| std::env::var("LANG"))
+			.unwrap_or_default()
+			.to_ascii_lowercase();
+		if name.starts_with("pt") {
+			model::Language::PortugueseBrazil
+		} else if name.starts_with("es") {
+			model::Language::Spanish
+		} else {
+			model::Language::English
+		}
 	}
 }
 

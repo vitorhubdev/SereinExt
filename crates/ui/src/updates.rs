@@ -178,7 +178,7 @@ impl MessagingUi {
 		};
 
 		format!(
-			"- **Serein Version:** {} ({channel})\n- **Operating System:** {os} ({arch}){session_type}{package_type}{graphics}\n- **Display Scale:** {scale:.2}\n- **Theme:** {theme_mode} ({theme_variant})\n- **Update Channel:** {update_channel}\n- **Auto Update:** {}",
+			"- **SereinExt Version:** {} ({channel})\n- **Operating System:** {os} ({arch}){session_type}{package_type}{graphics}\n- **Display Scale:** {scale:.2}\n- **Theme:** {theme_mode} ({theme_variant})\n- **Update Channel:** {update_channel}\n- **Auto Update:** {}",
 			self.build.version,
 			if self.updates.auto_update {
 				"Enabled"
@@ -205,6 +205,7 @@ impl MessagingUi {
 	}
 
 	pub(super) fn update_settings(&mut self, ui: &mut egui::Ui, demo: bool) {
+		self.updates.nightly = false;
 		let colors = design::palette(ui);
 		design::card(ui, |ui| {
 			ui.horizontal(|ui| {
@@ -222,7 +223,7 @@ impl MessagingUi {
 				ui.vertical(|ui| {
 					ui.spacing_mut().item_spacing.y = 2.0;
 					ui.label(
-						design::semibold(ui, format!("Serein {}", self.build.version), 17.0)
+						design::semibold(ui, format!("SereinExt {}", self.build.version), 17.0)
 							.color(colors.text_strong),
 					);
 					ui.add(
@@ -287,115 +288,6 @@ impl MessagingUi {
 					design::Level::Warning,
 					"Could not load or save update preferences. Changes may not survive restart.",
 				);
-			}
-		});
-		design::group(ui, "Preferences", |ui| {
-			ui.add_enabled_ui(self.updates.supported || demo, |ui| {
-				design::switch(
-					ui,
-					"Auto update",
-					Some("Download updates in the background. Restart when you are ready. Serein still checks at startup and periodically when this is off."),
-					&mut self.updates.auto_update,
-				);
-			});
-			design::card_divider(ui);
-			design::row(
-				ui,
-				"Release channel",
-				Some(if self.updates.nightly {
-					"Early builds with the newest changes. Nightly releases can be less reliable."
-				} else {
-					"Published stable releases. Switching channels never installs an older version."
-				}),
-				|ui| {
-					egui::ComboBox::from_id_salt("update-release-channel")
-						.selected_text(if self.updates.nightly {
-							"Nightly"
-						} else {
-							"Production"
-						})
-						.width(ui.available_width().min(160.0))
-						.show_ui(ui, |ui| {
-							ui.selectable_value(&mut self.updates.nightly, false, "Production");
-							ui.selectable_value(&mut self.updates.nightly, true, "Nightly");
-						});
-				},
-			);
-			if !demo {
-				if self.updates.flatpak {
-					design::hint(
-						ui,
-						"Flatpak manages updates via its repository. Run `flatpak update` or use GNOME Software / KDE Discover to install new releases.",
-					);
-				} else if !self.updates.supported {
-					if let Some(cmd) = &self.updates.linux_update_cmd {
-						design::card_divider(ui);
-						let copied_cmd = self
-							.updates
-							.copied_command
-							.is_some_and(|until| ui.input(|i| i.time) < until);
-						let cmd = cmd.clone();
-						design::row(
-							ui,
-							"Package manager updates",
-							Some(
-								"Serein was installed via your distribution. Run this in a terminal to update.",
-							),
-							|ui| {
-								if design::button(
-									ui,
-									if copied_cmd { "Copied" } else { "Copy command" },
-									design::ButtonKind::Outline,
-								)
-								.clicked()
-								{
-									ui.ctx().copy_text(cmd.clone());
-									self.updates.copied_command = Some(ui.input(|i| i.time) + 2.5);
-									ui.ctx()
-										.request_repaint_after(std::time::Duration::from_secs(3));
-								}
-							},
-						);
-						ui.add_space(6.0);
-						egui::Frame::new()
-							.fill(colors.base)
-							.corner_radius(6)
-							.inner_margin(egui::Margin::symmetric(10, 6))
-							.show(ui, |ui| {
-								ui.set_width(ui.available_width());
-								ui.monospace(&cmd);
-							});
-					} else {
-						design::hint(
-							ui,
-							"In-app installation requires a macOS or Windows release package, or a Linux x86-64 AppImage. Other Linux installations use their package manager.",
-						);
-					}
-				}
-			}
-		});
-		design::group(ui, "Support & diagnostics", |ui| {
-			let copied = self
-				.updates
-				.copied_diagnostics
-				.is_some_and(|until| ui.input(|i| i.time) < until);
-			if design::row(
-				ui,
-				"Issue diagnostics",
-				Some(
-					"Copy system and client environment details formatted for GitHub issue reports.",
-				),
-				|ui| {
-					design::button(
-						ui,
-						if copied { "Copied" } else { "Copy" },
-						design::ButtonKind::Outline,
-					)
-				},
-			)
-			.clicked()
-			{
-				self.copy_diagnostic_info(ui.ctx());
 			}
 		});
 	}

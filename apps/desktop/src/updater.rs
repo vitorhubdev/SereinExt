@@ -293,22 +293,20 @@ impl Updater {
 				self.start(runtime, ctx, total, move |cancel, progress| {
 					download_package(package, cancel, progress)
 				});
-			} else if self.staged.is_none() && (check || Instant::now() >= self.next_check) {
-				if check
+			} else if self.staged.is_none()
+				&& (check || Instant::now() >= self.next_check)
+				&& !(check
 					&& self
 						.last_check
-						.is_some_and(|last| last.elapsed() < Duration::from_secs(60))
-				{
-					self.status = "Please wait one minute between update checks.".into();
-				} else {
-					self.last_check = Some(Instant::now());
-					self.next_check = Instant::now() + CHECK_INTERVAL;
-					let nightly = view.nightly;
-					self.start(runtime, ctx, 0, move |cancel, _| async move {
-						check_release(nightly, cancel).await.map(Outcome::Checked)
-					});
-					self.status = "Checking for updates…".into();
-				}
+						.is_some_and(|last| last.elapsed() < Duration::from_secs(60)))
+			{
+				self.last_check = Some(Instant::now());
+				self.next_check = Instant::now() + CHECK_INTERVAL;
+				let nightly = view.nightly;
+				self.start(runtime, ctx, 0, move |cancel, _| async move {
+					check_release(nightly, cancel).await.map(Outcome::Checked)
+				});
+				self.status = "Checking for updates…".into();
 			}
 		}
 		view.busy = self.job.is_some();
@@ -422,7 +420,11 @@ fn client() -> Result<reqwest::Client, String> {
 	reqwest::Client::builder()
 		.https_only(true)
 		.no_proxy()
-		.user_agent(concat!("Serein/", env!("CARGO_PKG_VERSION")))
+		.user_agent(concat!(
+			"SereinExt/",
+			env!("CARGO_PKG_VERSION"),
+			" (+https://github.com/vitorhubdev/SereinExt)"
+		))
 		.connect_timeout(Duration::from_secs(10))
 		.read_timeout(Duration::from_secs(30))
 		.timeout(Duration::from_secs(600))
@@ -583,7 +585,7 @@ fn select_release(
 			release.tag_name
 		);
 		if asset.browser_download_url != expected {
-			return Err("The asset is not from the Serein release repository.".into());
+			return Err("The asset is not from the SereinExt release repository.".into());
 		}
 		Ok(asset.clone())
 	};

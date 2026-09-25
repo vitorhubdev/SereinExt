@@ -109,16 +109,16 @@ impl CallCues {
 		gateway_connected: bool,
 		owner: Id,
 		participants: &[voice::Participant],
-	) -> Option<Sound> {
+	) -> Vec<Sound> {
 		self.joined |= ready;
 		if !self.joined {
-			return None;
+			return Vec::new();
 		}
 		if !gateway_connected {
 			// RESUME/READY can replay the whole voice roster. Drop only the comparison
 			// baseline so reconnect never sounds like a room full of fresh joins.
 			self.peers = None;
-			return None;
+			return Vec::new();
 		}
 		let mut peers = [0; voice::MAX_PARTICIPANTS];
 		for (slot, participant) in peers.iter_mut().zip(
@@ -142,9 +142,14 @@ impl CallCues {
 		});
 		// The first complete roster is a silent baseline. Only later identity transitions
 		// are audible; joining the call ourselves must never masquerade as another user.
-		joined_peer
-			.then_some(Sound::UserJoin)
-			.or(departed.then_some(Sound::UserLeave))
+		let mut cues = Vec::with_capacity(2);
+		if joined_peer {
+			cues.push(Sound::UserJoin);
+		}
+		if departed {
+			cues.push(Sound::UserLeave);
+		}
+		cues
 	}
 }
 /// Remote cameras kept as textures at once; matches the transport's source limit.
@@ -678,13 +683,18 @@ impl Voice {
 				// Waiting alone still joins voice, but its audio devices may not be open yet.
 				let ready =
 					devices_ready && matches!(call.phase, Phase::Connected | Phase::Waiting);
-				if let Some(cue) = live.cues.poll(
+				let cues = live.cues.poll(
 					ready,
 					state.gateway_connected,
 					live.user,
 					&call.participants,
-				) {
-					ui.notification_cue = Some(cue);
+				);
+				for cue in cues {
+					if ui.notification_cues.len() < 4 {
+						ui.notification_cues.push(cue);
+					}
+				}
+				if !ui.notification_cues.is_empty() {
 					ctx.request_repaint();
 				}
 			}
@@ -1388,51 +1398,59 @@ mod tests {
 		let owner = participant(1);
 		let peer = participant(2);
 		let mut cues = CallCues::default();
-		assert_eq!(cues.poll(false, true, owner.user, &[owner, peer]), None);
-		assert_eq!(
-			cues.poll(true, true, owner.user, &[owner, peer]),
-			None,
+		assert!(cues.poll(false, true, owner.user, &[owner, peer]).is_empty());
+		assert!(
+			cues.poll(true, true, owner.user, &[owner, peer]).is_empty(),
 			"the first complete roster is a silent baseline"
 		);
 		let mut muted_peer = peer;
 		muted_peer.muted = true;
-		assert_eq!(
-			cues.poll(true, true, owner.user, &[muted_peer, owner]),
-			None
-		);
+		assert!(cues
+			.poll(true, true, owner.user, &[muted_peer, owner])
+			.is_empty());
 		// Device reopening and rekeying do not announce this same call again.
-		assert_eq!(cues.poll(false, true, owner.user, &[owner, peer]), None);
-		assert_eq!(cues.poll(true, true, owner.user, &[owner, peer]), None);
+		assert!(cues.poll(false, true, owner.user, &[owner, peer]).is_empty());
+		assert!(cues.poll(true, true, owner.user, &[owner, peer]).is_empty());
 		// Compare identities rather than counts; departures can themselves trigger rekeying.
 		let replacement = participant(3);
 		assert_eq!(
 			cues.poll(false, true, owner.user, &[owner, replacement]),
-			Some(Sound::UserLeave)
+			vec![Sound::UserLeave]
 		);
-		assert_eq!(
-			cues.poll(true, true, owner.user, &[owner, replacement]),
-			None
-		);
-		assert_eq!(cues.poll(false, false, owner.user, &[]), None);
-		assert_eq!(
-			cues.poll(true, true, owner.user, &[owner]),
-			None,
+		assert!(cues
+			.poll(true, true, owner.user, &[owner, replacement])
+			.is_empty());
+		assert!(cues.poll(false, false, owner.user, &[]).is_empty());
+		assert!(
+			cues.poll(true, true, owner.user, &[owner]).is_empty(),
 			"reconnect establishes a fresh silent roster baseline"
 		);
 		// A peer entering after the baseline is a real join transition.
 		assert_eq!(
 			cues.poll(true, true, owner.user, &[owner, peer]),
-			Some(Sound::UserJoin)
+			vec![Sound::UserJoin]
 		);
 		assert_eq!(
 			cues.poll(true, true, owner.user, &[owner]),
-			Some(Sound::UserLeave)
+			vec![Sound::UserLeave]
 		);
-		assert_eq!(cues.poll(true, true, owner.user, &[owner]), None);
-		assert_eq!(
-			CallCues::default().poll(true, true, owner.user, &[owner]),
-			None,
+		assert!(cues.poll(true, true, owner.user, &[owner]).is_empty());
+		assert!(
+			CallCues::default()
+				.poll(true, true, owner.user, &[owner])
+				.is_empty(),
 			"joining the call ourselves is never announced as a remote user join"
+		);
+		let moved_in = participant(4);
+		assert_eq!(
+			cues.poll(true, true, owner.user, &[owner, moved_in]),
+			vec![Sound::UserJoin],
+			"a person moved into this call is announced"
+		);
+		assert_eq!(
+			cues.poll(true, true, owner.user, &[owner, peer]),
+			vec![Sound::UserJoin, Sound::UserLeave],
+			"a move that swaps people plays both sounds"
 		);
 	}
 
