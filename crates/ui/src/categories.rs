@@ -1142,7 +1142,7 @@ impl MessagingUi {
 			ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
 			if target.kind == 4 && change.parent == Some(target.id) {
 				ui.painter().rect_stroke(
-					target_rect.shrink(1.0),
+					target.rect.shrink(1.0),
 					6,
 					(2.0, colors.positive),
 					egui::StrokeKind::Inside,
