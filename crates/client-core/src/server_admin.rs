@@ -351,19 +351,15 @@ impl State {
 		if from == channel {
 			return false;
 		}
-		let Some(source) = self
+		if self
 			.channel(from)
-			.filter(|source| source.guild == Some(guild) && source.kind == 2)
-		else {
+			.is_none_or(|source| source.guild != Some(guild) || source.kind != 2)
+			|| self
+				.channel(channel)
+				.is_none_or(|target| target.guild != Some(guild) || target.kind != 2)
+		{
 			return false;
-		};
-		let Some(target) = self
-			.channel(channel)
-			.filter(|target| target.guild == Some(guild) && target.kind == 2)
-		else {
-			return false;
-		};
-		let _ = (source, target);
+		}
 		self.permission(
 			from,
 			model::permissions::VIEW_CHANNEL | model::permissions::MOVE_MEMBERS,
@@ -956,6 +952,116 @@ impl State {
 		}
 		self.server_admin.revision = self.server_admin.revision.wrapping_add(1);
 		Ok(())
+	}
+}
+
+#[cfg(test)]
+mod voice_move_tests {
+	use super::*;
+	use crate::voice::{Participant, RosterEntry};
+	use model::permissions as p;
+
+	fn state() -> State {
+		let guild = Id(10);
+		let source = Id(11);
+		let target = Id(12);
+		let mut state = State {
+			auth: AuthState::Authenticated,
+			gateway_connected: true,
+			user: Some(model::User {
+				id: Id(1),
+				name: "Moderator".into(),
+				avatar: None,
+				discriminator: 0,
+				kind: Default::default(),
+				webhook: false,
+				primary_guild: None,
+			}),
+			guilds: vec![model::Guild {
+				id: guild,
+				name: "Guild".into(),
+				icon: None,
+				emojis: None,
+				stickers: None,
+			}],
+			channels: [source, target]
+				.into_iter()
+				.enumerate()
+				.map(|(position, id)| model::Channel {
+					id,
+					guild: Some(guild),
+					parent_id: None,
+					position: position as i32,
+					name: format!("Voice {position}"),
+					kind: 2,
+					recipients: vec![],
+					icon: None,
+					member_list_id: None,
+					message_count: None,
+					last_message: None,
+				})
+				.collect(),
+			..Default::default()
+		};
+		state.permissions.guilds.insert(
+			guild,
+			p::Guild {
+				id: guild,
+				owner: Some(Id(99)),
+				member: Some(p::Member {
+					roles: vec![],
+					timeout_until: None,
+				}),
+				roles: Some(vec![p::Role {
+					id: guild,
+					name: "@everyone".into(),
+					bits: p::VIEW_CHANNEL | p::MOVE_MEMBERS,
+					color: 0,
+					position: 0,
+					hoist: false,
+				}]),
+			},
+		);
+		state.voice.roster.push(RosterEntry {
+			guild,
+			channel: source,
+			participant: Participant {
+				user: Id(8),
+				muted: false,
+				deafened: false,
+				server_muted: false,
+				server_deafened: false,
+				video: false,
+				streaming: false,
+			},
+			member: None,
+		});
+		state
+	}
+
+	#[test]
+	fn voice_member_move_requires_roster_and_move_members_on_both_channels() {
+		let mut state = state();
+		assert!(state.can_drag_voice_member(Id(10), Id(8), Id(11)));
+		assert!(state.can_move_voice_member(Id(10), Id(8), Id(11), Id(12)));
+		assert!(!state.can_move_voice_member(Id(10), Id(8), Id(11), Id(11)));
+		assert!(!state.can_move_voice_member(Id(10), Id(9), Id(11), Id(12)));
+
+		state.permissions.channels.insert(
+			Id(12),
+			p::Channel {
+				id: Id(12),
+				guild: Id(10),
+				overwrites: Some(vec![p::Overwrite {
+					id: Id(10),
+					kind: 0,
+					allow: 0,
+					deny: p::MOVE_MEMBERS,
+				}]),
+			},
+		);
+		state.permissions.clear_cache();
+		assert!(!state.can_move_voice_member(Id(10), Id(8), Id(11), Id(12)));
 	}
 }
 

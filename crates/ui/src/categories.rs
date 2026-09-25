@@ -576,6 +576,7 @@ impl MessagingUi {
 		let previous_spacing = ui.spacing().item_spacing.y;
 		ui.spacing_mut().item_spacing.y = 0.0;
 		let mut drop_rows = Vec::new();
+		let mut voice_drop_rows: BTreeMap<Id, egui::Rect> = BTreeMap::new();
 		let output = self
 			.scroll
 			.attach(
@@ -625,6 +626,10 @@ impl MessagingUi {
 									&self.channel_cache.rows,
 									index,
 								);
+								voice_drop_rows
+									.entry(entry.channel)
+									.and_modify(|rect| *rect = rect.union(response.rect))
+									.or_insert(response.rect);
 							}
 						}
 						CachedRow::Category(category, count) => {
@@ -702,6 +707,10 @@ impl MessagingUi {
 										rect: response.rect,
 									});
 								}
+								voice_drop_rows
+									.entry(channel.id)
+									.and_modify(|rect| *rect = rect.union(response.rect))
+									.or_insert(response.rect);
 								self.channel_menu.context(
 									&response,
 									state,
@@ -1133,7 +1142,7 @@ impl MessagingUi {
 			ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
 			if target.kind == 4 && change.parent == Some(target.id) {
 				ui.painter().rect_stroke(
-					target.rect.shrink(1.0),
+					target_rect.shrink(1.0),
 					6,
 					(2.0, colors.positive),
 					egui::StrokeKind::Inside,
@@ -1166,29 +1175,28 @@ impl MessagingUi {
 			let hovered = pointer
 				.filter(|pointer| output.inner_rect.contains(*pointer))
 				.and_then(|pointer| {
-					drop_rows.iter().copied().find(|row| {
-						row.kind == 2
-							&& pointer.y >= row.rect.top()
-							&& pointer.y <= row.rect.bottom()
-					})
+					voice_drop_rows
+						.iter()
+						.find(|(_, rect)| rect.contains(pointer))
+						.map(|(channel, rect)| (*channel, *rect))
 				});
-			let target = hovered.filter(|target| {
+			let target = hovered.filter(|(channel, _)| {
 				state.can_move_voice_member(
 					source.guild,
 					source.user,
 					source.from,
-					target.id,
+					*channel,
 				)
 			});
-			if let Some(target) = target {
+			if let Some((target, target_rect)) = target {
 				ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
 				ui.painter().rect_filled(
-					target.rect.shrink(1.0),
+					target_rect.shrink(1.0),
 					7,
 					colors.positive.gamma_multiply(0.12),
 				);
 				ui.painter().rect_stroke(
-					target.rect.shrink(1.0),
+					target_rect.shrink(1.0),
 					7,
 					egui::Stroke::new(2.0, colors.positive),
 					egui::StrokeKind::Inside,
@@ -1200,13 +1208,13 @@ impl MessagingUi {
 				.request_repaint_after(std::time::Duration::from_millis(16));
 			if ui.input(|input| input.pointer.any_released()) {
 				egui::DragAndDrop::take_payload::<VoiceMemberDrag>(ui.ctx());
-				if let Some(target) = target {
+				if let Some((target, _)) = target {
 					self.voice_member_move = Some((
 						source.guild,
 						model::server_admin::Action::MoveVoice {
 							user: source.user,
 							from: source.from,
-							channel: target.id,
+							channel: target,
 						},
 					));
 				}
