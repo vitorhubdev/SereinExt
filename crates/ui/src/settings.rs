@@ -437,7 +437,7 @@ impl MessagingUi {
 									ui.add_space(20.0);
 									design::hint(
 										ui,
-										"Offline preview · changes stay in this session and are never sent.",
+										crate::i18n::text(self.language, "Offline preview · changes stay in this session and are never sent."),
 									);
 								}
 								ui.add_space(24.0);
@@ -535,7 +535,7 @@ impl MessagingUi {
 						.color(colors.muted),
 				);
 				ui.label(
-					RichText::new("Unofficial · not endorsed by Discord")
+					RichText::new(crate::i18n::text(self.language, "Unofficial · not endorsed by Discord"))
 						.size(11.0)
 						.color(colors.muted),
 				);
@@ -553,7 +553,7 @@ impl MessagingUi {
 					ui.spacing_mut().item_spacing.x = 6.0;
 					let response = ui.add(
 						egui::TextEdit::singleline(&mut self.settings.query)
-							.hint_text("Search")
+							.hint_text(crate::i18n::text(self.language, "Search"))
 							.char_limit(64)
 							.frame(egui::Frame::NONE)
 							.desired_width(ui.available_width() - 24.0),
@@ -573,7 +573,8 @@ impl MessagingUi {
 
 	fn settings_logout(&mut self, ui: &mut egui::Ui, demo: bool) {
 		let colors = design::palette(ui);
-		let label = if demo { "Exit preview" } else { "Log out" };
+		let label = crate::i18n::text(self.language, "Log out");
+		let label = if demo { crate::i18n::text(self.language, "Exit preview") } else { label };
 		let (rect, response) =
 			ui.allocate_exact_size(egui::vec2(ui.available_width(), 32.0), egui::Sense::click());
 		response
@@ -608,7 +609,7 @@ impl MessagingUi {
 		let name = state
 			.user
 			.as_ref()
-			.map_or("Your account", |u| u.name.as_str())
+			.map_or(crate::i18n::text(self.language, "Your account"), |u| u.name.as_str())
 			.to_owned();
 		egui::Frame::new()
 			.fill(colors.raised)
@@ -653,9 +654,9 @@ impl MessagingUi {
 								);
 								ui.label(
 									RichText::new(if state.demo {
-										"Offline preview · synthetic account"
+										crate::i18n::text(self.language, "Offline preview · synthetic account")
 									} else {
-										"Signed in with your Discord account"
+										crate::i18n::text(self.language, "Signed in with your Discord account")
 									})
 									.size(13.0)
 									.color(colors.muted),
@@ -670,7 +671,7 @@ impl MessagingUi {
 							.show(ui, |ui| {
 								ui.set_width(ui.available_width());
 								ui.spacing_mut().item_spacing.y = 10.0;
-								account_row(ui, "Display name", &name);
+								account_row(ui, crate::i18n::text(self.language, "Display name"), &name);
 								ui.separator();
 								account_row(
 									ui,
@@ -685,7 +686,7 @@ impl MessagingUi {
 								|ui| {
 									if design::button(
 										ui,
-										"Edit profile",
+										crate::i18n::text(self.language, "Edit profile"),
 										design::ButtonKind::Outline,
 									)
 									.clicked()
@@ -714,18 +715,18 @@ impl MessagingUi {
 				});
 			});
 		let label = if state.demo {
-			"Exit preview"
+			crate::i18n::text(self.language, "Exit preview")
 		} else {
-			"Log out"
+			crate::i18n::text(self.language, "Log out")
 		};
-		design::group(ui, "Session", |ui| {
+		design::group(ui, crate::i18n::text(self.language, "Session"), |ui| {
 			if design::row(
 				ui,
 				label,
 				Some(if state.demo {
-					"Closes the offline fixture. Nothing is stored for the preview."
+					crate::i18n::text(self.language, "Closes the offline fixture. Nothing is stored for the preview.")
 				} else {
-					"Removes the saved login and clears this account's local cache and drafts."
+					crate::i18n::text(self.language, "Removes the saved login and clears this account's local cache and drafts.")
 				}),
 				|ui| design::button(ui, label, design::ButtonKind::Danger),
 			)
@@ -799,11 +800,11 @@ impl MessagingUi {
 						crate::i18n::text(self.language, "Keep Serein in the system tray")
 					},
 					Some(if cfg!(target_os = "macos") {
-						"Closing the window keeps Serein in the menu bar. Quit from its menu to exit."
+						crate::i18n::text(self.language, "Closing the window keeps Serein in the menu bar. Quit from its menu to exit.")
 					} else if cfg!(target_os = "linux") {
-						"Closing keeps Serein running. Use the tray to show, minimize or quit."
+						crate::i18n::text(self.language, "Closing keeps Serein running. Use the tray to show, minimize or quit.")
 					} else {
-						"Closing the window keeps Serein in the notification area. Quit from its menu to exit."
+						crate::i18n::text(self.language, "Closing the window keeps Serein in the notification area. Quit from its menu to exit.")
 					}),
 					&mut self.minimize_to_tray,
 				);
@@ -816,7 +817,7 @@ impl MessagingUi {
 		});
 		design::group(ui, crate::i18n::text(self.language, "Graphics"), |ui| {
 			let detail = if self.gpu_adapter.is_empty() {
-				"Takes effect the next time Serein starts.".to_owned()
+				crate::i18n::text(self.language, "Takes effect the next time Serein starts.").to_owned()
 			} else {
 				format!(
 					"Currently drawing with {}. Takes effect the next time Serein starts.",
@@ -851,7 +852,7 @@ impl MessagingUi {
 		ui.label(design::eyebrow(ui, "Mode", colors.muted));
 		theme_preference_cards(ui);
 		ui.add_space(6.0);
-		ui.label(design::eyebrow(ui, "Theme", colors.muted));
+		ui.label(design::eyebrow(ui, crate::i18n::text(self.language, "Theme"), colors.muted));
 		let current = design::variant();
 		ui.horizontal_wrapped(|ui| {
 			ui.spacing_mut().item_spacing = egui::vec2(0.0, 4.0);
@@ -881,26 +882,26 @@ impl MessagingUi {
 		ui.label(design::eyebrow(ui, "Theme", colors.muted));
 		theme_preference_cards(ui);
 		self.colour_preset_settings(ui);
-		design::group(ui, "Accent", |ui| {
+		design::group(ui, crate::i18n::text(self.language, "Accent"), |ui| {
 			let themed_accent = design::theme_sets_accent(ui.visuals().dark_mode);
 			design::row(
 				ui,
-				"Primary color",
+				crate::i18n::text(self.language, "Primary color"),
 				Some(if themed_accent {
-					"The active theme brings its own accent; it takes over while the theme is in use."
+					crate::i18n::text(self.language, "The active theme brings its own accent; it takes over while the theme is in use.")
 				} else {
-					"Used for buttons, selection and message highlights."
+					crate::i18n::text(self.language, "Used for buttons, selection and message highlights.")
 				}),
 				|ui| {
 					ui.add_enabled_ui(!themed_accent, |ui| {
 						if self.primary_color.is_some()
-							&& design::text_action(ui, "Reset").clicked()
+							&& design::text_action(ui, crate::i18n::text(self.language, "Reset")).clicked()
 						{
 							self.primary_color = None;
 						}
 						let mut color = self.primary_color.unwrap_or(design::DEFAULT_PRIMARY_COLOR);
 						if design::color_edit(ui, &mut color)
-							.on_hover_text("Choose primary color")
+							.on_hover_text(crate::i18n::text(self.language, "Choose primary color"))
 							.changed()
 						{
 							self.primary_color = Some(color);
@@ -909,20 +910,18 @@ impl MessagingUi {
 				},
 			);
 		});
-		design::group(ui, "Window effects", |ui| {
+		design::group(ui, crate::i18n::text(self.language, "Window effects"), |ui| {
 			design::switch(
 				ui,
-				"Transparency & blur",
-				Some(
-					"Restart Serein after changing this. Themes can customize effects while enabled.",
-				),
+				crate::i18n::text(self.language, "Transparency & blur"),
+				Some(crate::i18n::text(self.language, "Restart Serein after changing this. Themes can customize effects while enabled.")),
 				&mut self.transparency_blur,
 			);
 			if self.transparency_blur {
 				design::card_divider(ui);
 				design::slider_row(
 					ui,
-					"Transparency",
+					crate::i18n::text(self.language, "Transparency"),
 					None,
 					&mut self.transparency,
 					0..=100,
@@ -931,8 +930,8 @@ impl MessagingUi {
 				ui.add_space(8.0);
 				design::slider_row(
 					ui,
-					"Blur",
-					Some("Zero disables blur; the native compositor controls its exact strength."),
+					crate::i18n::text(self.language, "Blur"),
+					Some(crate::i18n::text(self.language, "Zero disables blur; the native compositor controls its exact strength.")),
 					&mut self.blur,
 					0..=100,
 					"%",
@@ -940,8 +939,8 @@ impl MessagingUi {
 				ui.add_space(4.0);
 				design::switch(
 					ui,
-					"Apply to all surfaces",
-					Some("Include sidebars, server rail, headers, and composer."),
+					crate::i18n::text(self.language, "Apply to all surfaces"),
+					Some(crate::i18n::text(self.language, "Include sidebars, server rail, headers, and composer.")),
 					&mut self.transparent_all,
 				);
 			}
@@ -951,11 +950,11 @@ impl MessagingUi {
 
 	fn chat_settings(&mut self, ui: &mut egui::Ui, demo: bool) {
 		self.chat_reading_settings(ui, demo);
-		design::group(ui, "Channel list", |ui| {
+		design::group(ui, crate::i18n::text(self.language, "Channel list"), |ui| {
 			design::switch(
 				ui,
-				"Show hidden channels",
-				Some("Show channels you cannot currently access."),
+				crate::i18n::text(self.language, "Show hidden channels"),
+				Some(crate::i18n::text(self.language, "Show channels you cannot currently access.")),
 				&mut self.show_hidden_channels,
 			);
 		});
@@ -998,7 +997,7 @@ impl MessagingUi {
 			})
 			.map_or(current.label(), |(_, _, label, _)| label.as_str())
 			.to_owned();
-		design::group(ui, "Colour preset", |ui| {
+		design::group(ui, crate::i18n::text(self.language, "Colour preset"), |ui| {
 			ui.horizontal_wrapped(|ui| {
 				ui.spacing_mut().item_spacing = egui::vec2(12.0, 10.0);
 				for (variant, id, label, swatch) in presets {
@@ -1023,9 +1022,17 @@ impl MessagingUi {
 			});
 			ui.add_space(4.0);
 			ui.label(
-				RichText::new(format!(
-					"{active_label} · saved with your appearance. Gradient presets always use dark text."
-				))
+				RichText::new(match self.language {
+					model::Language::English => format!(
+						"{active_label} · saved with your appearance. Gradient presets always use dark text."
+					),
+					model::Language::PortugueseBrazil => format!(
+						"{active_label} · salvo com sua aparência. Predefinições em gradiente sempre usam texto escuro."
+					),
+					model::Language::Spanish => format!(
+						"{active_label} · guardado con tu apariencia. Los preajustes con degradado siempre usan texto oscuro."
+					),
+				})
 				.size(12.0)
 				.color(colors.muted),
 			);
@@ -1036,8 +1043,8 @@ impl MessagingUi {
 		design::card(ui, |ui| {
 			design::switch(
 				ui,
-				"Share game activity",
-				Some("Detect running games and ask Discord to share them as activity."),
+				crate::i18n::text(self.language, "Share game activity"),
+				Some(crate::i18n::text(self.language, "Detect running games and ask Discord to share them as activity.")),
 				&mut self.share_game_activity,
 			);
 			design::card_divider(ui);
@@ -1047,9 +1054,9 @@ impl MessagingUi {
 				.filter(|_| self.share_game_activity);
 			let action = if self.share_game_activity && state.gateway_connected && !state.demo {
 				if self.discord_activity_sharing == Some(false) {
-					Some(("Enable on Discord", true))
+					Some((crate::i18n::text(self.language, "Enable on Discord"), true))
 				} else if self.discord_activity_sharing_retry {
-					Some(("Check again", false))
+					Some((crate::i18n::text(self.language, "Check again"), false))
 				} else {
 					None
 				}
@@ -1059,15 +1066,15 @@ impl MessagingUi {
 			let title = game.map_or_else(
 				|| {
 					if self.share_game_activity {
-						"Looking for a running game"
+						crate::i18n::text(self.language, "Looking for a running game")
 					} else {
-						"Activity sharing is off"
+						crate::i18n::text(self.language, "Activity sharing is off")
 					}
 				},
 				|game| game,
 			);
 			let detail = if state.demo {
-				"Synthetic activity, never shared or saved."
+				crate::i18n::text(self.language, "Synthetic activity, never shared or saved")
 			} else {
 				self.game_activity_status
 			};
@@ -1084,14 +1091,14 @@ impl MessagingUi {
 	}
 
 	fn storage_page(&mut self, ui: &mut egui::Ui, state: &State) {
-		design::group(ui, "Local storage", |ui| {
+		design::group(ui, crate::i18n::text(self.language, "Local storage"), |ui| {
 			design::row(
 				ui,
-				"Clear cache",
-				Some("Removes cached messages and media. Drafts and your login stay."),
+				crate::i18n::text(self.language, "Clear cache"),
+				Some(crate::i18n::text(self.language, "Removes cached messages and media. Drafts and your login stay.")),
 				|ui| {
 					ui.add_enabled_ui(!state.demo, |ui| {
-						if design::button(ui, "Clear cache", design::ButtonKind::Outline).clicked()
+						if design::button(ui, crate::i18n::text(self.language, "Clear cache"), design::ButtonKind::Outline).clicked()
 						{
 							self.clear_cache_requested = true;
 						}
@@ -1104,13 +1111,13 @@ impl MessagingUi {
 			design::card_divider(ui);
 			design::hint(
 				ui,
-				"Messages and drafts are cached on this device inside bounded, account-isolated files. Cache data is not encrypted by Serein; saved login tokens use the OS credential store.",
+				crate::i18n::text(self.language, "Messages and drafts are cached on this device inside bounded, account-isolated files. Cache data is not encrypted by Serein; saved login tokens use the OS credential store."),
 			);
 		});
-		design::group(ui, "Your privacy", |ui| {
+		design::group(ui, crate::i18n::text(self.language, "Your privacy"), |ui| {
 			design::hint(
 				ui,
-				"Serein does not collect telemetry or upload diagnostics. Discord retains service-side data according to its own policies.",
+				crate::i18n::text(self.language, "Serein does not collect telemetry or upload diagnostics. Discord retains service-side data according to its own policies."),
 			);
 		});
 	}
