@@ -961,6 +961,140 @@ impl State {
 }
 
 #[cfg(test)]
+mod member_kick_tests {
+	use super::*;
+	use model::permissions as p;
+
+	fn user(id: u64, name: &str) -> model::User {
+		model::User {
+			id: Id(id),
+			name: name.into(),
+			avatar: None,
+			discriminator: 0,
+			kind: Default::default(),
+			webhook: false,
+			primary_guild: None,
+		}
+	}
+	fn role(id: u64, bits: u128, position: i32) -> p::Role {
+		p::Role {
+			id: Id(id),
+			name: format!("role-{id}"),
+			bits,
+			color: 0,
+			position,
+			hoist: false,
+		}
+	}
+	fn admin_member(id: u64, roles: Vec<Id>) -> model::server_admin::Member {
+		model::server_admin::Member {
+			user: user(id, &format!("user-{id}")),
+			nick: None,
+			roles,
+			joined_at: None,
+			join_source: None,
+			invite_code: None,
+			flags: None,
+			unusual_dm_until: None,
+			timeout_until: None,
+		}
+	}
+	fn state(owner_actor: bool, administrator: bool) -> State {
+		let guild = Id(10);
+		let actor = Id(1);
+		let owner = if owner_actor { actor } else { Id(99) };
+		let actor_role = Id(20);
+		let lower = Id(30);
+		let equal = Id(31);
+		let higher = Id(32);
+		let actor_bits = if administrator {
+			p::ADMINISTRATOR
+		} else {
+			p::KICK_MEMBERS
+		};
+		let mut state = State {
+			auth: AuthState::Authenticated,
+			gateway_connected: true,
+			user: Some(user(actor.0, "Moderator")),
+			guilds: vec![model::Guild {
+				id: guild,
+				name: "Guild".into(),
+				icon: None,
+				emojis: None,
+				stickers: None,
+			}],
+			..Default::default()
+		};
+		state.permissions.guilds.insert(
+			guild,
+			p::Guild {
+				id: guild,
+				owner: Some(owner),
+				member: Some(p::Member {
+					roles: (!owner_actor).then_some(vec![actor_role]).unwrap_or_default(),
+					timeout_until: None,
+				}),
+				roles: Some(vec![
+					role(guild.0, 0, 0),
+					role(actor_role.0, actor_bits, 5),
+					role(lower.0, 0, 1),
+					role(equal.0, 0, 5),
+					role(higher.0, 0, 10),
+				]),
+			},
+		);
+		state.server_admin.guild = Some(guild);
+		state.server_admin.members = Some(model::server_admin::Members {
+			items: vec![
+				admin_member(2, vec![lower]),
+				admin_member(3, vec![equal]),
+				admin_member(4, vec![higher]),
+				admin_member(actor.0, if owner_actor { vec![] } else { vec![actor_role] }),
+			],
+			total: 4,
+			..Default::default()
+		});
+		state
+	}
+
+	#[test]
+	fn kick_permissions_respect_owner_and_role_hierarchy() {
+		let guild = Id(10);
+
+		let owner = state(true, false);
+		assert!(owner.can_kick_guild_member(guild, Id(2)));
+		assert!(owner.can_kick_guild_member(guild, Id(3)));
+		assert!(owner.can_kick_guild_member(guild, Id(4)));
+		assert!(!owner.can_kick_guild_member(guild, Id(1)));
+		assert!(!owner.can_kick_guild_member(guild, Id(99)));
+
+		for administrator in [false, true] {
+			let mut moderator = state(false, administrator);
+			assert!(moderator.can_open_member_settings(guild));
+			assert!(moderator.can_kick_guild_member(guild, Id(2)));
+			assert!(!moderator.can_kick_guild_member(guild, Id(3)));
+			assert!(!moderator.can_kick_guild_member(guild, Id(4)));
+			assert!(!moderator.can_kick_guild_member(guild, Id(1)));
+			assert!(!moderator.can_kick_guild_member(guild, Id(99)));
+
+			if !administrator {
+				let roles = moderator
+					.permissions
+					.guilds
+					.get_mut(&guild)
+					.unwrap()
+					.roles
+					.as_mut()
+					.unwrap();
+				roles.iter_mut().find(|role| role.id == Id(20)).unwrap().bits = 0;
+				moderator.permissions.clear_cache();
+				assert!(!moderator.can_kick_guild_member(guild, Id(2)));
+			}
+		}
+	}
+}
+
+#[cfg(test)]
 mod voice_move_tests {
 	use super::*;
 	use crate::voice::{Participant, RosterEntry};
