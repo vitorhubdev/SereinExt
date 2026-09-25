@@ -1071,6 +1071,41 @@ mod navigation_tests {
 		assert!(state.prepare_mark_channel_read(Id(999)).is_none());
 	}
 	#[test]
+	fn leaving_channel_acknowledges_only_latest_seen_message() {
+		let mut state = state(Some(Id(100)));
+		let Some(Command::MarkRead {
+			channel,
+			message,
+			manual: false,
+			mention_count: None,
+			..
+		}) = state.prepare_mark_left_channel_read(Id(1), Id(500))
+		else {
+			panic!("leave acknowledgement")
+		};
+		assert_eq!((channel, message), (Id(1), Id(500)));
+
+		let mut already_read = state(Some(Id(500)));
+		assert!(
+			already_read
+				.prepare_mark_left_channel_read(Id(1), Id(500))
+				.is_none()
+		);
+		let mut beyond_latest = state(Some(Id(100)));
+		assert!(
+			beyond_latest
+				.prepare_mark_left_channel_read(Id(1), Id(501))
+				.is_none()
+		);
+		let mut disconnected = state(Some(Id(100)));
+		disconnected.gateway_connected = false;
+		assert!(
+			disconnected
+				.prepare_mark_left_channel_read(Id(1), Id(500))
+				.is_none()
+		);
+	}
+	#[test]
 	fn unread_and_next_pages_are_bounded_scoped_and_do_not_acknowledge() {
 		for marker in [None, Some(Id(100))] {
 			let mut state = state(marker);
