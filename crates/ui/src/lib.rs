@@ -5589,7 +5589,9 @@ mod composer_tests {
 					frame(&mut view, &mut state, vec![]);
 				}
 				if last == 15 {
-					let commands = click(&mut view, &mut state, "Next messages");
+					// Older history has no bar of its own; reaching its end requests the next page.
+					view.timeline.load_newer = true;
+					let (_, commands) = frame(&mut view, &mut state, vec![]);
 					assert!(commands.iter().any(|command| matches!(
 						command,
 						Command::History {
