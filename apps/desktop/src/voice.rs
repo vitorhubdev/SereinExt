@@ -115,9 +115,8 @@ impl CallCues {
 			return Vec::new();
 		}
 		if !gateway_connected {
-			// RESUME/READY can replay the whole voice roster. Drop only the comparison
-			// baseline so reconnect never sounds like a room full of fresh joins.
-			self.peers = None;
+			// Keep the last roster. A reconnect must not turn people already here into
+			// fresh joins, and a person who connects during the gap must still be heard.
 			return Vec::new();
 		}
 		let mut peers = [0; voice::MAX_PARTICIPANTS];
@@ -675,8 +674,8 @@ impl Voice {
 			}
 			// A worker can finish between draining notices and checking its lifecycle.
 			failure = live.failure.get().copied().or(failure);
-			if failure.is_none()
-				&& !state.demo
+			// Join and leave sounds stay armed even when the voice devices themselves fail.
+			if !state.demo
 				&& state.auth == client_core::auth::AuthState::Authenticated
 				&& let Some(call) = &state.voice.active
 			{
@@ -690,9 +689,14 @@ impl Voice {
 					&call.participants,
 				);
 				for cue in cues {
-					if ui.notification_cues.len() < 4 {
-						ui.notification_cues.push(cue);
+					let membership = matches!(cue, Sound::UserJoin | Sound::UserLeave);
+					if ui.notification_cues.len() >= 4 {
+						if !membership {
+							continue;
+						}
+						ui.notification_cues.remove(0);
 					}
+					ui.notification_cues.push(cue);
 				}
 				if !ui.notification_cues.is_empty() {
 					ctx.request_repaint();
@@ -1415,20 +1419,16 @@ mod tests {
 		let replacement = participant(3);
 		assert_eq!(
 			cues.poll(false, true, owner.user, &[owner, replacement]),
-			vec![Sound::UserLeave]
+			vec![Sound::UserJoin, Sound::UserLeave]
 		);
 		assert!(cues
 			.poll(true, true, owner.user, &[owner, replacement])
 			.is_empty());
 		assert!(cues.poll(false, false, owner.user, &[]).is_empty());
-		assert!(
-			cues.poll(true, true, owner.user, &[owner]).is_empty(),
-			"reconnect establishes a fresh silent roster baseline"
-		);
-		// A peer entering after the baseline is a real join transition.
 		assert_eq!(
 			cues.poll(true, true, owner.user, &[owner, peer]),
-			vec![Sound::UserJoin]
+			vec![Sound::UserJoin, Sound::UserLeave],
+			"a person who connects while the gateway blinks is still announced"
 		);
 		assert_eq!(
 			cues.poll(true, true, owner.user, &[owner]),

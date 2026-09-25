@@ -14,6 +14,16 @@
 > **SereinExt is an independent modified fork of [ViceVerse-cz/Serein](https://github.com/ViceVerse-cz/Serein).**
 > Upstream remains credited as the original project. SereinExt versions and changes are maintained in this repository and may intentionally diverge from upstream.
 
+### SereinExt 1.0.3
+
+Version 1.0.3 keeps the 1.0.2 client and adds the local work finished after that release:
+
+- the app language follows Windows on first launch when Portuguese or Spanish is available, with a language control on the sign-in screen;
+- login, chat chrome and call controls use the chosen language;
+- screen sharing starts from the whole display, with audio under it and apps folded away;
+- someone connecting to or leaving the current call plays a sound, including while Do Not Disturb is on, and retries if playback is busy;
+- a failed image or file send shows the error on the preview, with a way to put the file back in the composer.
+
 ### SereinExt 1.0.2
 
 Version 1.0.2 integrates selected upstream improvements that fit SereinExt without replacing the fork-specific fixes:
@@ -77,7 +87,7 @@ SereinExt is currently **source/tag first**. Until this repository publishes its
 
 - Repository: [`vitorhubdev/SereinExt`](https://github.com/vitorhubdev/SereinExt)
 - Development branch: `main`
-- Workspace version: `1.0.2`
+- Workspace version: `1.0.3`
 - Version history: [Tags](https://github.com/vitorhubdev/SereinExt/tags)
 
 ### Build from source

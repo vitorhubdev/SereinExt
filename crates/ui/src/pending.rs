@@ -82,8 +82,14 @@ pub fn show(
 					ui.set_width(ui.available_width());
 					let mut text_line = egui::Rect::NOTHING;
 					if !compact
-						|| matches!(pending.delivery, Delivery::Rejected | Delivery::Ambiguous)
+						|| (matches!(pending.delivery, Delivery::Rejected | Delivery::Ambiguous)
+							&& pending.attachments.is_empty())
 					{
+						let file_alert = !pending.attachments.is_empty()
+							&& matches!(
+								pending.delivery,
+								Delivery::Rejected | Delivery::Ambiguous
+							);
 						ui.horizontal_wrapped(|ui| {
 							ui.spacing_mut().item_spacing.x = 8.0;
 							if !compact {
@@ -96,13 +102,15 @@ pub fn show(
 									.color(colors.muted),
 								);
 							}
-							ui.label(RichText::new(status).size(12.0).color(
-								if pending.delivery == Delivery::Rejected {
-									colors.danger
-								} else {
-									colors.muted
-								},
-							));
+							if !file_alert {
+								ui.label(RichText::new(status).size(12.0).color(
+									if pending.delivery == Delivery::Rejected {
+										colors.danger
+									} else {
+										colors.muted
+									},
+								));
+							}
 						});
 					}
 					if !pending.content.is_empty() {
@@ -172,7 +180,7 @@ pub fn show(
 							ui.set_max_width(ui.available_width().min(MAX_WIDTH));
 							// Discord fades the optimistic row until the server echoes it.
 							ui.set_opacity(if sending { 0.6 } else { 1.0 });
-							files(ui, pending, upload);
+							files(ui, pending, upload, pending.delivery != Delivery::Sending && pending.delivery != Delivery::Confirmed);
 						});
 					}
 					if sending && !artwork {
@@ -184,22 +192,31 @@ pub fn show(
 							});
 						}
 					} else if pending.delivery != Delivery::Confirmed {
-						if pending.delivery == Delivery::Ambiguous {
-							ui.label(
-								RichText::new("Check the conversation before sending again.")
-									.small()
-									.color(colors.muted),
-							);
-						}
-						if ui
-							.button(if pending.sticker.is_some() {
-								"Dismiss"
-							} else {
-								"Restore to composer"
-							})
-							.clicked()
-						{
-							*restore = Some(pending.nonce.clone());
+						let alert = !pending.attachments.is_empty();
+						if alert {
+							ui.add_space(6.0);
+							ui.scope(|ui| {
+								ui.set_max_width(ui.available_width().min(MAX_WIDTH));
+								send_alert(ui, pending.delivery, restore, &pending.nonce);
+							});
+						} else {
+							if pending.delivery == Delivery::Ambiguous {
+								ui.label(
+									RichText::new("Check the conversation before sending again.")
+										.small()
+										.color(colors.muted),
+								);
+							}
+							if ui
+								.button(if pending.sticker.is_some() {
+									"Dismiss"
+								} else {
+									"Restore to composer"
+								})
+								.clicked()
+							{
+								*restore = Some(pending.nonce.clone());
+							}
 						}
 					}
 					crate::timeline::fill_header_line(ui, compact, text_line);
@@ -209,7 +226,7 @@ pub fn show(
 }
 
 /// Image thumbnails in the confirmed-message grid, then one card per other file.
-fn files(ui: &mut egui::Ui, pending: &Pending, upload: Option<&Upload>) {
+fn files(ui: &mut egui::Ui, pending: &Pending, upload: Option<&Upload>, failed: bool) {
 	let colors = design::palette(ui);
 	let file = |index: usize| upload.and_then(|upload| upload.files.get(index));
 	let images: Vec<(&str, &egui::TextureHandle)> = pending
@@ -254,6 +271,14 @@ fn files(ui: &mut egui::Ui, pending: &Pending, upload: Option<&Upload>) {
 							.fit_to_exact_size(shown.size())
 							.corner_radius(8),
 					);
+					if failed {
+						ui.painter().rect_stroke(
+							rect,
+							8,
+							egui::Stroke::new(2.0, colors.danger),
+							egui::StrokeKind::Inside,
+						);
+					}
 				}
 			});
 		}
@@ -264,8 +289,15 @@ fn files(ui: &mut egui::Ui, pending: &Pending, upload: Option<&Upload>) {
 		}
 		let kind = attachments::file_kind(filename, None);
 		egui::Frame::new()
-			.fill(colors.raised)
-			.stroke(egui::Stroke::new(1.0, colors.border))
+			.fill(if failed {
+				colors.danger.gamma_multiply(0.12)
+			} else {
+				colors.raised
+			})
+			.stroke(egui::Stroke::new(
+				1.0,
+				if failed { colors.danger } else { colors.border },
+			))
 			.corner_radius(8)
 			.inner_margin(egui::Margin::symmetric(12, 10))
 			.show(ui, |ui| {
@@ -297,6 +329,47 @@ fn files(ui: &mut egui::Ui, pending: &Pending, upload: Option<&Upload>) {
 				});
 			});
 	}
+}
+
+/// Failure sits on the preview, not in the message header.
+fn send_alert(ui: &mut egui::Ui, delivery: Delivery, restore: &mut Option<String>, nonce: &str) {
+	let colors = design::palette(ui);
+	let (title, detail) = match delivery {
+		Delivery::Ambiguous => (
+			"Delivery unknown",
+			"Check the conversation before sending this file again.",
+		),
+		_ => (
+			"Not sent",
+			"This file did not upload. It is still only on your device.",
+		),
+	};
+	egui::Frame::new()
+		.fill(colors.danger.gamma_multiply(0.16))
+		.stroke(egui::Stroke::new(1.0, colors.danger))
+		.corner_radius(8)
+		.inner_margin(egui::Margin::symmetric(12, 10))
+		.show(ui, |ui| {
+			ui.set_width(ui.available_width());
+			ui.horizontal(|ui| {
+				ui.spacing_mut().item_spacing.x = 10.0;
+				icons::inline(ui, icons::Icon::ShieldWarning, 22.0, colors.danger);
+				ui.vertical(|ui| {
+					ui.spacing_mut().item_spacing.y = 2.0;
+					ui.add(
+						egui::Label::new(design::semibold(ui, title, 14.0).color(colors.danger))
+							.selectable(false),
+					);
+					ui.add(
+						egui::Label::new(RichText::new(detail).size(13.0).color(colors.text))
+							.wrap(),
+					);
+					if ui.button("Restore to composer").clicked() {
+						*restore = Some(nonce.to_owned());
+					}
+				});
+			});
+		});
 }
 
 /// One compact progress card for the whole batch, with Discord's dismiss cross.

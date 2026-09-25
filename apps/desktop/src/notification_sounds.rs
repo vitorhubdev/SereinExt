@@ -33,7 +33,8 @@ impl Sounds {
 		self.generation.fetch_add(1, Ordering::AcqRel);
 		self.status.store(0, Ordering::Release);
 	}
-	pub fn play(&mut self, sound: Sound, volume: u8, ctx: &eframe::egui::Context) {
+	/// Returns whether the worker accepted the cue. A full queue leaves the caller to retry.
+	pub fn play(&mut self, sound: Sound, volume: u8, ctx: &eframe::egui::Context) -> bool {
 		if self.send.is_none() {
 			let (send, receive) = mpsc::sync_channel::<(u64, Sound, u8)>(1);
 			let generation = self.generation.clone();
@@ -90,11 +91,13 @@ impl Sounds {
 				.is_err()
 			{
 				self.status.store(2, Ordering::Release);
-				return;
+				return false;
 			}
 			self.send = Some(send);
 		}
-		let request = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
+		let previous = self.generation.load(Ordering::Acquire);
+		let request = previous.wrapping_add(1);
+		self.generation.store(request, Ordering::Release);
 		self.status.store(1, Ordering::Release);
 		if self
 			.send
@@ -103,8 +106,11 @@ impl Sounds {
 			.try_send((request, sound, volume))
 			.is_err()
 		{
+			self.generation.store(previous, Ordering::Release);
 			self.status.store(0, Ordering::Release);
+			return false;
 		}
+		true
 	}
 }
 impl Drop for Sounds {

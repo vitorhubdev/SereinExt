@@ -24,6 +24,9 @@ pub struct Runtime {
 	badge: Option<u32>,
 	badge_check: Option<Instant>,
 	badge_status: &'static str,
+	/// Join/leave cue waiting for the audio worker to accept it.
+	pending_membership: Option<(Sound, u8)>,
+	membership_tries: u8,
 }
 impl Runtime {
 	fn ring_cue(&mut self, ringing: Option<(Id, Sound)>, now: Instant) -> Option<Sound> {
@@ -124,7 +127,8 @@ impl Runtime {
 		// Call membership sounds are part of the call, including while Do Not Disturb is on.
 		while let Some(cue) = ui.notification_cues.first().copied() {
 			let membership = matches!(cue, Sound::UserJoin | Sound::UserLeave);
-			if (audible || membership) && options.allows(cue) {
+			// Someone connecting or leaving the call you are in always makes a sound.
+			if membership || (audible && options.allows(cue)) {
 				ui.notification_cues.remove(0);
 				sound = Some(cue);
 				break;
@@ -135,11 +139,38 @@ impl Runtime {
 			ctx.request_repaint();
 		}
 		// Explicit previews are allowed in the offline demo and intentionally ignore automatic mute choices.
-		if let Some(preview) = ui.notification_preview.take() {
+		if !matches!(sound, Some(Sound::UserJoin | Sound::UserLeave))
+			&& let Some(preview) = ui.notification_preview.take()
+		{
 			sound = Some(preview);
 		}
 		if let Some(sound) = sound {
-			self.sounds.play(sound, options.volume, ctx);
+			let membership = matches!(sound, Sound::UserJoin | Sound::UserLeave);
+			let volume = if membership && options.volume == 0 {
+				100
+			} else {
+				options.volume
+			};
+			if membership {
+				self.pending_membership = Some((sound, volume));
+				self.membership_tries = 0;
+			} else if self.pending_membership.is_none() {
+				let _ = self.sounds.play(sound, volume, ctx);
+			}
+		}
+		if let Some((cue, volume)) = self.pending_membership {
+			if self.sounds.play(cue, volume, ctx) {
+				self.pending_membership = None;
+				self.membership_tries = 0;
+			} else {
+				self.membership_tries = self.membership_tries.saturating_add(1);
+				if self.membership_tries > 30 {
+					self.pending_membership = None;
+					self.membership_tries = 0;
+				} else {
+					ctx.request_repaint_after(Duration::from_millis(100));
+				}
+			}
 		}
 		// Counts only change while frames run, so an idle window needs no badge timer: a
 		// throttled frame schedules one follow-up recount, and then the window can sleep.
