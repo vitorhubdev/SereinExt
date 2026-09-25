@@ -61,6 +61,8 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Graphics" => "Gráficos",
 		"Render with" => "Renderizar com",
 		"Search" => "Buscar",
+		"Close settings (Esc)" => "Cerrar ajustes (Esc)",
+		"Close settings (Esc)" => "Fechar configurações (Esc)",
 		"Unofficial · not endorsed by Discord" => "Não oficial · não endossado pelo Discord",
 		"Exit preview" => "Sair da prévia",
 		"Log out" => "Sair da conta",
@@ -232,6 +234,7 @@ mod tests {
 	fn settings_catalog_is_complete_for_both_locales() {
 		const KEYS: &[&str] = &[
 			"Search",
+			"Close settings (Esc)",
 			"Unofficial · not endorsed by Discord",
 			"Exit preview",
 			"Log out",
