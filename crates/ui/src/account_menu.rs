@@ -36,14 +36,15 @@ impl ClearAfter {
 		Self::Hours4,
 		Self::Today,
 	];
-	fn label(self) -> &'static str {
-		match self {
+	fn label(self, language: model::Language) -> &'static str {
+		let english = match self {
 			Self::Never => "Don't clear",
 			Self::Minutes30 => "30 minutes",
 			Self::Hour => "1 hour",
 			Self::Hours4 => "4 hours",
 			Self::Today => "Today",
-		}
+		};
+		crate::i18n::text(language, english)
 	}
 	/// Absolute deadline in milliseconds since the Unix epoch; `None` never clears.
 	fn deadline(self) -> Option<u64> {
@@ -62,7 +63,7 @@ impl ClearAfter {
 		u64::try_from(seconds).ok().map(|seconds| seconds * 1000)
 	}
 	/// Plain-language moment this choice lands on, for the line under the dropdown.
-	fn clears_at(self) -> Option<String> {
+	fn clears_at(self, language: model::Language) -> Option<String> {
 		if self == Self::Never {
 			return None;
 		}
@@ -75,10 +76,14 @@ impl ClearAfter {
 			Self::Today => now.replace_time(time::Time::MIDNIGHT) + time::Duration::days(1),
 		};
 		let clock = format!("{:02}:{:02}", at.hour(), at.minute());
-		Some(if at.date() == now.date() {
-			format!("at {clock}")
-		} else {
-			format!("at {clock} tomorrow")
+		let tomorrow = at.date() != now.date();
+		Some(match (language, tomorrow) {
+			(model::Language::English, false) => format!("at {clock}"),
+			(model::Language::English, true) => format!("at {clock} tomorrow"),
+			(model::Language::PortugueseBrazil, false) => format!("às {clock}"),
+			(model::Language::PortugueseBrazil, true) => format!("às {clock} amanhã"),
+			(model::Language::Spanish, false) => format!("a las {clock}"),
+			(model::Language::Spanish, true) => format!("a las {clock} mañana"),
 		})
 	}
 	/// Nearest choice for an existing deadline, so reopening the editor shows what is set.
@@ -425,14 +430,22 @@ impl MessagingUi {
 			egui::WidgetInfo::labeled(
 				egui::Role::Button,
 				true,
-				format!("Switch to {}", account.label()),
+				format!(
+					"{} {}",
+					crate::i18n::text(self.language, "Switch to"),
+					account.label()
+				),
 			)
 		});
 		forget.widget_info(|| {
 			egui::WidgetInfo::labeled(
 				egui::Role::Button,
 				true,
-				format!("Forget {}", account.label()),
+				format!(
+					"{} {}",
+					crate::i18n::text(self.language, "Forget"),
+					account.label()
+				),
 			)
 		});
 		let forget = forget.on_hover_text(crate::i18n::text(
@@ -467,7 +480,7 @@ impl MessagingUi {
 				let name = profile
 					.and_then(|p| p.global_name.as_deref())
 					.or_else(|| state.user.as_ref().map(|u| u.name.as_str()))
-					.unwrap_or("Your account");
+					.unwrap_or(crate::i18n::text(self.language, "Your account"));
 				ui.add(
 					egui::Label::new(design::semibold(ui, name, 20.0).color(colors.text_strong))
 						.wrap(),
@@ -534,7 +547,12 @@ impl MessagingUi {
 	fn account_status_row(&mut self, ui: &mut egui::Ui) {
 		let colors = design::palette(ui);
 		let status = self.own_presence.status;
-		let label = design::medium(ui, status.label(), 14.0).color(colors.text_strong);
+		let label = design::medium(
+			ui,
+			crate::i18n::text(self.language, status.label()),
+			14.0,
+		)
+		.color(colors.text_strong);
 		let response = ui
 			.scope(|ui| {
 				let width = ui.available_width();
@@ -578,6 +596,7 @@ impl MessagingUi {
 		let colors = design::palette(ui);
 		ui.set_width(260.0_f32.min(ui.ctx().content_rect().width() - 48.0));
 		for status in PresenceStatus::ALL {
+			let status_label = crate::i18n::text(self.language, status.label());
 			let description = match status {
 				PresenceStatus::DoNotDisturb => crate::i18n::text(
 					self.language,
@@ -594,7 +613,7 @@ impl MessagingUi {
 					.corner_radius(6),
 			);
 			response.widget_info(|| {
-				egui::WidgetInfo::labeled(egui::Role::Button, true, status.label())
+				egui::WidgetInfo::labeled(egui::Role::Button, true, status_label)
 			});
 			let x = response.rect.left() + 34.0;
 			let y = response.rect.top() + if description.is_empty() { 11.0 } else { 10.0 };
@@ -613,7 +632,7 @@ impl MessagingUi {
 			ui.painter().text(
 				egui::pos2(x, y),
 				egui::Align2::LEFT_TOP,
-				status.label(),
+				status_label,
 				egui::FontId::new(14.0, design::medium_family(ui.ctx())),
 				colors.text_strong,
 			);
@@ -688,7 +707,7 @@ impl MessagingUi {
 	fn clear_after_row(&mut self, ui: &mut egui::Ui) -> egui::Response {
 		let colors = design::palette(ui);
 		let chosen = self.account_menu.clear_after;
-		let label = design::medium(ui, chosen.label(), 14.0).color(colors.text_strong);
+		let label = design::medium(ui, chosen.label(self.language), 14.0).color(colors.text_strong);
 		let response = ui
 			.scope(|ui| {
 				let width = ui.available_width();
@@ -708,7 +727,7 @@ impl MessagingUi {
 							[ui.available_width(), 36.0],
 							egui::Button::new(())
 								.left_text(
-									design::medium(ui, choice.label(), 14.0)
+									design::medium(ui, choice.label(self.language), 14.0)
 										.color(colors.text_strong),
 								)
 								.frame_when_inactive(picked)
@@ -763,8 +782,8 @@ impl MessagingUi {
 							.and_then(|p| p.global_name.as_deref())
 							.unwrap_or(user.name.as_str())
 					} else {
-						design::avatar(ui, "You", 40.0);
-						"Your account"
+						design::avatar(ui, crate::i18n::text(self.language, "You"), 40.0);
+						crate::i18n::text(self.language, "Your account")
 					};
 					let width = ui.available_width();
 					ui.vertical(|ui| {
@@ -843,11 +862,14 @@ impl MessagingUi {
 		self.clear_after_row(ui).labelled_by(label.id);
 		// The deadline is local to this client, so name the moment rather than implying
 		// Discord will clear it for you.
-		if let Some(clears) = self.account_menu.clear_after.clears_at() {
+		if let Some(clears) = self.account_menu.clear_after.clears_at(self.language) {
 			ui.add_space(6.0);
 			ui.add(
 				egui::Label::new(
-					RichText::new(format!("Serein clears it {clears}."))
+					RichText::new(format!(
+					"{} {clears}.",
+					crate::i18n::text(self.language, "Serein clears it")
+				))
 						.size(12.0)
 						.color(colors.muted),
 				)
