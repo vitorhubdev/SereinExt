@@ -389,10 +389,10 @@ impl MessagingUi {
 								let query = self.settings.query.to_lowercase();
 								if !Page::ALL.into_iter().any(|p| p.matches(&query)) {
 									ui.label(
-										design::semibold(ui, "No settings found", 16.0)
+										design::semibold(ui, crate::i18n::text(self.language, "No settings found"), 16.0)
 											.color(colors.text_strong),
 									);
-									ui.weak("Try theme, notifications, voice, or cache.");
+									ui.weak(crate::i18n::text(self.language, "Try theme, notifications, voice, or cache."));
 									return;
 								}
 								match self.settings.page {
