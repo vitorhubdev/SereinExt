@@ -343,7 +343,7 @@ impl MessagingUi {
 								);
 							});
 							ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-								if close_control(ui).clicked() {
+								if close_control(ui, self.language).clicked() {
 									self.settings.open = false;
 								}
 							});
@@ -675,8 +675,8 @@ impl MessagingUi {
 								ui.separator();
 								account_row(
 									ui,
-									"Email, password and security",
-									"Managed in Discord",
+									crate::i18n::text(self.language, "Email, password and security"),
+									crate::i18n::text(self.language, "Managed in Discord"),
 								);
 							});
 						ui.add_space(12.0);
@@ -879,7 +879,7 @@ impl MessagingUi {
 	fn appearance_settings(&mut self, ui: &mut egui::Ui, demo: bool) {
 		let colors = design::palette(ui);
 		ui.add_space(4.0);
-		ui.label(design::eyebrow(ui, "Theme", colors.muted));
+		ui.label(design::eyebrow(ui, crate::i18n::text(self.language, "Theme"), colors.muted));
 		theme_preference_cards(ui);
 		self.colour_preset_settings(ui);
 		design::group(ui, crate::i18n::text(self.language, "Accent"), |ui| {
@@ -1074,7 +1074,7 @@ impl MessagingUi {
 				|game| game,
 			);
 			let detail = if state.demo {
-				crate::i18n::text(self.language, "Synthetic activity, never shared or saved")
+				crate::i18n::text(self.language, "Synthetic activity, never shared or saved.")
 			} else {
 				self.game_activity_status
 			};
@@ -1186,11 +1186,15 @@ pub(super) fn nav_item(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::
 }
 
 /// Discord's round close button with the "ESC" hint underneath.
-pub(super) fn close_control(ui: &mut egui::Ui) -> egui::Response {
+pub(super) fn close_control(ui: &mut egui::Ui, language: model::Language) -> egui::Response {
 	let colors = design::palette(ui);
 	let (rect, response) = ui.allocate_exact_size(egui::vec2(40.0, 56.0), egui::Sense::click());
 	response.widget_info(|| {
-		egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), "Close settings (Esc)")
+		egui::WidgetInfo::labeled(
+			egui::Role::Button,
+			ui.is_enabled(),
+			crate::i18n::text(language, "Close settings (Esc)"),
+		)
 	});
 	let hot = response.hovered() || response.has_focus();
 	let center = egui::pos2(rect.center().x, rect.top() + 18.0);
@@ -1221,7 +1225,7 @@ pub(super) fn close_control(ui: &mut egui::Ui) -> egui::Response {
 		egui::FontId::new(11.0, design::semibold_family(ui.ctx())),
 		colors.muted,
 	);
-	response.on_hover_text("Close settings (Esc)")
+	response.on_hover_text(crate::i18n::text(language, "Close settings (Esc)"))
 }
 
 /// Dark, light or system cards with a miniature of each palette and a radio marker.
