@@ -57,6 +57,8 @@ impl Settings {
 			update_nightly: false,
 			notification_options: ui.notification_options,
 			show_hidden_channels: ui.show_hidden_channels,
+			hide_offline_members: ui.hide_offline_members,
+			hide_bot_dms: ui.hide_bot_dms,
 			hide_title_bar: ui.hide_title_bar,
 			language: ui.language,
 			language_chosen: self.current.language_chosen
@@ -104,6 +106,8 @@ impl Settings {
 		ui.updates.nightly = false;
 		ui.notification_options = value.notification_options;
 		ui.show_hidden_channels = value.show_hidden_channels;
+		ui.hide_offline_members = value.hide_offline_members;
+		ui.hide_bot_dms = value.hide_bot_dms;
 		ui.hide_title_bar = value.hide_title_bar;
 		ui.language = value.language;
 		ui.gpu_preference = value.gpu_preference;
@@ -166,6 +170,23 @@ mod tests {
 		assert!(ui.notification_options.current_channel);
 		assert!(!settings.state.touched);
 		assert!(!settings.state.dirty);
+	}
+
+	#[test]
+	fn member_list_choices_survive_observe_and_apply() {
+		let mut settings = Settings::default();
+		let mut ui = ui::MessagingUi::default();
+		assert!(!ui.hide_offline_members);
+		assert!(!ui.hide_bot_dms);
+		ui.hide_offline_members = true;
+		ui.hide_bot_dms = true;
+		settings.observe(&ui);
+		assert!(settings.current.hide_offline_members);
+		assert!(settings.current.hide_bot_dms);
+		let mut fresh = ui::MessagingUi::default();
+		settings.apply(&mut fresh);
+		assert!(fresh.hide_offline_members);
+		assert!(fresh.hide_bot_dms);
 	}
 
 	#[test]

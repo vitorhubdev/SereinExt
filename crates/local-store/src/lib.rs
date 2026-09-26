@@ -40,6 +40,12 @@ pub struct AppPreferences {
 	pub update_nightly: bool,
 	pub notification_options: model::notification_preferences::Device,
 	pub show_hidden_channels: bool,
+	/// Off for older preferences; mirrored from the member list and DM headings.
+	#[serde(default)]
+	pub hide_offline_members: bool,
+	/// Off for older preferences; mirrored from the direct-messages heading.
+	#[serde(default)]
+	pub hide_bot_dms: bool,
 	pub hide_title_bar: bool,
 	pub language: model::Language,
 	/// False until the owner picks a language or the first launch copies the system language.
@@ -131,6 +137,8 @@ impl Default for AppPreferences {
 			update_nightly: false,
 			notification_options: Default::default(),
 			show_hidden_channels: false,
+			hide_offline_members: false,
+			hide_bot_dms: false,
 			hide_title_bar: false,
 			language: Default::default(),
 			language_chosen: false,
@@ -1887,6 +1895,21 @@ mod tests {
 			Err(StoreError::Incompatible)
 		));
 	}
+	#[test]
+	fn member_list_choices_round_trip_and_migrate_off() {
+		let legacy: AppPreferences = serde_json::from_str("{}").unwrap();
+		assert!(!legacy.hide_offline_members);
+		assert!(!legacy.hide_bot_dms);
+		let store = LocalStore::initialize(Connection::open_in_memory().unwrap()).unwrap();
+		let mut value = AppPreferences::default();
+		value.hide_offline_members = true;
+		value.hide_bot_dms = true;
+		store.save_app_preferences(&value).unwrap();
+		let loaded = store.app_preferences().unwrap();
+		assert!(loaded.hide_offline_members);
+		assert!(loaded.hide_bot_dms);
+	}
+
 	#[test]
 	fn app_preferences_round_trip_and_reject_invalid_replacement() {
 		let store = LocalStore::initialize(Connection::open_in_memory().unwrap()).unwrap();

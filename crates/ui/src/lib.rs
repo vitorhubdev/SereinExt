@@ -142,9 +142,7 @@ fn thread_member_rows<'a>(
 			let model::MemberSlot::Person(member) = slot else {
 				return None;
 			};
-			let offline = !profiles::member_presence(state, member, list.guild)
-				.0
-				.is_some_and(|status| matches!(status, "online" | "idle" | "dnd"));
+			let offline = !member_online(state, member, list.guild);
 			let role = list
 				.guild
 				.and_then(|guild| state.member_roles(guild, member).0)
@@ -176,6 +174,47 @@ fn thread_member_rows<'a>(
 		rows.extend(group.iter().map(|row| (Cow::Borrowed(row.0), None)));
 	}
 	rows
+}
+
+fn member_online(state: &State, member: &model::Member, guild: Option<Id>) -> bool {
+	profiles::member_presence(state, member, guild)
+		.0
+		.is_some_and(|status| matches!(status, "online" | "idle" | "dnd"))
+}
+
+/// Rows still drawn while offline people are hidden. People after the Offline header who are
+/// not online are skipped; every header stays, so the Offline count still shows who is hidden.
+fn visible_member_rows<'a>(
+	rows: impl Iterator<Item = Option<&'a model::MemberSlot>>,
+	online: impl Fn(&model::Member) -> bool,
+) -> Vec<usize> {
+	let mut offline = false;
+	rows.enumerate()
+		.filter_map(|(index, slot)| {
+			match slot {
+				Some(model::MemberSlot::Group(id)) => offline = id == "offline",
+				Some(model::MemberSlot::Person(member)) if offline && !online(member) => {
+					return None;
+				}
+				_ => {}
+			}
+			Some(index)
+		})
+		.collect()
+}
+
+/// First absolute row and length of the Offline section in a lazy list. Each gateway group is
+/// one header row followed by its members, matching how the gateway computes the list total.
+fn lazy_offline_rows(groups: &[(String, u64)]) -> Option<(usize, usize)> {
+	let mut header = 0usize;
+	for (id, count) in groups {
+		let count = usize::try_from(*count).ok()?;
+		if id == "offline" {
+			return (count > 0).then_some((header.saturating_add(1), count));
+		}
+		header = header.saturating_add(count).saturating_add(1);
+	}
+	None
 }
 
 #[derive(Default)]
@@ -248,6 +287,8 @@ pub struct MessagingUi {
 	pub show_hidden_channels: bool,
 	/// Direct messages with bots stay visible until this is turned on.
 	pub hide_bot_dms: bool,
+	/// Offline people stay listed until this is turned on; the Offline header keeps its count.
+	pub hide_offline_members: bool,
 	pub hide_title_bar: bool,
 	/// Device-local UI language. English is the migration/default locale.
 	pub language: model::Language,
@@ -1142,8 +1183,33 @@ impl MessagingUi {
 			self.member_extent = Some((member_key, 100));
 		}
 		let total = list.total.min(250_000) as usize;
+		// Hidden offline people are removed from the drawn rows; headers and counts stay.
+		// Lazy lists skip the gateway's Offline section, whose rows may not be loaded yet.
+		let shown_rows = (!lazy && self.hide_offline_members).then(|| {
+			let online = |member: &model::Member| member_online(state, member, guild);
+			match &thread_rows {
+				Some(rows) => visible_member_rows(rows.iter().map(|row| Some(row.0.as_ref())), online),
+				None => visible_member_rows(list.slots.iter().map(Option::as_ref), online),
+			}
+		});
+		let hidden_offline = lazy
+			.then_some(self.hide_offline_members)
+			.filter(|hide| *hide)
+			.and_then(|_| lazy_offline_rows(&list.groups))
+			.filter(|(first, _)| *first < total)
+			.map(|(first, count)| (first, count.min(total - first)));
+		let lazy_row = |row: usize| match hidden_offline {
+			Some((first, count)) if row >= first => row + count,
+			_ => row,
+		};
 		let row_count = if lazy {
-			self.member_extent.unwrap().1.min(total)
+			let extent = self.member_extent.unwrap().1.min(total);
+			match hidden_offline {
+				Some((first, count)) if extent > first => first.max(extent.saturating_sub(count)),
+				_ => extent,
+			}
+		} else if let Some(rows) = &shown_rows {
+			rows.len()
 		} else {
 			thread_rows.as_ref().map_or(list.slots.len(), Vec::len)
 		};
@@ -1159,7 +1225,12 @@ impl MessagingUi {
 			.attach(ui, ("people", guild_or_channel, list.request), area)
 			.show_rows(ui, 42.0, row_count, |ui, range| {
 				visible = range.clone();
-				for index in range {
+				for row in range {
+					let index = if lazy {
+						lazy_row(row)
+					} else {
+						shown_rows.as_ref().map_or(row, |rows| rows[row])
+					};
 					let slot = if lazy {
 						state.member_slot(index).or_else(|| {
 							if index >= start {
@@ -1220,6 +1291,58 @@ impl MessagingUi {
 									.truncate(),
 								)
 								.on_hover_text(&text);
+							if id == "offline" {
+								let hidden = self.hide_offline_members;
+								let button = egui::Rect::from_min_size(
+									egui::pos2(rect.right() - 34.0, rect.center().y - 9.0),
+									egui::vec2(26.0, 18.0),
+								);
+								let response = ui.interact(
+									button,
+									ui.scope_id().with("hide-offline-members"),
+									egui::Sense::click(),
+								);
+								let hot = response.hovered() || response.has_focus() || hidden;
+								ui.painter().rect_filled(
+									button,
+									9.0,
+									if hidden {
+										colors.accent.gamma_multiply(0.22)
+									} else if hot {
+										colors.hover
+									} else {
+										colors.raised
+									},
+								);
+								let ink = if hidden {
+									colors.accent
+								} else if hot {
+									colors.text
+								} else {
+									colors.muted
+								};
+								crate::icons::paint(
+									ui.painter(),
+									if hidden {
+										crate::icons::Icon::EyeSlash
+									} else {
+										crate::icons::Icon::Eye
+									},
+									egui::Rect::from_min_size(
+										egui::pos2(button.center().x - 6.0, button.center().y - 6.0),
+										egui::Vec2::splat(12.0),
+									),
+									ink,
+								);
+								let hint = if hidden {
+									crate::i18n::text(self.language, "Show offline members")
+								} else {
+									crate::i18n::text(self.language, "Hide offline members")
+								};
+								if response.on_hover_text(hint).clicked() {
+									self.hide_offline_members = !hidden;
+								}
+							}
 						}
 						Some(model::MemberSlot::Person(member)) => {
 							let name = member
@@ -6430,6 +6553,45 @@ mod composer_tests {
 			assert_eq!(state.drafts[&Id(11)], "B input");
 			assert_eq!(state.drafts[&Id(10)], "Unsent draft 👋");
 		}
+	}
+
+	#[test]
+	fn hidden_offline_members_keep_their_header_and_count() {
+		fn person(id: u64) -> model::MemberSlot {
+			model::MemberSlot::Person(model::Member {
+				roles: vec![],
+				user: model::User {
+					id: Id(id),
+					name: format!("Synthetic {id}"),
+					avatar: None,
+					webhook: false,
+					kind: Default::default(),
+					discriminator: 0,
+					primary_guild: None,
+				},
+				nick: None,
+				status: None,
+				custom_status: None,
+				activities: vec![],
+				clients: model::ClientPlatforms::default(),
+			})
+		}
+		let slots = vec![
+			Some(model::MemberSlot::Group("online".into())),
+			Some(person(1)),
+			Some(model::MemberSlot::Group("offline".into())),
+			Some(person(2)),
+			Some(person(3)),
+		];
+		let online = |member: &model::Member| member.user.id.0 != 3;
+		let shown = visible_member_rows(slots.iter().map(Option::as_ref), online);
+		assert_eq!(shown, vec![0, 1, 2, 3]);
+		assert_eq!(
+			lazy_offline_rows(&[("online".into(), 1), ("offline".into(), 2)]),
+			Some((3, 2))
+		);
+		assert_eq!(lazy_offline_rows(&[("online".into(), 1)]), None);
+		assert_eq!(lazy_offline_rows(&[("offline".into(), 0)]), None);
 	}
 
 	#[test]

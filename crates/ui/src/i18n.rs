@@ -584,6 +584,8 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		}
 		"View full licenses" => "Ver licenças completas",
 		"Hide full licenses" => "Ocultar licenças completas",
+		"Hide offline members" => "Ocultar membros offline",
+		"Show offline members" => "Mostrar membros offline",
 		"Licenses" => "Licenças",
 		"Legal" => "Informações legais",
 		"Licenses for the libraries, fonts, icons and sounds included in SereinExt." => {
@@ -1264,6 +1266,8 @@ fn spanish(key: &str) -> Option<&'static str> {
 		}
 		"View full licenses" => "Ver licencias completas",
 		"Hide full licenses" => "Ocultar licencias completas",
+		"Hide offline members" => "Ocultar miembros sin conexión",
+		"Show offline members" => "Mostrar miembros sin conexión",
 		"Licenses" => "Licencias",
 		"Legal" => "Información legal",
 		"Licenses for the libraries, fonts, icons and sounds included in SereinExt." => {
@@ -1737,6 +1741,8 @@ mod tests {
 			"Your app preferences could not be read, so SereinExt cannot tell whether you accepted this before.",
 			"View full licenses",
 			"Hide full licenses",
+			"Hide offline members",
+			"Show offline members",
 			"Licenses",
 			"Legal",
 			"Licenses for the libraries, fonts, icons and sounds included in SereinExt.",
