@@ -65,33 +65,54 @@ fn deep_frame(model: &mut df::tract::DfTract, chunk: [f32; 480]) -> Option<[f32;
 enum Step {
 	Loading,
 	Done,
+	/// The model had no answer in time. Cover this frame with RNNoise and keep the model.
+	Missed,
 	Failed,
 }
 
+/// Consecutive model frames without an answer before DeepFilterNet counts as stalled.
+/// Same three-second horizon as `DEEP_SLOW_SECONDS`, without ever blocking audio.
+const MISSED_LIMIT: u32 = 3 * FRAMES_PER_SECOND;
+
 /// DeepFilterNet on its own thread: tract state is not `Send`, and loading takes long
-/// enough that doing it on the audio worker would drop call audio.
+/// enough that doing it on the audio worker would drop call audio. The audio thread
+/// never waits: it offers frames with `try_send` into a 3-frame queue and takes the
+/// latest answer with `try_recv`. A late frame is covered by RNNoise, never silence.
 struct Deep {
 	requests: mpsc::SyncSender<[f32; 480]>,
-	responses: mpsc::Receiver<Option<[f32; 480]>>,
+	responses: mpsc::Receiver<Option<([f32; 480], Duration)>>,
 	loaded: mpsc::Receiver<bool>,
 	ready: bool,
 	load: Load,
+	misses: u32,
 }
 impl Deep {
 	fn start() -> Option<Self> {
-		let (requests, incoming) = mpsc::sync_channel::<[f32; 480]>(1);
-		let (reply, responses) = mpsc::sync_channel(1);
+		Self::start_with(deep_model, |model, chunk| {
+			let start = Instant::now();
+			deep_frame(model, chunk).map(|frame| (frame, start.elapsed()))
+		})
+	}
+
+	fn start_with<M, L, P>(loader: L, mut process_frame: P) -> Option<Self>
+	where
+		// The model never crosses threads: it is built and used inside the worker.
+		L: FnOnce() -> Option<M> + Send + 'static,
+		P: FnMut(&mut M, [f32; 480]) -> Option<([f32; 480], Duration)> + Send + 'static,
+	{
+		let (requests, incoming) = mpsc::sync_channel::<[f32; 480]>(3);
+		let (reply, responses) = mpsc::sync_channel(3);
 		let (report, loaded) = mpsc::sync_channel(1);
 		std::thread::Builder::new()
 			.name("voice-deepfilter".into())
 			.spawn(move || {
-				let Some(mut model) = deep_model() else {
+				let Some(mut model) = loader() else {
 					let _ = report.send(false);
 					return;
 				};
 				let _ = report.send(true);
 				while let Ok(chunk) = incoming.recv() {
-					if reply.send(deep_frame(&mut model, chunk)).is_err() {
+					if reply.send(process_frame(&mut model, chunk)).is_err() {
 						break;
 					}
 				}
@@ -103,6 +124,7 @@ impl Deep {
 			loaded,
 			ready: false,
 			load: Load::default(),
+			misses: 0,
 		})
 	}
 	fn process(&mut self, chunk: &mut [f32; 480]) -> Step {
@@ -113,18 +135,53 @@ impl Deep {
 				Ok(false) | Err(mpsc::TryRecvError::Disconnected) => return Step::Failed,
 			}
 		}
-		let start = Instant::now();
-		if self.requests.send(*chunk).is_err() {
-			return Step::Failed;
+		// Never block the audio thread. Drain first: a full answer queue would wedge
+		// the model thread on reply.send, which would wedge our next offer in turn.
+		// Then offer this frame; a full request queue means the model is behind, so
+		// drop the offer and cover below.
+		let mut latest = None;
+		let mut live = true;
+		loop {
+			match self.responses.try_recv() {
+				Ok(answer) => latest = Some(answer),
+				Err(mpsc::TryRecvError::Empty) => break,
+				Err(mpsc::TryRecvError::Disconnected) => {
+					live = false;
+					break;
+				}
+			}
 		}
-		match self.responses.recv_timeout(Duration::from_millis(50)) {
-			Ok(Some(output)) => *chunk = output,
-			_ => return Step::Failed,
+		if let Err(error) = self.requests.try_send(*chunk) {
+			match error {
+				mpsc::TrySendError::Full(_) => {}
+				mpsc::TrySendError::Disconnected(_) => return Step::Failed,
+			}
 		}
-		if self.load.record(start.elapsed()) {
-			Step::Done
-		} else {
+		match latest {
+			Some(Some((output, inferred))) => {
+				*chunk = output;
+				self.misses = 0;
+				if self.load.record(inferred) {
+					Step::Done
+				} else {
+					Step::Failed
+				}
+			}
+			// A bad model frame is covered like a late one; only stillness kills the model.
+			Some(None) => self.miss(),
+			None if live => self.miss(),
+			None => Step::Failed,
+		}
+	}
+
+	/// A frame without a model answer. RNNoise covers it; only a three-second stall
+	/// falls back, never a single hiccup.
+	fn miss(&mut self) -> Step {
+		self.misses = self.misses.saturating_add(1);
+		if self.misses >= MISSED_LIMIT {
 			Step::Failed
+		} else {
+			Step::Missed
 		}
 	}
 }
@@ -150,6 +207,16 @@ fn noise_state() -> Box<DenoiseState<'static>> {
 	let mut noise = DenoiseState::new();
 	noise.process_frame(&mut [0.0; 480], &[0.0; 480]);
 	noise
+}
+
+/// One RNNoise pass over a single frame, shared by the persistent cover and by the
+/// cold cover of a frame the model missed.
+fn rnnoise_frame(noise: &mut DenoiseState<'static>, output: &mut [f32; 480]) {
+	let input = output.map(|s| (s * 32768.0).clamp(-32768.0, 32767.0));
+	noise.process_frame(output, &input);
+	for sample in output.iter_mut() {
+		*sample = (*sample / 32768.0).clamp(-1.0, 1.0);
+	}
 }
 impl Echo {
 	pub fn new() -> Self {
@@ -305,17 +372,24 @@ impl Echo {
 					self.deep_fallback = true;
 					self.sync_rnnoise();
 				}
+				// A missed model frame is covered by one cold RNNoise pass when the model
+				// is otherwise ready. While it loads, the persistent cover below runs.
+				Some(Step::Missed) => {
+					if self.deep.as_ref().is_some_and(|deep| deep.ready) {
+						let start = time_noise.then(Instant::now);
+						rnnoise_frame(&mut noise_state(), &mut output);
+						if let Some(start) = start {
+							noise_time += start.elapsed();
+						}
+					}
+				}
 				Some(Step::Loading) | None => {}
 			}
 			if let Some(noise) = &mut self.noise
 				&& !self.deep.as_ref().is_some_and(|deep| deep.ready)
 			{
 				let start = time_noise.then(Instant::now);
-				let input = output.map(|s| (s * 32768.0).clamp(-32768.0, 32767.0));
-				noise.process_frame(&mut output, &input);
-				for sample in &mut output {
-					*sample = (*sample / 32768.0).clamp(-1.0, 1.0);
-				}
+				rnnoise_frame(noise, &mut output);
 				if let Some(start) = start {
 					noise_time += start.elapsed();
 				}
@@ -370,6 +444,92 @@ mod tests {
 		);
 	}
 
+	fn fake_deep(
+		stall_once: bool,
+		reported: Duration,
+	) -> Deep {
+		let stalled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+		Deep::start_with(
+			|| Some(()),
+			move |_: &mut (), chunk: [f32; 480]| {
+				// One real stall exercises the non-blocking path; the reported time
+				// simulates what a slow machine accounts per frame.
+				if stall_once
+					&& !stalled.swap(true, std::sync::atomic::Ordering::SeqCst)
+				{
+					std::thread::sleep(Duration::from_millis(25));
+				}
+				Some((chunk, reported))
+			},
+		)
+		.expect("fake model thread starts")
+	}
+
+	fn ready_deep(deep: &mut Deep) {
+		let started = Instant::now();
+		while !deep.ready {
+			let mut chunk = [0.0; 480];
+			let _ = deep.process(&mut chunk);
+			assert!(
+				started.elapsed() < Duration::from_secs(10),
+				"fake model reports load"
+			);
+		}
+	}
+
+	#[test]
+	fn deep_isolated_stall_never_blocks_audio_and_keeps_model() {
+		let mut dsp = Echo::new();
+		dsp.deep = Some(fake_deep(true, Duration::from_micros(500)));
+		ready_deep(dsp.deep.as_mut().unwrap());
+		let mut worst = Duration::ZERO;
+		for _ in 0..30 {
+			let mut frame = [0.1; 960];
+			let start = Instant::now();
+			dsp.capture(&mut frame, false).unwrap();
+			worst = worst.max(start.elapsed());
+			assert!(frame.iter().all(|s| s.is_finite()));
+		}
+		assert!(
+			worst < Duration::from_millis(2),
+			"audio thread never waits on the model: {worst:?}"
+		);
+		assert!(
+			dsp.deep.is_some() && !dsp.deep_fallback(),
+			"one slow frame keeps the model"
+		);
+		// Let the stalled answer land, then prove the model serves again.
+		std::thread::sleep(Duration::from_millis(50));
+		for _ in 0..5 {
+			let mut frame = [0.1; 960];
+			dsp.capture(&mut frame, false).unwrap();
+		}
+		assert!(dsp.deep.is_some() && !dsp.deep_fallback());
+	}
+
+	#[test]
+	fn deep_continuous_slowness_falls_back_to_standard() {
+		let mut dsp = Echo::new();
+		dsp.settings.suppression = NoiseSuppression::DeepFilter;
+		// Reports 20 ms per frame without sleeping: exercises the slow-seconds
+		// accounting directly instead of burning four real seconds.
+		dsp.deep = Some(fake_deep(false, Duration::from_millis(20)));
+		ready_deep(dsp.deep.as_mut().unwrap());
+		for _ in 0..2000 {
+			let mut frame = [0.0; 960];
+			dsp.capture(&mut frame, false).unwrap();
+			if dsp.deep_fallback() {
+				break;
+			}
+		}
+		assert!(
+			dsp.deep_fallback(),
+			"sustained 20 ms frames trip the three-second guard"
+		);
+		assert!(dsp.deep.is_none());
+		assert!(dsp.noise.is_some(), "RNNoise covers after fallback");
+	}
+
 	#[test]
 	fn deep_filter_denoises_and_falls_back_to_rnnoise() {
 		let mut seed = 0x2545_f491_u32;
@@ -400,17 +560,33 @@ mod tests {
 			std::thread::sleep(Duration::from_millis(10));
 		}
 		let load_time = started.elapsed();
-		assert!(
-			dsp.noise.is_none(),
-			"RNNoise stops once DeepFilterNet is ready"
-		);
-		let started = Instant::now();
-		for index in 0..200 {
+		// Readiness means loaded; the first served frame follows within one more
+		// frame, and only then does RNNoise stop.
+		let answered = Instant::now();
+		while dsp.noise.is_some() {
+			assert!(
+				answered.elapsed() < Duration::from_secs(10),
+				"model serves right after load"
+			);
+			let mut frame = noisy(0);
+			dsp.capture(&mut frame, false).unwrap();
+			std::thread::sleep(Duration::from_millis(10));
+		}
+		// Paced like real audio: offered one frame at a time, the model answers
+		// nearly every frame instead of dropping burst offers.
+		for index in 0..250 {
 			let mut frame = noisy(index);
 			dsp.capture(&mut frame, false).unwrap();
 			assert!(frame.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+			std::thread::sleep(Duration::from_millis(10));
 		}
-		let per_frame = started.elapsed() / 400;
+		// Average model inference time from the load counters, not wall pacing.
+		let deep = dsp.deep.as_ref().expect("model still active");
+		assert!(
+			deep.load.frames > 0,
+			"paced frames reach the model"
+		);
+		let per_frame = deep.load.busy / deep.load.frames;
 		println!("DeepFilterNet ready after {load_time:?}, {per_frame:?} per 10 ms frame");
 		assert!(
 			!dsp.deep_fallback(),
