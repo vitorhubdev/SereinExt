@@ -4486,22 +4486,35 @@ fn volume_control(
 				*value = volume_step_up(*value);
 			}
 		});
-		ui.horizontal(|ui| {
-			ui.spacing_mut().item_spacing.x = 4.0;
-			let presets = [25u16, 50, 100, 150, 200];
-			let width = ((ui.available_width() - 16.0) / presets.len() as f32).max(36.0);
-			for preset in presets {
-				if ui
-					.add_sized(
-						[width, 24.0],
-						egui::Button::selectable(*value == preset, format!("{preset}%")),
-					)
-					.clicked()
-				{
-					*value = preset;
+		// Preset buttons keep their natural size below this width, so a row
+		// computed narrower still paints past the menu edge, where the extra
+		// buttons render but never answer clicks. Split 3 + 2 instead.
+		const PRESET_MIN_WIDTH: f32 = 60.0;
+		let presets = [25u16, 50, 100, 150, 200];
+		let single = (ui.available_width() - 16.0) / presets.len() as f32;
+		let rows: &[&[u16]] = if single >= PRESET_MIN_WIDTH {
+			&[&presets[..]]
+		} else {
+			&[&presets[0..3], &presets[3..5]]
+		};
+		for row in rows {
+			ui.horizontal(|ui| {
+				ui.spacing_mut().item_spacing.x = 4.0;
+				let width =
+					(ui.available_width() - 4.0 * (row.len() - 1) as f32) / row.len() as f32;
+				for preset in *row {
+					if ui
+						.add_sized(
+							[width, 24.0],
+							egui::Button::selectable(*value == *preset, format!("{preset}%")),
+						)
+						.clicked()
+					{
+						*value = *preset;
+					}
 				}
-			}
-		});
+			});
+		}
 	});
 	*value != before
 }
@@ -4811,8 +4824,9 @@ mod tests {
 
 	#[test]
 	fn volume_control_fits_narrow_menus() {
-		// The menu is 260 px wide: minus, slider and plus with their gaps
-		// must paint inside it, or the right side renders yet never answers.
+		// The menu is 260 px wide: minus, slider, plus and every preset,
+		// with their gaps, must paint inside it, or the right side renders
+		// yet never answers clicks.
 		let ctx = egui::Context::default();
 		design::apply(&ctx);
 		let mut volume = 100u16;
@@ -4828,7 +4842,12 @@ mod tests {
 				},
 				|ui| {
 					ui.allocate_ui(egui::vec2(260.0, 300.0), |ui| {
-						volume_control(ui, volume, "User volume", model::Language::English);
+						volume_control(
+							ui,
+							volume,
+							"User volume",
+							model::Language::PortugueseBrazil,
+						);
 					});
 				},
 			);
@@ -4836,9 +4855,9 @@ mod tests {
 			output
 		};
 		let output = frame(&mut volume, vec![]);
-		// Only the stepper band counts, anchored on the "+" glyph itself:
-		// the readout sits in it, while the title above and the presets
-		// below are separate rows.
+		// Only the stepper band counts here, anchored on the "+" glyph
+		// itself: the readout sits in it, while the title above and the
+		// presets below are separate rows.
 		let plus_y = texts(&output)
 			.iter()
 			.find(|(text, _)| text == "+")
@@ -4864,6 +4883,17 @@ mod tests {
 			right <= 261.0,
 			"stepper row overflows a 260 px menu: paints to {right}: {wide:?}"
 		);
+		for name in ["25%", "50%", "100%", "150%", "200%"] {
+			let end = texts(&output)
+				.iter()
+				.find(|(text, _)| text == name)
+				.map(|(_, rect)| rect.right())
+				.unwrap();
+			assert!(
+				end <= 261.0,
+				"preset {name} paints past a 260 px menu: ends at {end}"
+			);
+		}
 		let plus = texts(&output)
 			.iter()
 			.find(|(text, _)| text == "+")
@@ -5018,6 +5048,19 @@ mod tests {
 		let (output, _) = click(&mut view, &state, preset);
 		let after = texts(&output);
 		assert_eq!(mixed(&view), Some(50), "preset click sets 50 percent");
+		assert!(
+			after.iter().any(|(text, _)| text == "User volume"),
+			"clicking inside keeps the menu open: {after:?}"
+		);
+		// The last preset sets 200 percent from inside the menu too.
+		let wide = after
+			.iter()
+			.find(|(text, _)| text == "200%")
+			.map(|(_, rect)| rect.center())
+			.unwrap();
+		let (output, _) = click(&mut view, &state, wide);
+		let after = texts(&output);
+		assert_eq!(mixed(&view), Some(200), "preset click sets 200 percent");
 		assert!(
 			after.iter().any(|(text, _)| text == "User volume"),
 			"clicking inside keeps the menu open: {after:?}"
