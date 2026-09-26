@@ -65,42 +65,63 @@ fn deep_frame(model: &mut df::tract::DfTract, chunk: [f32; 480]) -> Option<[f32;
 enum Step {
 	Loading,
 	Done,
-	/// The model had no answer in time. Cover this frame with RNNoise and keep the model.
-	Missed,
+	/// The frame already carries model or cover output; nothing more to apply.
+	Covered,
 	Failed,
 }
 
-/// Consecutive model frames without an answer before DeepFilterNet counts as stalled.
-/// Same three-second horizon as `DEEP_SLOW_SECONDS`, without ever blocking audio.
+/// Consecutive play frames without a model answer before DeepFilterNet counts as
+/// stalled. Same three-second horizon as `DEEP_SLOW_SECONDS`, without ever
+/// blocking audio.
 const MISSED_LIMIT: u32 = 3 * FRAMES_PER_SECOND;
+
+/// Frames of fixed output delay. The play frame always lags two offers behind, so a
+/// late answer covers its own frame instead of skipping or repeating audio.
+const PLAY_BEHIND: u64 = 2;
 
 /// DeepFilterNet on its own thread: tract state is not `Send`, and loading takes long
 /// enough that doing it on the audio worker would drop call audio. The audio thread
-/// never waits: it offers frames with `try_send` into a 3-frame queue and takes the
-/// latest answer with `try_recv`. A late frame is covered by RNNoise, never silence.
+/// never waits: every offered frame gains a sequence number, the output is always the
+/// frame from `PLAY_BEHIND` positions back, and a cover RNNoise runs on every frame
+/// so it is warm and sample-aligned when the model has no answer for the play frame.
+/// Answers arriving after their frame played are discarded.
 struct Deep {
-	requests: mpsc::SyncSender<[f32; 480]>,
-	responses: mpsc::Receiver<Option<([f32; 480], Duration)>>,
+	requests: mpsc::SyncSender<(u64, [f32; 480])>,
+	responses: mpsc::Receiver<(u64, Option<([f32; 480], Duration)>)>,
 	loaded: mpsc::Receiver<bool>,
 	ready: bool,
 	load: Load,
 	misses: u32,
+	next_seq: u64,
+	answers: Vec<(u64, Option<([f32; 480], Duration)>)>,
+	cover: Box<dyn FnMut(&mut [f32; 480])>,
+	cover_history: std::collections::VecDeque<(u64, [f32; 480])>,
 }
 impl Deep {
 	fn start() -> Option<Self> {
-		Self::start_with(deep_model, |model, chunk| {
-			let start = Instant::now();
-			deep_frame(model, chunk).map(|frame| (frame, start.elapsed()))
-		})
+		let mut cover = noise_state();
+		Self::start_with(
+			deep_model,
+			|model, chunk| {
+				let start = Instant::now();
+				deep_frame(model, chunk).map(|frame| (frame, start.elapsed()))
+			},
+			Box::new(move |output: &mut [f32; 480]| rnnoise_frame(&mut cover, output)),
+		)
 	}
 
-	fn start_with<M, L, P>(loader: L, mut process_frame: P) -> Option<Self>
+	fn start_with<M, L, P>(
+		loader: L,
+		mut process_frame: P,
+		cover: Box<dyn FnMut(&mut [f32; 480])>,
+	) -> Option<Self>
 	where
 		// The model never crosses threads: it is built and used inside the worker.
+		// The cover stays on the audio thread, where every frame is played.
 		L: FnOnce() -> Option<M> + Send + 'static,
 		P: FnMut(&mut M, [f32; 480]) -> Option<([f32; 480], Duration)> + Send + 'static,
 	{
-		let (requests, incoming) = mpsc::sync_channel::<[f32; 480]>(3);
+		let (requests, incoming) = mpsc::sync_channel::<(u64, [f32; 480])>(3);
 		let (reply, responses) = mpsc::sync_channel(3);
 		let (report, loaded) = mpsc::sync_channel(1);
 		std::thread::Builder::new()
@@ -111,8 +132,8 @@ impl Deep {
 					return;
 				};
 				let _ = report.send(true);
-				while let Ok(chunk) = incoming.recv() {
-					if reply.send(process_frame(&mut model, chunk)).is_err() {
+				while let Ok((seq, chunk)) = incoming.recv() {
+					if reply.send((seq, process_frame(&mut model, chunk))).is_err() {
 						break;
 					}
 				}
@@ -125,6 +146,10 @@ impl Deep {
 			ready: false,
 			load: Load::default(),
 			misses: 0,
+			next_seq: 0,
+			answers: Vec::new(),
+			cover,
+			cover_history: std::collections::VecDeque::new(),
 		})
 	}
 	fn process(&mut self, chunk: &mut [f32; 480]) -> Step {
@@ -135,15 +160,26 @@ impl Deep {
 				Ok(false) | Err(mpsc::TryRecvError::Disconnected) => return Step::Failed,
 			}
 		}
-		// Never block the audio thread. Drain first: a full answer queue would wedge
-		// the model thread on reply.send, which would wedge our next offer in turn.
-		// Then offer this frame; a full request queue means the model is behind, so
-		// drop the offer and cover below.
-		let mut latest = None;
+		let seq = self.next_seq;
+		self.next_seq += 1;
+		// The cover runs on every frame's input, warm and aligned with the play frame.
+		let mut covered = *chunk;
+		self.cover.as_mut()(&mut covered);
+		self.cover_history.push_back((seq, covered));
+		while self.cover_history.len() > 4 {
+			self.cover_history.pop_front();
+		}
+		// Drain first (wedge), then offer; both never block. Answers for frames
+		// already played are useless, so they never enter the table.
+		let floor = seq.saturating_sub(PLAY_BEHIND);
 		let mut live = true;
 		loop {
 			match self.responses.try_recv() {
-				Ok(answer) => latest = Some(answer),
+				Ok((answer_seq, answer)) => {
+					if answer_seq >= floor {
+						self.answers.push((answer_seq, answer));
+					}
+				}
 				Err(mpsc::TryRecvError::Empty) => break,
 				Err(mpsc::TryRecvError::Disconnected) => {
 					live = false;
@@ -151,37 +187,53 @@ impl Deep {
 				}
 			}
 		}
-		if let Err(error) = self.requests.try_send(*chunk) {
+		self.answers.retain(|(answer_seq, _)| *answer_seq >= floor);
+		if let Err(error) = self.requests.try_send((seq, *chunk)) {
 			match error {
 				mpsc::TrySendError::Full(_) => {}
 				mpsc::TrySendError::Disconnected(_) => return Step::Failed,
 			}
 		}
-		match latest {
-			Some(Some((output, inferred))) => {
-				*chunk = output;
-				self.misses = 0;
-				if self.load.record(inferred) {
-					Step::Done
-				} else {
-					Step::Failed
+		if seq < PLAY_BEHIND {
+			// No two frames of history yet: play the current cover.
+			*chunk = covered;
+			return Step::Covered;
+		}
+		let play = seq - PLAY_BEHIND;
+		if let Some(index) = self.answers.iter().position(|(s, _)| *s == play) {
+			let (_, answer) = self.answers.swap_remove(index);
+			match answer {
+				Some((output, inferred)) => {
+					*chunk = output;
+					self.misses = 0;
+					if self.load.record(inferred) {
+						Step::Done
+					} else {
+						Step::Failed
+					}
 				}
+				// A bad model frame is covered like a late one.
+				None => self.miss(),
 			}
-			// A bad model frame is covered like a late one; only stillness kills the model.
-			Some(None) => self.miss(),
-			None if live => self.miss(),
-			None => Step::Failed,
+		} else if !live {
+			Step::Failed
+		} else if let Some((_, cover)) = self.cover_history.iter().find(|(s, _)| *s == play) {
+			*chunk = *cover;
+			self.miss()
+		} else {
+			*chunk = covered;
+			self.miss()
 		}
 	}
 
-	/// A frame without a model answer. RNNoise covers it; only a three-second stall
-	/// falls back, never a single hiccup.
+	/// A play frame without a model answer. The cover already plays it; only a
+	/// three-second run of unanswered frames falls back, never a single hiccup.
 	fn miss(&mut self) -> Step {
 		self.misses = self.misses.saturating_add(1);
 		if self.misses >= MISSED_LIMIT {
 			Step::Failed
 		} else {
-			Step::Missed
+			Step::Covered
 		}
 	}
 }
@@ -372,18 +424,9 @@ impl Echo {
 					self.deep_fallback = true;
 					self.sync_rnnoise();
 				}
-				// A missed model frame is covered by one cold RNNoise pass when the model
-				// is otherwise ready. While it loads, the persistent cover below runs.
-				Some(Step::Missed) => {
-					if self.deep.as_ref().is_some_and(|deep| deep.ready) {
-						let start = time_noise.then(Instant::now);
-						rnnoise_frame(&mut noise_state(), &mut output);
-						if let Some(start) = start {
-							noise_time += start.elapsed();
-						}
-					}
-				}
-				Some(Step::Loading) | None => {}
+				// A covered frame already carries model or cover output. While the model
+				// loads, the persistent cover below runs.
+				Some(Step::Covered) | Some(Step::Loading) | None => {}
 			}
 			if let Some(noise) = &mut self.noise
 				&& !self.deep.as_ref().is_some_and(|deep| deep.ready)
@@ -449,6 +492,7 @@ mod tests {
 		reported: Duration,
 	) -> Deep {
 		let stalled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+		let mut cover = noise_state();
 		Deep::start_with(
 			|| Some(()),
 			move |_: &mut (), chunk: [f32; 480]| {
@@ -461,6 +505,9 @@ mod tests {
 				}
 				Some((chunk, reported))
 			},
+			Box::new(
+				move |output: &mut [f32; 480]| rnnoise_frame(&mut cover, output),
+			),
 		)
 		.expect("fake model thread starts")
 	}
@@ -528,6 +575,53 @@ mod tests {
 		);
 		assert!(dsp.deep.is_none());
 		assert!(dsp.noise.is_some(), "RNNoise covers after fallback");
+	}
+
+	#[test]
+	fn deep_fixed_delay_never_skips_or_repeats() {
+		const FRAMES: usize = 24;
+		let mut dsp = Echo::new();
+		dsp.settings.suppression = NoiseSuppression::DeepFilter;
+		// Identity model that stalls on two frames, identity cover: every output
+		// bit must equal the input from two positions back, whatever path played it.
+		let cover: Box<dyn FnMut(&mut [f32; 480])> = Box::new(|_: &mut [f32; 480]| {});
+		dsp.deep = Deep::start_with(
+			|| Some(()),
+			|_: &mut (), chunk: [f32; 480]| {
+				if chunk[0] as u32 == 5 || chunk[0] as u32 == 6 {
+					std::thread::sleep(Duration::from_millis(30));
+				}
+				Some((chunk, Duration::from_micros(100)))
+			},
+			cover,
+		);
+		assert!(dsp.deep.is_some(), "fake model thread starts");
+		ready_deep(dsp.deep.as_mut().unwrap());
+		// Warmup carries the value continuum so every collected frame has two
+		// frames of history: output[j] must equal input[j - 2] for all j.
+		for t in 0..4 {
+			let mut warmup = [t as f32 - 4.0; 480];
+			dsp.deep.as_mut().unwrap().process(&mut warmup);
+		}
+		let mut outputs = Vec::with_capacity(FRAMES);
+		for id in 0..FRAMES {
+			let mut chunk = [id as f32; 480];
+			dsp.deep.as_mut().unwrap().process(&mut chunk);
+			outputs.push(chunk);
+		}
+		for (index, chunk) in outputs.iter().enumerate() {
+			let expected = index as f32 - 2.0;
+			assert!(
+				chunk.iter().all(|&s| s == expected),
+				"frame {index} must equal input delayed by 2, with no skip or repeat"
+			);
+		}
+		let deep = dsp.deep.as_ref().unwrap();
+		assert!(
+			deep.misses < MISSED_LIMIT,
+			"stalled frames cover without tripping the stall fallback: {}",
+			deep.misses
+		);
 	}
 
 	#[test]
