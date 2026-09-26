@@ -5360,6 +5360,49 @@ mod tests {
 	}
 
 	#[test]
+	fn connection_tip_shows_last_ping_or_ellipsis() {
+		// The hover keeps the last measured value so reconnections never
+		// flash "…"; the ellipsis only appears before the first measurement.
+		let ctx = egui::Context::default();
+		design::apply(&ctx);
+		let tip = |ping: Option<u32>| {
+			let mut output = ctx.run_ui(
+				egui::RawInput {
+					screen_rect: Some(egui::Rect::from_min_size(
+						egui::Pos2::ZERO,
+						egui::vec2(400.0, 300.0),
+					)),
+					events: vec![],
+					..Default::default()
+				},
+				|ui| {
+					voice_connection_tip(ui, ping, "Brazil", model::Language::English);
+				},
+			);
+			output.textures_delta.clear();
+			texts(&output).into_iter().map(|(text, _)| text).collect::<Vec<_>>()
+		};
+		let measured = tip(Some(42));
+		assert!(
+			measured.iter().any(|text| text == "42 ms"),
+			"measured ping renders: {measured:?}"
+		);
+		assert!(
+			measured.iter().any(|text| text == "Brazil"),
+			"server place renders: {measured:?}"
+		);
+		let fresh = tip(None);
+		assert!(
+			fresh.iter().any(|text| text == "…"),
+			"ellipsis only before the first measurement: {fresh:?}"
+		);
+		assert!(
+			!fresh.iter().any(|text| text.contains("ms")),
+			"no stale value without a measurement: {fresh:?}"
+		);
+	}
+
+	#[test]
 	fn volume_steps_land_on_five_percent() {
 		assert_eq!(volume_step_down(47), 45);
 		assert_eq!(volume_step_down(45), 40);

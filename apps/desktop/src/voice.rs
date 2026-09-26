@@ -1221,7 +1221,8 @@ impl Voice {
 		let session = pending.session.ok_or("Missing voice session")?;
 		let session_copy = Zeroizing::new(session.expose().to_owned());
 		let (token, endpoint) = pending.server.ok_or("Missing voice server")?;
-		ui.voice_ping_ms = None;
+		// Keep the last measured ping across sessions: a reconnection shows
+		// it until the first heartbeat instead of flashing "…".
 		ui.voice_server_place = ui::voice_server_place(&endpoint).unwrap_or("").to_owned();
 		let credentials = voice::VoiceConnection {
 			channel: pending.channel,
