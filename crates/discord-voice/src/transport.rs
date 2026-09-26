@@ -2126,7 +2126,14 @@ mod tests {
 				status_rx.recv().await.unwrap(),
 				Status::Discovering
 			));
-			assert!(matches!(status_rx.recv().await.unwrap(), Status::CameraAvailable(false)));
+			loop {
+				let status = status_rx.recv().await.unwrap();
+				if matches!(status, Status::Ping(_)) {
+					continue;
+				}
+				assert!(matches!(status, Status::CameraAvailable(false)));
+				break;
+			}
 			assert!(matches!(
 				status_rx.recv().await.unwrap(),
 				Status::TransportReady
