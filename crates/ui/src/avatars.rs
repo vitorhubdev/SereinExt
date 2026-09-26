@@ -1129,6 +1129,16 @@ impl Avatars {
 	) -> egui::Response {
 		self.user_avatar(ui, user, size, demo, false, true)
 	}
+	/// Avatar without a name tip: rows that label the person themselves keep one tip.
+	pub fn show_plain_quiet(
+		&mut self,
+		ui: &mut egui::Ui,
+		user: &User,
+		size: f32,
+		demo: bool,
+	) -> egui::Response {
+		self.user_avatar(ui, user, size, demo, false, false)
+	}
 	pub fn show_rail(
 		&mut self,
 		ui: &mut egui::Ui,

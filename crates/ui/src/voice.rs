@@ -446,12 +446,14 @@ impl MessagingUi {
 				);
 				inner.spacing_mut().item_spacing.x = 6.0;
 				let avatar = match user {
-					Some(user) => self.avatars.show_plain(&mut inner, user, 28.0, state.demo),
+					Some(user) => {
+						self.avatars.show_plain_quiet(&mut inner, user, 28.0, state.demo)
+					}
 					None => {
 						let (r, response) = inner
 							.allocate_exact_size(egui::Vec2::splat(28.0), egui::Sense::hover());
 						design::paint_avatar(&inner, name, 28.0, r);
-						response.on_hover_text(name)
+						response
 					}
 				};
 				if self.is_speaking(state, entry.channel, &entry.participant) {
@@ -506,7 +508,7 @@ impl MessagingUi {
 									.truncate()
 									.selectable(false),
 							)
-							.on_hover_text(name);
+							.on_hover_text(participant_tip(user, name));
 						},
 					);
 				});
@@ -4380,6 +4382,15 @@ fn resolve_member<'a>(
 	(user, name)
 }
 
+/// The single hover tip for a call participant: nickname and username together
+/// when they differ, so two elements never repeat the same name.
+fn participant_tip(user: Option<&model::User>, name: &str) -> String {
+	match user {
+		Some(user) if name != user.name => format!("{name} ({})", user.name),
+		_ => name.to_owned(),
+	}
+}
+
 /// Find a call participant's user from self, DM recipients or the roster.
 fn participant_user(state: &State, channel: Id, user: Id) -> Option<&model::User> {
 	state
@@ -5078,6 +5089,115 @@ mod tests {
 		assert!(
 			labels.iter().any(|(text, _)| text == "User volume"),
 			"right-click reopens the menu: {labels:?}"
+		);
+	}
+
+	#[test]
+	fn participant_tip_combines_nick_and_username() {
+		let user = model::User {
+			id: Id(2),
+			name: "Robin with a rather long display name".into(),
+			avatar: None,
+			webhook: false,
+			kind: Default::default(),
+			discriminator: 0,
+			primary_guild: None,
+		};
+		assert_eq!(
+			participant_tip(Some(&user), "Robin"),
+			"Robin (Robin with a rather long display name)"
+		);
+		assert_eq!(
+			participant_tip(Some(&user), "Robin with a rather long display name"),
+			"Robin with a rather long display name"
+		);
+		assert_eq!(participant_tip(None, "Participant"), "Participant");
+	}
+
+	#[test]
+	fn participant_row_shows_a_single_name_tip() {
+		let ctx = egui::Context::default();
+		design::apply(&ctx);
+		let mut state = test_support::voice_demo_state();
+		state.voice.roster[1]
+			.member
+			.as_mut()
+			.unwrap()
+			.nick = Some("Robin".into());
+		let entry = state.voice.roster[1].clone();
+		let mut view = MessagingUi::default();
+		let mut now = 0.0;
+		// Tooltips only appear over a still pointer, so the move happens
+		// once and later frames carry no pointer events at all.
+		let mut hover = |view: &mut MessagingUi,
+		                 state: &State,
+		                 pos: Option<egui::Pos2>| {
+			now += 0.3;
+			let mut row = egui::Rect::NOTHING;
+			let mut output = ctx.run_ui(
+				egui::RawInput {
+					time: Some(now),
+					screen_rect: Some(egui::Rect::from_min_size(
+						egui::Pos2::ZERO,
+						egui::vec2(400.0, 800.0),
+					)),
+					events: pos.map_or(vec![], |pos| vec![egui::Event::PointerMoved(pos)]),
+					..Default::default()
+				},
+				|ui| {
+					ui.set_width(360.0);
+					if let Some(response) =
+						view.voice_participant(ui, state, &entry, false)
+					{
+						row = response.rect;
+					}
+				},
+			);
+			output.textures_delta.clear();
+			(output, row)
+		};
+		// Settle one frame so the row rect is known.
+		let (_, row) = hover(&mut view, &state, None);
+		assert!(row.width() > 0.0, "participant row renders");
+		// The avatar carries no tip: hovering it past the tooltip delay
+		// must never paint the bare username anywhere.
+		let username = "Robin with a rather long display name";
+		let avatar = egui::pos2(row.left() + 14.0, row.center().y);
+		let (output, _) = hover(&mut view, &state, Some(avatar));
+		assert!(
+			!texts(&output).iter().any(|(text, _)| text == username),
+			"avatar shows no name tip on arrival"
+		);
+		for _ in 0..5 {
+			let (output, _) = hover(&mut view, &state, None);
+			assert!(
+				!texts(&output).iter().any(|(text, _)| text == username),
+				"avatar shows no name tip"
+			);
+		}
+		// The name shows the single combined tip instead.
+		let (output, _) = hover(&mut view, &state, None);
+		let name_pos = texts(&output)
+			.iter()
+			.find(|(text, _)| text == "Robin")
+			.map(|(_, rect)| rect.center())
+			.unwrap();
+		let combined = format!("Robin ({username})");
+		let (output, _) = hover(&mut view, &state, Some(name_pos));
+		assert!(
+			!texts(&output).iter().any(|(text, _)| text == &combined),
+			"tip needs a still hover, not the arrival frame"
+		);
+		for _ in 0..6 {
+			let (output, _) = hover(&mut view, &state, None);
+			if texts(&output).iter().any(|(text, _)| text == &combined) {
+				return;
+			}
+		}
+		let (output, _) = hover(&mut view, &state, None);
+		panic!(
+			"name hover shows {combined:?}: {:?}",
+			texts(&output).iter().map(|(text, _)| text).collect::<Vec<_>>()
 		);
 	}
 
