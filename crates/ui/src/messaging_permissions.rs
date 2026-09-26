@@ -22,21 +22,23 @@ impl Tab {
 		Self::FriendRequests,
 		Self::ConnectedGames,
 	];
-	pub fn label(self) -> &'static str {
-		match self {
+	pub fn label(self, language: model::Language) -> &'static str {
+		let english = match self {
 			Self::Spam => "Spam Filters",
 			Self::DirectMessages => "Direct Messages",
 			Self::FriendRequests => "Friend Requests",
 			Self::ConnectedGames => "Connected Games",
-		}
+		};
+		crate::i18n::text(language, english)
 	}
-	fn heading(self) -> &'static str {
-		match self {
+	fn heading(self, language: model::Language) -> &'static str {
+		let english = match self {
 			Self::Spam => "Spam Filters",
 			Self::DirectMessages => "Direct Message (DM) Permissions",
 			Self::FriendRequests => "Friend Request Permissions",
 			Self::ConnectedGames => "Messaging in Connected Games",
-		}
+		};
+		crate::i18n::text(language, english)
 	}
 }
 #[derive(Default)]
@@ -48,13 +50,13 @@ pub(super) struct Navigation {
 	guild: Option<Id>,
 }
 impl Navigation {
-	fn heading(&mut self, ui: &mut egui::Ui, tab: Tab) {
+	fn heading(&mut self, ui: &mut egui::Ui, tab: Tab, language: model::Language) {
 		if tab != Tab::Spam {
 			ui.add_space(12.0);
 		}
 		let heading = ui.label(design::eyebrow(
 			ui,
-			tab.heading(),
+			tab.heading(language),
 			design::palette(ui).muted,
 		));
 		if heading.rect.top() <= ui.clip_rect().top() + 28.0 {
@@ -85,6 +87,7 @@ impl MessagingUi {
 		state: &mut State,
 		commands: &mut Vec<Command>,
 	) {
+		let language = self.language;
 		let nav = &mut self.settings.messaging_permissions;
 		if nav.generation != state.generation {
 			*nav = Navigation {
@@ -114,7 +117,7 @@ impl MessagingUi {
 			ui.horizontal_wrapped(|ui| {
 				for tab in Tab::ALL {
 					if ui
-						.selectable_label(nav.active == tab, tab.label())
+						.selectable_label(nav.active == tab, tab.label(language))
 						.clicked()
 					{
 						nav.jump = Some(tab);
@@ -129,16 +132,17 @@ impl MessagingUi {
 				detail(
 					ui,
 					if state.messaging_permissions.snapshot.is_some() {
-						"Saving…"
+						crate::i18n::text(language, "Saving…")
 					} else {
-						"Loading your preferences…"
+						crate::i18n::text(language, "Loading your preferences…")
 					},
 				);
 			});
 		}
 		if let Some(error) = state.messaging_permissions.error {
 			design::notice(ui, design::Level::Error, error.label());
-			if !busy && design::text_action(ui, "Try again").clicked() {
+			if !busy && design::text_action(ui, crate::i18n::text(language, "Try again")).clicked()
+			{
 				nav.requested = false;
 			}
 		}
@@ -147,17 +151,24 @@ impl MessagingUi {
 		};
 		let mut change = None;
 		ui.add_enabled_ui(!busy, |ui| {
-			nav.heading(ui, Tab::Spam);
+			nav.heading(ui, Tab::Spam, language);
 			design::card(ui, |ui| {
 				design::section(
 					ui,
-					"Automatically filter suspected spam messages",
-					Some("Discord can filter out some messages that contain spam. These messages go to your Spam inbox."),
+					crate::i18n::text(language, "Automatically filter suspected spam messages"),
+					Some(crate::i18n::text(
+						language,
+						"Discord can filter out some messages that contain spam. These messages go to your Spam inbox.",
+					)),
 				);
 				for (value, label, hint) in [
-					(3, "Filter all spam", None),
-					(2, "Filter messages from non-friends", Some("Recommended")),
-					(1, "Don't filter spam", None),
+					(3, crate::i18n::text(language, "Filter all spam"), None),
+					(
+						2,
+						crate::i18n::text(language, "Filter messages from non-friends"),
+						Some(crate::i18n::text(language, "Recommended")),
+					),
+					(1, crate::i18n::text(language, "Don't filter spam"), None),
 				] {
 					let selected = settings.spam_filter == value || (settings.spam_filter == 0 && value == 2);
 					if design::radio_row(ui, selected, label, hint).clicked() && !selected {
@@ -165,26 +176,32 @@ impl MessagingUi {
 					}
 				}
 				if settings.spam_filter > 3 {
-					design::hint(ui, "Your account uses a custom spam filter setting. Select an option to replace it.");
+					design::hint(ui, crate::i18n::text(language, "Your account uses a custom spam filter setting. Select an option to replace it."));
 				}
 			});
 
-			nav.heading(ui, Tab::DirectMessages);
+			nav.heading(ui, Tab::DirectMessages, language);
 			design::card(ui, |ui| {
-				let label = nav.guild.and_then(|id| state.guilds.iter().find(|guild| guild.id == id)).map_or("All servers", |guild| guild.name.as_str()).to_owned();
+				let label = nav.guild.and_then(|id| state.guilds.iter().find(|guild| guild.id == id)).map_or(crate::i18n::text(language, "All servers").to_owned(), |guild| guild.name.clone());
 				let allow = settings.allow_dms(nav.guild);
 				let filter = settings.filter_requests(nav.guild);
 				let all = nav.guild.is_none();
 				let mixed = all && state.guilds.iter().any(|guild| settings.allow_dms(Some(guild.id)) != allow || settings.filter_requests(Some(guild.id)) != filter);
 				design::row(
 					ui,
-					"Server",
+					crate::i18n::text(language, "Server"),
 					Some(if mixed {
-						"Some servers have different preferences. Choose a server to review its settings."
+						crate::i18n::text(
+							language,
+							"Some servers have different preferences. Choose a server to review its settings.",
+						)
 					} else if all {
-						"Changes apply to all current servers and set the default for newly joined servers."
+						crate::i18n::text(
+							language,
+							"Changes apply to all current servers and set the default for newly joined servers.",
+						)
 					} else {
-						"Changes apply to this server only."
+						crate::i18n::text(language, "Changes apply to this server only.")
 					}),
 					|ui| {
 						egui::ComboBox::from_id_salt("messaging-permissions-guild")
@@ -192,7 +209,11 @@ impl MessagingUi {
 							.width(ui.available_width().min(260.0))
 							.height(280.0)
 							.show_ui(ui, |ui| {
-								ui.selectable_value(&mut nav.guild, None, "All servers");
+								ui.selectable_value(
+									&mut nav.guild,
+									None,
+									crate::i18n::text(language, "All servers"),
+								);
 								for guild in &state.guilds {
 									ui.selectable_value(&mut nav.guild, Some(guild.id), &guild.name);
 								}
@@ -201,14 +222,14 @@ impl MessagingUi {
 				);
 				design::card_divider(ui);
 				ui.add_enabled_ui(!all || state.guilds.len() <= MAX_GUILDS, |ui| {
-					if let Some(enabled) = toggle(ui, "Allow DMs from other server members", None, allow) {
+					if let Some(enabled) = toggle(ui, crate::i18n::text(language, "Allow DMs from other server members"), None, allow) {
 						change = Some(match nav.guild {
 							Some(id) => Change::AllowGuildDms(id, enabled),
 							None => Change::AllowAllDms { guilds: state.guilds.iter().map(|guild| guild.id).collect(), enabled },
 						});
 					}
 					design::card_divider(ui);
-					if let Some(enabled) = toggle(ui, "Filter messages from server members I may not know", Some("Move messages from people you may not know into Message Requests."), filter) {
+					if let Some(enabled) = toggle(ui, crate::i18n::text(language, "Filter messages from server members I may not know"), Some(crate::i18n::text(language, "Move messages from people you may not know into Message Requests.")), filter) {
 						change = Some(match nav.guild {
 							Some(id) => Change::FilterGuildRequests(id, enabled),
 							None => Change::FilterAllRequests { guilds: state.guilds.iter().map(|guild| guild.id).collect(), enabled },
@@ -216,45 +237,45 @@ impl MessagingUi {
 					}
 				});
 				if all && state.guilds.len() > MAX_GUILDS {
-					design::hint(ui, "There are too many servers to update together. Choose an individual server.");
+					design::hint(ui, crate::i18n::text(language, "There are too many servers to update together. Choose an individual server."));
 				}
 			});
 
-			nav.heading(ui, Tab::FriendRequests);
+			nav.heading(ui, Tab::FriendRequests, language);
 			design::card(ui, |ui| {
-				design::section(ui, "Allow friend requests from", Some("Control who can send you friend requests and how they appear."));
+				design::section(ui, crate::i18n::text(language, "Allow friend requests from"), Some(crate::i18n::text(language, "Control who can send you friend requests and how they appear.")));
 				for (label, bit, make, description) in [
-					("Everyone", 8, Change::Everyone as fn(bool) -> Change, None),
-					("Friends of friends", 2, Change::FriendsOfFriends, None),
-					("Server members", 4, Change::ServerMembers, Some("Only from servers where you also allow Direct Messages.")),
+					(crate::i18n::text(language, "Everyone"), 8, Change::Everyone as fn(bool) -> Change, None),
+					(crate::i18n::text(language, "Friends of friends"), 2, Change::FriendsOfFriends, None),
+					(crate::i18n::text(language, "Server members"), 4, Change::ServerMembers, Some(crate::i18n::text(language, "Only from servers where you also allow Direct Messages."))),
 				] {
 					if let Some(value) = toggle(ui, label, description, settings.friend_source_flags & bit != 0) {
 						change = Some(make(value));
 					}
 				}
 				design::card_divider(ui);
-				if let Some(value) = toggle(ui, "Show personalized messages", Some("Show personalized messages on incoming friend requests. If you accept, the message will still appear in your DMs."), settings.personalized_requests) {
+				if let Some(value) = toggle(ui, crate::i18n::text(language, "Show personalized messages"), Some(crate::i18n::text(language, "Show personalized messages on incoming friend requests. If you accept, the message will still appear in your DMs.")), settings.personalized_requests) {
 					change = Some(Change::PersonalizedRequests(value));
 				}
 			});
 
-			nav.heading(ui, Tab::ConnectedGames);
+			nav.heading(ui, Tab::ConnectedGames, language);
 			design::card(ui, |ui| {
-				design::hint(ui, "Settings for games that use Discord to power their social experiences.");
+				design::hint(ui, crate::i18n::text(language, "Settings for games that use Discord to power their social experiences."));
 				ui.add_space(4.0);
-				if let Some(value) = toggle(ui, "Allow friends from games to send direct messages and invites", Some("Let friends from connected games send DMs and invite you to play, even when the game isn't open."), settings.game_friend_dms) {
+				if let Some(value) = toggle(ui, crate::i18n::text(language, "Allow friends from games to send direct messages and invites"), Some(crate::i18n::text(language, "Let friends from connected games send DMs and invite you to play, even when the game isn't open.")), settings.game_friend_dms) {
 					change = Some(Change::GameFriendDms(value));
 				}
 				design::card_divider(ui);
-				design::section(ui, "Show Direct Messages in games", Some("Read and respond to DMs directly from in-game chats."));
-				for (value, label) in [(1, "Show all DMs"), (2, "Show only DMs from people who also play the game"), (3, "Don't show DMs")] {
+				design::section(ui, crate::i18n::text(language, "Show Direct Messages in games"), Some(crate::i18n::text(language, "Read and respond to DMs directly from in-game chats.")));
+				for (value, label) in [(1, crate::i18n::text(language, "Show all DMs")), (2, crate::i18n::text(language, "Show only DMs from people who also play the game")), (3, crate::i18n::text(language, "Don't show DMs"))] {
 					let selected = settings.game_dms == value || (settings.game_dms == 0 && value == 1);
 					if design::radio_row(ui, selected, label, None).clicked() && !selected {
 						change = Some(Change::GameDms(value));
 					}
 				}
 				if settings.game_dms > 3 {
-					design::hint(ui, "Your account uses a custom in-game DM setting. Select an option to replace it.");
+					design::hint(ui, crate::i18n::text(language, "Your account uses a custom in-game DM setting. Select an option to replace it."));
 				}
 			});
 		});

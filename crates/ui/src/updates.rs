@@ -112,7 +112,13 @@ impl MessagingUi {
 		);
 		let mut dismiss = false;
 		ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-			dismiss = icons::button(ui, icons::Icon::Close, 18.0, "Dismiss update").clicked();
+			dismiss = icons::button(
+				ui,
+				icons::Icon::Close,
+				18.0,
+				crate::i18n::text(self.language, "Dismiss update"),
+			)
+			.clicked();
 		});
 		response
 			.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, ui.is_enabled(), label));
@@ -247,30 +253,48 @@ impl MessagingUi {
 				ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
 					if self.updates.ready {
 						ui.add_enabled_ui(!self.updates.busy, |ui| {
-							if design::button(ui, "Restart to update", design::ButtonKind::Primary)
-								.clicked()
-							{
-								self.updates.restart_requested = true;
-							}
+						if design::button(
+							ui,
+							crate::i18n::text(self.language, "Restart to update"),
+							design::ButtonKind::Primary,
+						)
+						.clicked()
+						{
+							self.updates.restart_requested = true;
+						}
 						});
 					} else if self.updates.available && self.updates.supported {
 						ui.add_enabled_ui(!self.updates.busy, |ui| {
-							if design::button(ui, "Download update", design::ButtonKind::Primary)
-								.clicked()
-							{
-								self.updates.download_requested = true;
-							}
+						if design::button(
+							ui,
+							crate::i18n::text(self.language, "Download update"),
+							design::ButtonKind::Primary,
+						)
+						.clicked()
+						{
+							self.updates.download_requested = true;
+						}
 						});
 					} else {
 						let allowed = (!cfg!(debug_assertions) || demo) && !self.updates.busy;
 						ui.add_enabled_ui(allowed, |ui| {
-							if design::button(ui, "Check for updates", design::ButtonKind::Outline)
-								.on_disabled_hover_text(if cfg!(debug_assertions) && !demo {
-									"Update checks are disabled in debug builds."
-								} else {
-									"Finish the current update before checking again."
-								})
-								.clicked()
+						if design::button(
+							ui,
+							crate::i18n::text(self.language, "Check for updates"),
+							design::ButtonKind::Outline,
+						)
+						.on_disabled_hover_text(if cfg!(debug_assertions) && !demo {
+							crate::i18n::text(
+								self.language,
+								"Update checks are disabled in debug builds.",
+							)
+						} else {
+							crate::i18n::text(
+								self.language,
+								"Finish the current update before checking again.",
+							)
+						})
+						.clicked()
 							{
 								self.updates.check_requested = true;
 							}

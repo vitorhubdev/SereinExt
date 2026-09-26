@@ -1,7 +1,9 @@
 //! Shared user actions; rendering only records intent, dispatched after borrowed rows finish.
 use crate::shortcuts::{Intent, ShortcutView};
 use client_core::{Command, State};
-use model::{Shortcut, User};
+use model::{Language, Shortcut, User};
+
+use crate::i18n::{interface_language, store_interface_language};
 
 #[derive(Clone)]
 pub enum Action {
@@ -165,15 +167,19 @@ fn pending_admin_dialog(
 ) -> bool {
 	let ctx = ui.ctx();
 	if ctx.data(|data| data.get_temp::<bool>(kick_key(user.id))).unwrap_or(false) {
+		let language = interface_language(ctx);
 		let name = user.name.clone();
 		match crate::dialog::Confirm::new(
 			"member-admin-kick",
-			format!("Kick {name}?"),
-			format!("{name} will be removed from this server. They can rejoin with a new invite."),
+			format!("{} {name}?", crate::i18n::text(language, "Kick")),
+			crate::i18n::text(
+				language,
+				"This removes the member from this server. They can rejoin with a new invite.",
+			),
 		)
 		.danger()
-		.confirm_label("Kick")
-		.cancel_label("Cancel")
+		.confirm_label(crate::i18n::text(language, "Kick"))
+		.cancel_label(crate::i18n::text(language, "Cancel"))
 		.show(ctx)
 		{
 			Some(crate::dialog::Choice::Confirmed) => {
@@ -200,11 +206,15 @@ fn pending_admin_dialog(
 	{
 		let mut save = false;
 		let mut cancel = false;
-		crate::dialog::Dialog::new("member-admin-nickname", "Change Nickname")
-			.width(400.0)
-			.show(ctx, |d| {
-				d.content(|ui| {
-					crate::dialog::label(ui, "Nickname");
+		let language = interface_language(ctx);
+		crate::dialog::Dialog::new(
+			"member-admin-nickname",
+			crate::i18n::text(language, "Change Nickname"),
+		)
+		.width(400.0)
+		.show(ctx, |d| {
+			d.content(|ui| {
+				crate::dialog::label(ui, crate::i18n::text(language, "Nickname"));
 					let mut draft: Option<NickDraft> = ctx
 						.data(|data| data.get_temp(nick_key(user.id)))
 						.unwrap_or(None);
@@ -215,8 +225,12 @@ fn pending_admin_dialog(
 						);
 						let ready = !draft.name.chars().any(char::is_control)
 							&& state.can_edit_guild_nickname(draft.guild, draft.user);
-						if crate::dialog::action(ui, "Save", crate::dialog::Action::Primary)
-							.clicked() && ready
+						if crate::dialog::action(
+							ui,
+							crate::i18n::text(language, "Save"),
+							crate::dialog::Action::Primary,
+						)
+						.clicked() && ready
 						{
 							save = true;
 						}
@@ -226,7 +240,12 @@ fn pending_admin_dialog(
 					}
 				});
 				d.footer(|ui| {
-					if crate::dialog::action(ui, "Cancel", crate::dialog::Action::Neutral).clicked()
+					if crate::dialog::action(
+						ui,
+						crate::i18n::text(language, "Cancel"),
+						crate::dialog::Action::Neutral,
+					)
+					.clicked()
 					{
 						cancel = true;
 					}
@@ -262,12 +281,16 @@ pub(super) fn contents(
 	view: Option<ShortcutView<'_>>,
 ) {
 	let colors = crate::design::palette(ui);
+	let language = interface_language(ui.ctx());
 	ui.set_min_width(200.0);
 	ui.spacing_mut().button_padding = egui::vec2(8.0, 6.0);
 	if pending_admin_dialog(ui, state, user, action) {
 		return;
 	}
-	if ui.button("Profile").clicked() {
+	if ui
+		.button(crate::i18n::text(language, "Profile"))
+		.clicked()
+	{
 		profile.command_open(user.clone());
 		ui.close();
 	}
@@ -276,7 +299,9 @@ pub(super) fn contents(
 			state
 				.channel(id)
 				.is_some_and(|channel| channel.supports_text())
-		}) && ui.button("Mention").clicked()
+		}) && ui
+		.button(crate::i18n::text(language, "Mention"))
+		.clicked()
 	{
 		*action = Some(Action::Mention(user.clone()));
 		ui.close();
@@ -291,7 +316,10 @@ pub(super) fn contents(
 	let enabled = (state.demo || state.gateway_connected) && !state.user_action_pending();
 	ui.separator();
 	if ui
-		.add_enabled(enabled, egui::Button::new("Add Note"))
+		.add_enabled(
+			enabled,
+			egui::Button::new(crate::i18n::text(language, "Add Note")),
+		)
 		.clicked()
 	{
 		*action = Some(Action::Note(user.clone()));
@@ -301,12 +329,15 @@ pub(super) fn contents(
 		.add_enabled(
 			enabled && state.friends().any(|friend| friend.id == user.id),
 			egui::Button::new(if state.friend_nickname(user.id).is_some() {
-				"Edit Friend Nickname"
+				crate::i18n::text(language, "Edit Friend Nickname")
 			} else {
-				"Add Friend Nickname"
+				crate::i18n::text(language, "Add Friend Nickname")
 			}),
 		)
-		.on_disabled_hover_text("Private nicknames are available for confirmed friends.")
+		.on_disabled_hover_text(crate::i18n::text(
+			language,
+			"Private nicknames are available for confirmed friends.",
+		))
 		.clicked()
 	{
 		*action = Some(Action::Nickname(user.clone()));
@@ -319,9 +350,16 @@ pub(super) fn contents(
 			if ui
 				.add_enabled(
 					view.available(),
-					egui::Button::new(if pinned { "Unpin DM" } else { "Pin DM" }),
+					egui::Button::new(if pinned {
+						crate::i18n::text(language, "Unpin DM")
+					} else {
+						crate::i18n::text(language, "Pin DM")
+					}),
 				)
-				.on_hover_text("Pinned direct messages are saved on this device.")
+				.on_hover_text(crate::i18n::text(
+					language,
+					"Pinned direct messages are saved on this device.",
+				))
 				.clicked()
 			{
 				*action = Some(Action::Shortcut(view.toggle(Shortcut::Pinned, dm.id)));
@@ -333,12 +371,15 @@ pub(super) fn contents(
 			.add_enabled(
 				enabled,
 				egui::Button::new(if muted {
-					"Unmute Conversation"
+					crate::i18n::text(language, "Unmute Conversation")
 				} else {
-					"Mute Conversation"
+					crate::i18n::text(language, "Mute Conversation")
 				}),
 			)
-			.on_hover_text("Mute this direct message's notifications until you unmute it.")
+			.on_hover_text(crate::i18n::text(
+				language,
+				"Mute this direct message's notifications until you unmute it.",
+			))
 			.clicked()
 		{
 			*action = Some(Action::Mute {
@@ -348,16 +389,28 @@ pub(super) fn contents(
 			ui.close();
 		}
 		if ui
-			.add_enabled(enabled, egui::Button::new("Close DM"))
-			.on_hover_text("Remove this conversation from your DM list. Messages are kept.")
+			.add_enabled(
+				enabled,
+				egui::Button::new(crate::i18n::text(language, "Close DM")),
+			)
+			.on_hover_text(crate::i18n::text(
+				language,
+				"Remove this conversation from your DM list. Messages are kept.",
+			))
 			.clicked()
 		{
 			*action = Some(Action::CloseDm(dm.id));
 			ui.close();
 		}
 	} else {
-		ui.add_enabled(false, egui::Button::new("Mute Conversation"))
-			.on_disabled_hover_text("No open direct message with this user.");
+		ui.add_enabled(
+			false,
+			egui::Button::new(crate::i18n::text(language, "Mute Conversation")),
+		)
+		.on_disabled_hover_text(crate::i18n::text(
+			language,
+			"No open direct message with this user.",
+		));
 	}
 	ui.separator();
 	let blocked = state.user_blocked(user.id) == Some(true);
@@ -365,7 +418,12 @@ pub(super) fn contents(
 		.add_enabled(
 			enabled,
 			egui::Button::new(
-				egui::RichText::new(if blocked { "Unblock" } else { "Block" }).color(colors.danger),
+				egui::RichText::new(if blocked {
+					crate::i18n::text(language, "Unblock")
+				} else {
+					crate::i18n::text(language, "Block")
+				})
+				.color(colors.danger),
 			),
 		)
 		.clicked()
@@ -392,11 +450,15 @@ pub(super) fn contents(
 		let can_kick = state.can_kick_guild_member(guild, user.id);
 		if can_nickname || !roles.is_empty() || can_kick {
 			ui.separator();
-			if can_nickname && ui.button("Change Nickname").clicked() {
+			if can_nickname
+				&& ui
+					.button(crate::i18n::text(language, "Change Nickname"))
+					.clicked()
+			{
 				ctx_data_insert_nick(ui, guild, user.id, member.and_then(|m| m.nick.clone()));
 			}
 			if !roles.is_empty() {
-				ui.menu_button("Roles", |ui| {
+				ui.menu_button(crate::i18n::text(language, "Roles"), |ui| {
 					let assigned_roles: Vec<model::Id> = member
 						.map(|m| m.roles.clone())
 						.unwrap_or_default();
@@ -425,7 +487,12 @@ pub(super) fn contents(
 			if can_kick
 				&& ui
 					.button(
-						egui::RichText::new(format!("Kick {}", user.name)).color(colors.danger),
+						egui::RichText::new(format!(
+							"{} {}",
+							crate::i18n::text(language, "Kick"),
+							user.name
+						))
+						.color(colors.danger),
 					)
 					.clicked()
 			{
@@ -809,6 +876,36 @@ mod tests {
 			),
 		 "expected confirmed kick, got {action:?}"
 		);
+	}
+
+	#[test]
+	fn admin_menu_renders_fully_translated_in_portuguese() {
+		let ctx = egui::Context::default();
+		let _ = crate::i18n::drain_untranslated_keys();
+		store_interface_language(&ctx, model::Language::PortugueseBrazil);
+		let (state, _, target) = admin_state(1);
+		let (_, action, text) = open_menu(&ctx, &state, &target);
+		assert!(action.is_none());
+		let rendered: Vec<&str> =
+			text.iter().map(|(label, _)| label.as_str()).collect();
+		for expected in [
+			"Perfil",
+			"Mudar apelido",
+			"Cargos",
+			"Expulsar Target",
+			"Bloquear",
+		] {
+			assert!(
+				rendered.contains(&expected),
+				"missing {expected}: {rendered:?}"
+			);
+		}
+		assert!(
+			!rendered.contains(&"Kick Target"),
+			"untranslated label leaked: {rendered:?}"
+		);
+		let missing = crate::i18n::drain_untranslated_keys();
+		assert!(missing.is_empty(), "untranslated menu keys: {missing:?}");
 	}
 
 	fn pin_frame(

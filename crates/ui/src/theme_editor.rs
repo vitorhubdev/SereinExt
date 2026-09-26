@@ -19,13 +19,14 @@ enum EditorTab {
 }
 impl EditorTab {
 	const ALL: [Self; 4] = [Self::Basics, Self::Background, Self::Colors, Self::Advanced];
-	fn label(self) -> &'static str {
-		match self {
+	fn label(self, language: model::Language) -> &'static str {
+		let english = match self {
 			Self::Basics => "Basics",
 			Self::Background => "Background",
 			Self::Colors => "Colors",
 			Self::Advanced => "Advanced",
-		}
+		};
+		crate::i18n::text(language, english)
 	}
 }
 
@@ -40,25 +41,27 @@ enum ImageRegion {
 	InputArea,
 }
 impl ImageRegion {
-	fn label(self) -> &'static str {
-		match self {
+	fn label(self, language: model::Language) -> &'static str {
+		let english = match self {
 			Self::TopBars => "Top bars",
 			Self::ServerList => "Server list",
 			Self::PeopleChannels => "People & channels",
 			Self::MessageList => "Message list",
 			Self::MemberList => "Member list",
 			Self::InputArea => "Message input area",
-		}
+		};
+		crate::i18n::text(language, english)
 	}
-	fn description(self) -> &'static str {
-		match self {
+	fn description(self, language: model::Language) -> &'static str {
+		let english = match self {
 			Self::TopBars => "Window title and conversation header",
 			Self::ServerList => "The left server rail",
 			Self::PeopleChannels => "Direct messages and channel navigation",
 			Self::MessageList => "The conversation timeline",
 			Self::MemberList => "The member and search pane on the right",
 			Self::InputArea => "The area around the message box",
-		}
+		};
+		crate::i18n::text(language, english)
 	}
 	fn opacity(self, sections: &mut SectionOpacity) -> &mut u8 {
 		match self {
@@ -112,7 +115,7 @@ impl ThemeEditor {
 	pub(crate) fn preview_tab(&mut self, label: &str) {
 		if let Some(tab) = EditorTab::ALL
 			.into_iter()
-			.find(|tab| tab.label().eq_ignore_ascii_case(label))
+			.find(|tab| tab.label(model::Language::English).eq_ignore_ascii_case(label))
 		{
 			self.tab = tab;
 		}
@@ -330,12 +333,14 @@ impl ThemeEditor {
 		ui: &mut egui::Ui,
 		busy: bool,
 		requests: &mut Vec<ExtensionRequest>,
+		language: model::Language,
 	) -> bool {
+		let t = |english: &'static str| crate::i18n::text(language, english);
 		let mut close = false;
 		ui.add_enabled_ui(!busy, |ui| {
 			ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
 			ui.horizontal_wrapped(|ui| {
-				if dialog::action(ui, "Back", dialog::Action::Outline).clicked() {
+				if dialog::action(ui, t("Back"), dialog::Action::Outline).clicked() {
 					if self.dirty {
 						self.discard = true;
 					} else {
@@ -344,7 +349,7 @@ impl ThemeEditor {
 				}
 				if self.dirty {
 					ui.label(
-						egui::RichText::new("Unsaved changes")
+						egui::RichText::new(t("Unsaved changes"))
 							.size(12.0)
 							.color(design::palette(ui).warning),
 					);
@@ -358,12 +363,13 @@ impl ThemeEditor {
 					.as_ref()
 					.is_some_and(|theme| theme.validate().is_ok());
 				ui.add_enabled_ui(valid, |ui| {
-					if dialog::action(ui, "Preview in app", dialog::Action::Outline).clicked() {
+					if dialog::action(ui, t("Preview in app"), dialog::Action::Outline).clicked()
+					{
 						self.preview = true;
 						requests.push(self.preview_request());
 					}
 				});
-				if dialog::action(ui, "Save and apply", dialog::Action::Primary).clicked() {
+				if dialog::action(ui, t("Save and apply"), dialog::Action::Primary).clicked() {
 					self.show_errors = true;
 					if self.ready_to_save() {
 						self.validation_error = None;
@@ -388,7 +394,7 @@ impl ThemeEditor {
 				ui.spacing_mut().item_spacing.x = 8.0;
 				ui.add(egui::Spinner::new().size(14.0));
 				ui.label(
-					egui::RichText::new("Working…")
+					egui::RichText::new(t("Working…"))
 						.size(12.0)
 						.color(design::palette(ui).muted),
 				);
@@ -397,7 +403,8 @@ impl ThemeEditor {
 		ui.add_space(8.0);
 		ui.horizontal_wrapped(|ui| {
 			ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
-			let labels: Vec<&str> = EditorTab::ALL.iter().map(|tab| tab.label()).collect();
+			let labels: Vec<&str> =
+				EditorTab::ALL.iter().map(|tab| tab.label(language)).collect();
 			let current = EditorTab::ALL
 				.iter()
 				.position(|tab| *tab == self.tab)
@@ -409,7 +416,7 @@ impl ThemeEditor {
 				if ui.available_size_before_wrap().x >= 230.0 {
 					ui.add_space((ui.available_size_before_wrap().x - 220.0).max(0.0));
 				}
-				appearance_switch(ui, &mut self.dark);
+				appearance_switch(ui, &mut self.dark, language);
 			}
 		});
 		ui.add_space(4.0);
@@ -422,49 +429,52 @@ impl ThemeEditor {
 		ui: &mut egui::Ui,
 		busy: bool,
 		requests: &mut Vec<ExtensionRequest>,
+		language: model::Language,
 	) -> bool {
+		let t = |english: &'static str| crate::i18n::text(language, english);
 		let mut changed = false;
 		ui.add_enabled_ui(!busy, |ui| {
 			ui.spacing_mut().item_spacing = egui::vec2(8.0, 6.0);
 			if let Some((_, message)) = self.validation_error.filter(|(tab, _)| *tab == self.tab) {
-				design::notice(ui, design::Level::Error, message);
+				design::notice(ui, design::Level::Error, t(message));
 				ui.add_space(12.0);
 			}
 			match self.tab {
 				EditorTab::Basics => {
 					design::section(
 						ui,
-						"Theme details",
-						Some("How your theme appears in the gallery."),
+						t("Theme details"),
+						Some(t("How your theme appears in the gallery.")),
 					);
 					let show_errors = self.show_errors;
 					design::card(ui, |ui| {
 						let manifest = &mut self.package.manifest;
-						changed |= text_field(ui, "Theme name", &mut manifest.name, 32, "My theme");
+						changed |=
+							text_field(ui, t("Theme name"), &mut manifest.name, 32, t("My theme"));
 						if show_errors && manifest.name.trim().is_empty() {
-							design::notice(ui, design::Level::Error, "Theme name is required.");
+							design::notice(ui, design::Level::Error, t("Theme name is required."));
 						}
 						changed |=
-							text_field(ui, "Created by", &mut manifest.author, 32, "Your name");
+							text_field(ui, t("Created by"), &mut manifest.author, 32, t("Your name"));
 						if show_errors && manifest.author.trim().is_empty() {
-							design::notice(ui, design::Level::Error, "Creator name is required.");
+							design::notice(ui, design::Level::Error, t("Creator name is required."));
 						}
 					});
 					ui.add_space(20.0);
 					design::section(
 						ui,
-						"Card cover",
-						Some("Choose the image shown on your theme card in Themes."),
+						t("Card cover"),
+						Some(t("Choose the image shown on your theme card in Themes.")),
 					);
-					self.cover_card(ui, requests, &mut changed);
+					self.cover_card(ui, requests, &mut changed, language);
 				}
 				EditorTab::Background => {
 					design::section(
 						ui,
-						"App background",
-						Some("Use one image behind your conversations and sidebars."),
+						t("App background"),
+						Some(t("Use one image behind your conversations and sidebars.")),
 					);
-					self.image_card(ui, requests, &mut changed);
+					self.image_card(ui, requests, &mut changed, language);
 					if !self.package.background_image.is_empty() {
 						let theme = self
 							.package
@@ -482,10 +492,10 @@ impl ThemeEditor {
 							..Default::default()
 						});
 						if background.sections.is_none() {
-							design::hint(ui, "This older theme uses its original image placement.");
+							design::hint(ui, t("This older theme uses its original image placement."));
 							if dialog::action(
 								ui,
-								"Use image across the app",
+								t("Use image across the app"),
 								dialog::Action::Outline,
 							)
 							.clicked()
@@ -497,7 +507,7 @@ impl ThemeEditor {
 							} else {
 								changed |= design::slider_row(
 									ui,
-									"Image opacity",
+									t("Image opacity"),
 									None,
 									&mut background.opacity,
 									0..=100,
@@ -506,26 +516,26 @@ impl ThemeEditor {
 								.changed();
 							}
 						}
-						changed |= row(ui, "Image fit", |ui| {
+						changed |= row(ui, t("Image fit"), |ui| {
 							let mut changed = false;
 							egui::ComboBox::from_id_salt("image-fit")
 								.selected_text(match background.fit {
-									BackgroundFit::Cover => "Fill area",
-									BackgroundFit::Contain => "Fit entire image",
+									BackgroundFit::Cover => t("Fill area"),
+									BackgroundFit::Contain => t("Fit entire image"),
 								})
 								.show_ui(ui, |ui| {
 									changed |= ui
 										.selectable_value(
 											&mut background.fit,
 											BackgroundFit::Cover,
-											"Fill area",
+											t("Fill area"),
 										)
 										.changed();
 									changed |= ui
 										.selectable_value(
 											&mut background.fit,
 											BackgroundFit::Contain,
-											"Fit entire image",
+											t("Fit entire image"),
 										)
 										.changed();
 								});
@@ -535,9 +545,9 @@ impl ThemeEditor {
 							ui.add_space(16.0);
 							design::section(
 								ui,
-								"Section opacity",
+								t("Section opacity"),
 								Some(
-									"Select an area, then choose how much of the image shows through.",
+									t("Select an area, then choose how much of the image shows through."),
 								),
 							);
 							let base = design::builtin_colors(self.dark, design::variant());
@@ -550,6 +560,7 @@ impl ThemeEditor {
 								map_colors,
 								fit,
 								sections,
+								language,
 							);
 						}
 					} else {
@@ -584,7 +595,8 @@ impl ThemeEditor {
 							("sidebar", base.sidebar),
 							("chat", base.chat),
 						] {
-							changed |= color_override(ui, key, &mut palette.colors, fallback);
+							changed |=
+								color_override(ui, key, &mut palette.colors, fallback, language);
 						}
 					});
 					if design::primary_color().is_some() {
@@ -619,19 +631,19 @@ impl ThemeEditor {
 						}
 						if self.open_colors {
 							design::card(ui, |ui| {
-								for (key, fallback) in colors(base) {
-									if !["chat", "accent", "text", "muted", "sidebar"]
-										.contains(&key)
-									{
-										changed |=
-											color_override(ui, key, &mut palette.colors, fallback);
-									}
+							for (key, fallback) in colors(base) {
+								if !["chat", "accent", "text", "muted", "sidebar"]
+									.contains(&key)
+								{
+									changed |=
+										color_override(ui, key, &mut palette.colors, fallback, language);
 								}
+							}
 							});
 						}
 						ui.add_space(12.0);
 						self.open_gradient |= std::mem::take(&mut self.reveal_gradient);
-						if design::disclosure(ui, "Window gradient", self.open_gradient).clicked() {
+						if design::disclosure(ui, t("Window gradient"), self.open_gradient).clicked() {
 							self.open_gradient = !self.open_gradient;
 						}
 						if self.open_gradient {
@@ -746,7 +758,7 @@ impl ThemeEditor {
 							});
 						}
 						ui.add_space(12.0);
-						if design::disclosure(ui, "Text, spacing & corners", self.open_metrics)
+						if design::disclosure(ui, t("Text, spacing & corners"), self.open_metrics)
 							.clicked()
 						{
 							self.open_metrics = !self.open_metrics;
@@ -755,37 +767,39 @@ impl ThemeEditor {
 							design::card(ui, |ui| {
 								design::hint(
 									ui,
-									"These settings apply to dark and light appearances.",
+									t("These settings apply to dark and light appearances."),
 								);
 								let style = &mut theme.style;
 								for (label, value, default, min, max) in [
-									("Body text", &mut style.body_size, 15, 10, 28),
-									("Headings", &mut style.heading_size, 20, 12, 40),
-									("Buttons", &mut style.button_size, 14, 10, 28),
-									("Small text", &mut style.small_size, 12, 10, 28),
-									("Code", &mut style.monospace_size, 14, 10, 28),
-									("Control height", &mut style.control_height, 32, 24, 56),
+									(t("Body text"), &mut style.body_size, 15, 10, 28),
+									(t("Headings"), &mut style.heading_size, 20, 12, 40),
+									(t("Buttons"), &mut style.button_size, 14, 10, 28),
+									(t("Small text"), &mut style.small_size, 12, 10, 28),
+									(t("Code"), &mut style.monospace_size, 14, 10, 28),
+									(t("Control height"), &mut style.control_height, 32, 24, 56),
 								] {
-									changed |= metric(ui, label, value, default, min..=max);
+									changed |= metric(ui, label, value, default, min..=max, language);
 								}
 								changed |= pair_metric(
 									ui,
-									"Item spacing",
+									t("Item spacing"),
 									&mut style.item_spacing,
 									[8, 8],
+									language,
 								);
 								changed |= pair_metric(
 									ui,
-									"Button padding",
+									t("Button padding"),
 									&mut style.button_padding,
 									[12, 6],
+									language,
 								);
 								for (label, value, default) in [
-									("Control corners", &mut style.widget_radius, 8),
-									("Window corners", &mut style.window_radius, 12),
-									("Menu corners", &mut style.menu_radius, 12),
+									(t("Control corners"), &mut style.widget_radius, 8),
+									(t("Window corners"), &mut style.window_radius, 12),
+									(t("Menu corners"), &mut style.menu_radius, 12),
 								] {
-									changed |= metric(ui, label, value, default, 0..=24);
+									changed |= metric(ui, label, value, default, 0..=24, language);
 								}
 							});
 						}
@@ -793,17 +807,17 @@ impl ThemeEditor {
 					ui.add_space(12.0);
 					design::section(
 						ui,
-						"Sharing & export",
-						Some(
+						t("Sharing & export"),
+						Some(t(
 							"The license and version are required. A source URL is optional for local themes.",
-						),
+						)),
 					);
 					design::card(ui, |ui| {
 						let manifest = &mut self.package.manifest;
-						changed |= text_field(ui, "License", &mut manifest.license, 32, "CC0-1.0");
-						changed |= text_field(ui, "Version", &mut manifest.version, 32, "1.0.0");
+						changed |= text_field(ui, t("License"), &mut manifest.license, 32, "CC0-1.0");
+						changed |= text_field(ui, t("Version"), &mut manifest.version, 32, "1.0.0");
 						changed |=
-							text_field(ui, "Source URL", &mut manifest.source, 512, "Optional");
+							text_field(ui, t("Source URL"), &mut manifest.source, 512, t("Optional"));
 						if self.show_errors
 							&& !manifest.source.is_empty()
 							&& [
@@ -819,7 +833,7 @@ impl ThemeEditor {
 							design::notice(
 								ui,
 								design::Level::Error,
-								"Use a valid HTTPS source URL or leave this blank.",
+								t("Use a valid HTTPS source URL or leave this blank."),
 							);
 						}
 						if self.show_errors
@@ -829,15 +843,15 @@ impl ThemeEditor {
 							design::notice(
 								ui,
 								design::Level::Error,
-								"License and version are required.",
+								t("License and version are required."),
 							);
 						}
 						design::hint(
 							ui,
-							"Only share images you own or have permission to use. Keep required attribution.",
+							t("Only share images you own or have permission to use. Keep required attribution."),
 						);
 						ui.add_space(8.0);
-						if dialog::action(ui, "Export theme", dialog::Action::Outline).clicked() {
+						if dialog::action(ui, t("Export theme"), dialog::Action::Outline).clicked() {
 							self.show_errors = true;
 							if self.ready_to_save() {
 								requests.push(ExtensionRequest::ExportTheme {
@@ -874,11 +888,11 @@ impl ThemeEditor {
 		if self.discard {
 			match dialog::Confirm::new(
 				"discard-theme-draft",
-				"Discard unsaved theme?",
-				"Your changes have not been saved.",
+				t("Discard unsaved theme?"),
+				t("Your changes have not been saved."),
 			)
-			.confirm_label("Discard changes")
-			.cancel_label("Keep editing")
+			.confirm_label(t("Discard changes"))
+			.cancel_label(t("Keep editing"))
 			.danger()
 			.show(ui.ctx())
 			{
@@ -895,7 +909,9 @@ impl ThemeEditor {
 		ui: &mut egui::Ui,
 		requests: &mut Vec<ExtensionRequest>,
 		changed: &mut bool,
+		language: model::Language,
 	) {
+		let t = |english: &'static str| crate::i18n::text(language, english);
 		if self.cover_thumbnail.is_none()
 			&& let Some(image) = &self.cover
 			&& image
@@ -935,32 +951,32 @@ impl ThemeEditor {
 				}
 				ui.add_space(8.0);
 				ui.vertical(|ui| {
-					ui.label(design::medium(
-						ui,
-						if self.cover.is_some() {
-							"Custom cover"
-						} else {
-							"Automatic preview"
-						},
-						14.0,
-					));
-					ui.horizontal_wrapped(|ui| {
-						if dialog::action(
+						ui.label(design::medium(
 							ui,
 							if self.cover.is_some() {
-								"Replace cover"
+								t("Custom cover")
 							} else {
-								"Choose cover"
+								t("Automatic preview")
 							},
-							dialog::Action::Outline,
-						)
-						.clicked()
-						{
-							requests.push(ExtensionRequest::PickThemeCover);
-						}
-						if self.cover.is_some()
-							&& dialog::action(ui, "Remove", dialog::Action::Neutral).clicked()
-						{
+							14.0,
+						));
+						ui.horizontal_wrapped(|ui| {
+							if dialog::action(
+								ui,
+								if self.cover.is_some() {
+									t("Replace cover")
+								} else {
+									t("Choose cover")
+								},
+								dialog::Action::Outline,
+							)
+							.clicked()
+							{
+								requests.push(ExtensionRequest::PickThemeCover);
+							}
+							if self.cover.is_some()
+								&& dialog::action(ui, t("Remove"), dialog::Action::Neutral).clicked()
+							{
 							self.package.cover_image.clear();
 							self.cover = None;
 							self.cover_thumbnail = None;
@@ -970,10 +986,10 @@ impl ThemeEditor {
 				});
 			});
 		});
-		design::hint(
-			ui,
-			"PNG or JPEG, up to 2 MiB. This image does not change the chat background.",
-		);
+			design::hint(
+				ui,
+				t("PNG or JPEG, up to 2 MiB. This image does not change the chat background."),
+			);
 	}
 
 	fn image_card(
@@ -981,7 +997,9 @@ impl ThemeEditor {
 		ui: &mut egui::Ui,
 		requests: &mut Vec<ExtensionRequest>,
 		changed: &mut bool,
+		language: model::Language,
 	) {
+		let t = |english: &'static str| crate::i18n::text(language, english);
 		if self.thumbnail.is_none()
 			&& let Some(image) = &self.image
 			&& image
@@ -1025,9 +1043,9 @@ impl ThemeEditor {
 					ui.label(design::medium(
 						ui,
 						if selected {
-							"Background image"
+							t("Background image")
 						} else {
-							"No image selected"
+							t("No image selected")
 						},
 						14.0,
 					));
@@ -1038,9 +1056,9 @@ impl ThemeEditor {
 						if dialog::action(
 							ui,
 							if selected {
-								"Replace image"
+								t("Replace image")
 							} else {
-								"Choose image"
+								t("Choose image")
 							},
 							dialog::Action::Outline,
 						)
@@ -1049,7 +1067,7 @@ impl ThemeEditor {
 							requests.push(ExtensionRequest::PickThemeImage);
 						}
 						if selected
-							&& dialog::action(ui, "Remove", dialog::Action::Neutral).clicked()
+							&& dialog::action(ui, t("Remove"), dialog::Action::Neutral).clicked()
 						{
 							self.package.background_image.clear();
 							self.image = None;
@@ -1064,20 +1082,23 @@ impl ThemeEditor {
 				});
 			});
 		});
-		design::hint(ui, "PNG or JPEG, up to 2 MiB");
+		design::hint(ui, t("PNG or JPEG, up to 2 MiB"));
 	}
 }
 
-fn appearance_switch(ui: &mut egui::Ui, dark: &mut bool) {
+fn appearance_switch(ui: &mut egui::Ui, dark: &mut bool, language: model::Language) {
+	let t = |english: &'static str| crate::i18n::text(language, english);
 	ui.horizontal(|ui| {
 		ui.spacing_mut().item_spacing.x = 8.0;
 		ui.label(
-			egui::RichText::new("Editing")
+			egui::RichText::new(t("Editing"))
 				.size(12.0)
 				.color(design::palette(ui).muted),
 		)
-		.on_hover_text("Colors and opacity are saved separately for dark and light appearance.");
-		if let Some(index) = design::segmented(ui, &["Dark", "Light"], usize::from(!*dark)) {
+		.on_hover_text(t("Colors and opacity are saved separately for dark and light appearance."));
+		if let Some(index) =
+			design::segmented(ui, &[t("Dark"), t("Light")], usize::from(!*dark))
+		{
 			*dark = index == 0;
 		}
 	});
@@ -1110,23 +1131,24 @@ fn section_map(
 	colors: design::Palette,
 	fit: BackgroundFit,
 	sections: &mut SectionOpacity,
+	language: model::Language,
 ) -> bool {
 	let mut changed = false;
 	if ui.available_width() >= 620.0 {
 		ui.horizontal_top(|ui| {
 			let width = ui.available_width() * 0.55;
 			ui.allocate_ui(egui::vec2(width, 0.0), |ui| {
-				section_diagram(ui, texture, selected, colors, fit, sections);
+				section_diagram(ui, texture, selected, colors, fit, sections, language);
 			});
 			ui.add_space(12.0);
 			ui.vertical(|ui| {
-				changed = section_controls(ui, selected, sections);
+				changed = section_controls(ui, selected, sections, language);
 			});
 		});
 	} else {
-		section_diagram(ui, texture, selected, colors, fit, sections);
+		section_diagram(ui, texture, selected, colors, fit, sections, language);
 		ui.add_space(12.0);
-		changed = section_controls(ui, selected, sections);
+		changed = section_controls(ui, selected, sections, language);
 	}
 	changed
 }
@@ -1135,17 +1157,19 @@ fn section_controls(
 	ui: &mut egui::Ui,
 	selected: &mut ImageRegion,
 	sections: &mut SectionOpacity,
+	language: model::Language,
 ) -> bool {
+	let t = |english: &'static str| crate::i18n::text(language, english);
 	let mut changed = false;
 	design::card(ui, |ui| {
 		let palette = design::palette(ui);
 		ui.visuals_mut().widgets.inactive.bg_fill = palette.base;
 		ui.visuals_mut().widgets.inactive.weak_bg_fill = palette.base;
 		ui.visuals_mut().selection.bg_fill = palette.accent;
-		ui.label(design::medium(ui, "Selected section", 13.0));
+		ui.label(design::medium(ui, t("Selected section"), 13.0));
 		egui::ComboBox::from_id_salt("background-section")
 			.width(ui.available_width())
-			.selected_text(selected.label())
+			.selected_text(selected.label(language))
 			.show_ui(ui, |ui| {
 				for region in [
 					ImageRegion::TopBars,
@@ -1155,21 +1179,21 @@ fn section_controls(
 					ImageRegion::MemberList,
 					ImageRegion::InputArea,
 				] {
-					ui.selectable_value(selected, region, region.label());
+					ui.selectable_value(selected, region, region.label(language));
 				}
 			});
-		design::hint(ui, selected.description());
+		design::hint(ui, selected.description(language));
 		ui.add_space(12.0);
 		changed = design::slider_row(
 			ui,
-			"Surface opacity",
+			crate::i18n::text(language, "Surface opacity"),
 			None,
 			selected.opacity(sections),
 			0..=100,
 			"%",
 		)
 		.changed();
-		design::hint(ui, "0% shows the image. 100% is a solid section color.");
+		design::hint(ui, crate::i18n::text(language, "0% shows the image. 100% is a solid section color."));
 	});
 	changed
 }
@@ -1181,6 +1205,7 @@ fn section_diagram(
 	colors: design::Palette,
 	fit: BackgroundFit,
 	sections: &mut SectionOpacity,
+	language: model::Language,
 ) {
 	let width = ui.available_width().clamp(1.0, 520.0);
 	let (rect, _) =
@@ -1258,9 +1283,10 @@ fn section_diagram(
 				ui.scope_id().with((region as u8, part)),
 				egui::Sense::click(),
 			)
-			.on_hover_text(region.label());
-		response
-			.widget_info(|| egui::WidgetInfo::labeled(egui::Role::Button, true, region.label()));
+			.on_hover_text(region.label(language));
+			response.widget_info(|| {
+				egui::WidgetInfo::labeled(egui::Role::Button, true, region.label(language))
+			});
 		if response.clicked()
 			|| response.has_focus()
 				&& ui.input(|input| {
@@ -1384,8 +1410,8 @@ fn color_input(ui: &mut egui::Ui, value: &mut String) -> bool {
 	)
 	.inner
 }
-fn color_label(key: &str) -> &str {
-	match key {
+fn color_label(key: &'static str, language: model::Language) -> &'static str {
+	let english = match key {
 		"base" => "Window background",
 		"sidebar" => "Sidebar",
 		"chat" => "Message area",
@@ -1405,7 +1431,8 @@ fn color_label(key: &str) -> &str {
 		"mention_bg" => "Mention background",
 		"mention_text" => "Mention text",
 		_ => key,
-	}
+	};
+	crate::i18n::text(language, english)
 }
 /// Settings rows align values at the right; narrow pages stack instead of clipping controls.
 fn row(ui: &mut egui::Ui, label: &str, controls: impl FnOnce(&mut egui::Ui) -> bool) -> bool {
@@ -1498,27 +1525,29 @@ fn text_field(
 }
 fn color_override(
 	ui: &mut egui::Ui,
-	key: &str,
+	key: &'static str,
 	map: &mut std::collections::BTreeMap<String, String>,
 	fallback: egui::Color32,
+	language: model::Language,
 ) -> bool {
+	let t = |english: &'static str| crate::i18n::text(language, english);
 	let description = match key {
-		"accent" => Some("Buttons, selection and highlights"),
-		"text" => Some("Messages and regular labels"),
-		"muted" => Some("Timestamps and supporting text"),
-		"sidebar" => Some("Channel, conversation and member lists"),
-		"chat" => Some("Background behind your messages"),
+		"accent" => Some(t("Buttons, selection and highlights")),
+		"text" => Some(t("Messages and regular labels")),
+		"muted" => Some(t("Timestamps and supporting text")),
+		"sidebar" => Some(t("Channel, conversation and member lists")),
+		"chat" => Some(t("Background behind your messages")),
 		_ => None,
 	};
-	let changed = settings_row(ui, color_label(key), description, |ui| {
+	let changed = settings_row(ui, color_label(key, language), description, |ui| {
 		let mut value = map.get(key).cloned().unwrap_or_else(|| hex(fallback));
 		let mut changed = color_input(ui, &mut value);
 		if changed {
 			map.insert(key.into(), value);
 		}
 		if map.contains_key(key)
-			&& design::text_action(ui, "Reset")
-				.on_hover_text("Use the default color for this appearance")
+			&& design::text_action(ui, t("Reset"))
+				.on_hover_text(t("Use the default color for this appearance"))
 				.clicked()
 		{
 			map.remove(key);
@@ -1530,7 +1559,7 @@ fn color_override(
 		.get(key)
 		.is_some_and(|value| extensions::parse_color(value).is_err())
 	{
-		design::notice(ui, design::Level::Error, "Use #RRGGBB or #RRGGBBAA.");
+		design::notice(ui, design::Level::Error, t("Use #RRGGBB or #RRGGBBAA."));
 	}
 	changed
 }
@@ -1540,11 +1569,12 @@ fn metric(
 	value: &mut Option<u8>,
 	default: u8,
 	range: std::ops::RangeInclusive<u8>,
+	language: model::Language,
 ) -> bool {
 	let mut changed = false;
 	ui.push_id(label, |ui| {
 		let mut n = value.unwrap_or(default);
-		if metric_label(ui, label, value.is_some()) {
+		if metric_label(ui, label, value.is_some(), language) {
 			*value = None;
 			n = default;
 			changed = true;
@@ -1559,14 +1589,20 @@ fn metric(
 }
 
 /// Metric title with a quiet Reset on the right; returns whether Reset was pressed.
-fn metric_label(ui: &mut egui::Ui, label: &str, overridden: bool) -> bool {
+fn metric_label(
+	ui: &mut egui::Ui,
+	label: &str,
+	overridden: bool,
+	language: model::Language,
+) -> bool {
+	let t = |english: &'static str| crate::i18n::text(language, english);
 	let mut reset = false;
 	ui.horizontal(|ui| {
 		ui.label(design::medium(ui, label, 14.0).color(design::palette(ui).text_strong));
 		if overridden {
 			ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-				reset = design::text_action(ui, "Reset")
-					.on_hover_text("Use the built-in value")
+				reset = design::text_action(ui, t("Reset"))
+					.on_hover_text(t("Use the built-in value"))
 					.clicked();
 			});
 		}
@@ -1579,18 +1615,20 @@ fn pair_metric(
 	label: &str,
 	value: &mut Option<[u8; 2]>,
 	default: [u8; 2],
+	language: model::Language,
 ) -> bool {
+	let t = |english: &'static str| crate::i18n::text(language, english);
 	let mut changed = false;
 	ui.push_id(label, |ui| {
 		let mut pair = value.unwrap_or(default);
-		if metric_label(ui, label, value.is_some()) {
+		if metric_label(ui, label, value.is_some(), language) {
 			*value = None;
 			pair = default;
 			changed = true;
 		}
 		let mut edited = false;
 		for (index, n) in pair.iter_mut().enumerate() {
-			let axis = if index == 0 { "Horizontal" } else { "Vertical" };
+			let axis = if index == 0 { t("Horizontal") } else { t("Vertical") };
 			ui.label(
 				egui::RichText::new(axis)
 					.size(12.0)
@@ -1640,16 +1678,17 @@ mod tests {
 				focused: true,
 				..Default::default()
 			},
-			|ui| {
-				section_map(
-					ui,
-					None,
-					region,
-					design::builtin_colors(true, design::Variant::Standard),
-					BackgroundFit::Cover,
-					sections,
-				);
-			},
+				|ui| {
+					section_map(
+						ui,
+						None,
+						region,
+						design::builtin_colors(true, design::Variant::Standard),
+						BackgroundFit::Cover,
+						sections,
+						model::Language::English,
+					);
+				},
 		);
 		let mut labels = Vec::new();
 		for shape in &output.shapes {
@@ -1675,7 +1714,7 @@ mod tests {
 				..Default::default()
 			},
 			|ui| {
-				editor.toolbar(ui, false, &mut requests);
+				editor.toolbar(ui, false, &mut requests, model::Language::English);
 			},
 		);
 		let mut labels = Vec::new();

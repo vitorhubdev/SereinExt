@@ -3,11 +3,49 @@
 use model::Language;
 
 pub fn text(language: Language, english: &'static str) -> &'static str {
-	match language {
-		Language::English => english,
-		Language::PortugueseBrazil => portuguese_brazil(english).unwrap_or(english),
-		Language::Spanish => spanish(english).unwrap_or(english),
+	let translated = match language {
+		Language::English => return english,
+		Language::PortugueseBrazil => portuguese_brazil(english),
+		Language::Spanish => spanish(english),
+	};
+	match translated {
+		Some(text) => text,
+		None => {
+			#[cfg(test)]
+			UNTRANSLATED_KEYS.with(|keys| keys.borrow_mut().push(english));
+			english
+		}
 	}
+}
+
+/// Fixed egui temp key holding the current interface language. `MessagingUi`
+/// stores it every frame so shared render helpers (menus, save bars) can read
+/// it without signature changes in files owned by other agents.
+const INTERFACE_LANGUAGE_KEY: &str = "serein-interface-language";
+
+pub fn store_interface_language(ctx: &egui::Context, language: Language) {
+	ctx.data_mut(|data| data.insert_temp(egui::Id::unique(INTERFACE_LANGUAGE_KEY), language));
+}
+
+/// Language for shared chrome; English when no frame stored one (tests, previews).
+pub fn interface_language(ctx: &egui::Context) -> Language {
+	ctx.data(|data| {
+		data.get_temp::<Language>(egui::Id::unique(INTERFACE_LANGUAGE_KEY))
+	})
+	.unwrap_or(Language::English)
+}
+
+/// Keys that fell back to English on this thread since the last drain. Tests
+/// render surfaces in another language and require this list to stay empty.
+#[cfg(test)]
+pub fn drain_untranslated_keys() -> Vec<&'static str> {
+	UNTRANSLATED_KEYS.with(|keys| std::mem::take(&mut *keys.borrow_mut()))
+}
+
+#[cfg(test)]
+thread_local! {
+	static UNTRANSLATED_KEYS: std::cell::RefCell<Vec<&'static str>> =
+		const { std::cell::RefCell::new(Vec::new()) };
 }
 
 fn portuguese_brazil(key: &str) -> Option<&'static str> {
@@ -17,6 +55,40 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Customization" => "Personalização",
 		"My Account" => "Minha conta",
 		"Profile" => "Perfil",
+		"Mention" => "Mencionar",
+		"Add Note" => "Adicionar nota",
+		"Edit Friend Nickname" => "Editar apelido de amigo",
+		"Add Friend Nickname" => "Adicionar apelido de amigo",
+		"Private nicknames are available for confirmed friends." => {
+			"Apelidos particulares estão disponíveis para amigos confirmados."
+		}
+		"Pin DM" => "Fixar DM",
+		"Unpin DM" => "Desafixar DM",
+		"Pinned direct messages are saved on this device." => {
+			"Conversas fixadas são salvas neste dispositivo."
+		}
+		"Mute Conversation" => "Silenciar conversa",
+		"Unmute Conversation" => "Reativar conversa",
+		"Mute this direct message's notifications until you unmute it." => {
+			"Silencia as notificações desta conversa até você reativá-la."
+		}
+		"Close DM" => "Fechar DM",
+		"Remove this conversation from your DM list. Messages are kept." => {
+			"Remove esta conversa da sua lista de conversas. As mensagens são mantidas."
+		}
+		"No open direct message with this user." => {
+			"Nenhuma conversa aberta com este usuário."
+		}
+		"Block" => "Bloquear",
+		"Unblock" => "Desbloquear",
+		"Change Nickname" => "Mudar apelido",
+		"Nickname" => "Apelido",
+		"Roles" => "Cargos",
+		"Kick" => "Expulsar",
+		"Save" => "Salvar",
+		"This removes the member from this server. They can rejoin with a new invite." => {
+			"Isso remove o membro deste servidor. Ele pode voltar com um novo convite."
+		}
 		"General" => "Geral",
 		"Appearance" => "Aparência",
 		"Chat" => "Conversas",
@@ -470,6 +542,81 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		}
 		"Dismiss friend status warning" => "Dispensar aviso de status dos amigos",
 		"Direct Messages" => "Mensagens diretas",
+		"Spam Filters" => "Filtros de spam",
+		"Friend Requests" => "Pedidos de amizade",
+		"Connected Games" => "Jogos conectados",
+		"Direct Message (DM) Permissions" => "Permissões de mensagem direta (DM)",
+		"Friend Request Permissions" => "Permissões de pedido de amizade",
+		"Messaging in Connected Games" => "Mensagens em jogos conectados",
+		"Automatically filter suspected spam messages" => {
+			"Filtrar automaticamente mensagens suspeitas de spam"
+		}
+		"Discord can filter out some messages that contain spam. These messages go to your Spam inbox." => {
+			"O Discord pode filtrar algumas mensagens com spam. Elas vão para sua caixa de spam."
+		}
+		"Filter all spam" => "Filtrar todo o spam",
+		"Filter messages from non-friends" => "Filtrar mensagens de quem não é amigo",
+		"Don't filter spam" => "Não filtrar spam",
+		"Your account uses a custom spam filter setting. Select an option to replace it." => {
+			"Sua conta usa um filtro de spam personalizado. Selecione uma opção para substituí-lo."
+		}
+		"All servers" => "Todos os servidores",
+		"Server" => "Servidor",
+		"Some servers have different preferences. Choose a server to review its settings." => {
+			"Alguns servidores têm preferências diferentes. Escolha um servidor para ver as configurações."
+		}
+		"Changes apply to all current servers and set the default for newly joined servers." => {
+			"As mudanças valem para os servidores atuais e viram o padrão dos novos servidores."
+		}
+		"Changes apply to this server only." => "As mudanças valem só para este servidor.",
+		"Allow DMs from other server members" => "Permitir DMs de outros membros do servidor",
+		"Filter messages from server members I may not know" => {
+			"Filtrar mensagens de membros que talvez eu não conheça"
+		}
+		"Move messages from people you may not know into Message Requests." => {
+			"Move mensagens de pessoas que você talvez não conheça para Solicitações de Mensagem."
+		}
+		"There are too many servers to update together. Choose an individual server." => {
+			"Há servidores demais para atualizar juntos. Escolha um servidor."
+		}
+		"Saving…" => "Salvando…",
+		"Loading your preferences…" => "Carregando suas preferências…",
+		"Try again" => "Tentar de novo",
+		"Allow friend requests from" => "Permitir pedidos de amizade de",
+		"Control who can send you friend requests and how they appear." => {
+			"Controle quem pode mandar pedidos de amizade e como eles aparecem."
+		}
+		"Everyone" => "Todos",
+		"Friends of friends" => "Amigos de amigos",
+		"Server members" => "Membros do servidor",
+		"Only from servers where you also allow Direct Messages." => {
+			"Só de servidores onde você também permite mensagens diretas."
+		}
+		"Show personalized messages" => "Mostrar mensagens personalizadas",
+		"Show personalized messages on incoming friend requests. If you accept, the message will still appear in your DMs." => {
+			"Mostra mensagens personalizadas nos pedidos recebidos. Se você aceitar, ela continua nas suas DMs."
+		}
+		"Settings for games that use Discord to power their social experiences." => {
+			"Configurações de jogos que usam o Discord nas experiências sociais."
+		}
+		"Allow friends from games to send direct messages and invites" => {
+			"Permitir que amigos de jogos mandem mensagens e convites"
+		}
+		"Let friends from connected games send DMs and invite you to play, even when the game isn't open." => {
+			"Deixa amigos de jogos conectados mandarem DMs e convidarem para jogar, mesmo com o jogo fechado."
+		}
+		"Show Direct Messages in games" => "Mostrar mensagens diretas nos jogos",
+		"Read and respond to DMs directly from in-game chats." => {
+			"Leia e responda DMs direto das conversas no jogo."
+		}
+		"Show all DMs" => "Mostrar todas as DMs",
+		"Show only DMs from people who also play the game" => {
+			"Mostrar só DMs de quem também joga"
+		}
+		"Don't show DMs" => "Não mostrar DMs",
+		"Your account uses a custom in-game DM setting. Select an option to replace it." => {
+			"Sua conta usa uma configuração personalizada de DM no jogo. Selecione uma opção para substituí-la."
+		}
 		"Mark As Read" => "Marcar como lida",
 		"Server Settings" => "Configurações do servidor",
 		"Create invite" => "Criar convite",
@@ -501,6 +648,430 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Restart to update" => "Reiniciar para atualizar",
 		"Updating…" => "Atualizando…",
 		"Update available" => "Atualização disponível",
+		"Dismiss update" => "Dispensar atualização",
+		"Download update" => "Baixar atualização",
+		"Check for updates" => "Verificar atualizações",
+		"Update checks are disabled in debug builds." => {
+			"Verificações de atualização estão desligadas em compilações de depuração."
+		}
+		"Finish the current update before checking again." => {
+			"Termine a atualização atual antes de verificar de novo."
+		}
+		"Search themes" => "Buscar temas",
+		"Search extensions" => "Buscar extensões",
+		"Checking for packages and updates" => "Verificando pacotes e atualizações",
+		"Working on your last action" => "Executando sua última ação",
+		"Clear search" => "Limpar busca",
+		"Create theme" => "Criar tema",
+		"More" => "Mais",
+		"Import theme…" => "Importar tema…",
+		"Refresh catalog" => "Atualizar catálogo",
+		"Look for new packages and updates. Nothing installs on its own." => {
+			"Busca novos pacotes e atualizações. Nada instala sozinho."
+		}
+		"Import package…" => "Importar pacote…",
+		"Open a package file from this computer." => {
+			"Abrir um arquivo de pacote deste computador."
+		}
+		"No matches" => "Sem resultados",
+		"No themes yet" => "Nenhum tema ainda",
+		"No extensions yet" => "Nenhuma extensão ainda",
+		"Refresh the catalog or import a creator's package to get started." => {
+			"Atualize o catálogo ou importe o pacote de um criador para começar."
+		}
+		"Try a different name or creator." => "Tente outro nome ou criador.",
+		"Preview" => "Pré-visualizar",
+		"View preview" => "Ver prévia",
+		"Loading preview..." => "Carregando prévia...",
+		"Preview not loaded" => "Prévia não carregada",
+		"Preview unavailable" => "Prévia indisponível",
+		"Previewing theme" => "Pré-visualizando tema",
+		"Theme preview" => "Prévia do tema",
+		"Changes are not saved yet" => "Mudanças ainda não salvas",
+		"Back to themes" => "Voltar aos temas",
+		"Back to theme editor" => "Voltar ao editor",
+		"Customize" => "Personalizar",
+		"Use theme" => "Usar tema",
+		"Apply this installed theme to the app." => {
+			"Aplica este tema instalado ao app."
+		}
+		"Edit theme" => "Editar tema",
+		"Open tool" => "Abrir ferramenta",
+		"Disable" => "Desativar",
+		"Update" => "Atualizar",
+		"Active" => "Ativo",
+		"Enabled" => "Ativado",
+		"Remove" => "Remover",
+		"by" => "por",
+		"Plugin" => "Plugin",
+		"Cleanup pending" => "Limpeza pendente",
+		"Retry cleanup" => "Tentar limpeza de novo",
+		"Add a new tool to your conversations." => {
+			"Adicione uma ferramenta nova às suas conversas."
+		}
+		"Install theme" => "Instalar tema",
+		"Review & enable" => "Revisar e ativar",
+		"Review the new release before it replaces this version." => {
+			"Revise a nova versão antes que ela substitua esta."
+		}
+		"Remove this theme and delete its local data." => {
+			"Remove este tema e apaga os dados locais dele."
+		}
+		"Finish removing this extension and its local data." => {
+			"Termina de remover esta extensão e os dados locais dela."
+		}
+		"Removes this extension and deletes its local data." => {
+			"Remove esta extensão e apaga os dados locais dela."
+		}
+		"Selecting artwork sends it as an image attachment." => {
+			"Escolher arte envia como anexo de imagem."
+		}
+		"Example deleted-message appearance" => "Exemplo de mensagem apagada",
+		"Creator preview" => "Prévia do criador",
+		"Close preview" => "Fechar prévia",
+		"Reviewed" => "Revisado",
+		"Unreviewed" => "Não revisado",
+		"View source" => "Ver código-fonte",
+		"Unreviewed package — its source has not been reviewed for the catalog." => {
+			"Pacote não revisado — o código-fonte não foi revisado para o catálogo."
+		}
+		"No access to conversations or composer text." => {
+			"Sem acesso a conversas ou ao texto do editor."
+		}
+		"Allow this extension to" => "Permitir que esta extensão",
+		"Enable this theme" => "Ativar este tema",
+		"Enable this extension" => "Ativar esta extensão",
+		"Everything it may touch is listed below." => {
+			"Tudo que ela pode acessar está listado abaixo."
+		}
+		"Allow every listed permission to continue." => {
+			"Permita todas as permissões listadas para continuar."
+		}
+		"Enable explicit emoji and sticker image attachment selection" => {
+			"Permitir escolha de imagens de emoji e figurinha"
+		}
+		"Customize app colors, typography and control styling" => {
+			"Personalizar cores, tipografia e controles do app"
+		}
+		"Read live message events and text in the active conversation" => {
+			"Ler eventos e texto da conversa ativa"
+		}
+		"Read the message I choose for an action" => "Ler a mensagem que eu escolher",
+		"Read my draft and propose text changes" => "Ler meu rascunho e sugerir textos",
+		"Store up to 1 MiB of local data for this account" => {
+			"Guardar até 1 MiB de dados locais desta conta"
+		}
+		"Read my account and current conversation details" => {
+			"Ler minha conta e detalhes da conversa atual"
+		}
+		"Read my loaded profile, including biography and pronouns" => {
+			"Ler meu perfil, incluindo bio e pronomes"
+		}
+		"Read my loaded server names and identifiers" => {
+			"Ler nomes e identificadores dos meus servidores"
+		}
+		"Read current channel metadata, recipients and permissions" => {
+			"Ler metadados, participantes e permissões do canal"
+		}
+		"Receive changes to separately granted account and conversation data" => {
+			"Receber mudanças de dados com permissão separada"
+		}
+		"Read loaded embed text, stickers and message reference metadata" => {
+			"Ler embeds, figurinhas e referências de mensagens"
+		}
+		"Read loaded forum and thread summaries" => "Ler resumos de fóruns e tópicos",
+		"Read current typing users and loaded pins; observe reactions" => {
+			"Ler quem está digitando, fixados e reações"
+		}
+		"Read loaded channel topics, categories, thread details and permissions" => {
+			"Ler tópicos, categorias, tópicos de discussão e permissões"
+		}
+		"Read loaded server members, roles and server profiles" => {
+			"Ler membros, cargos e perfis dos servidores"
+		}
+		"Read the list of loaded, readable conversations" => {
+			"Ler a lista de conversas legíveis"
+		}
+		"Read loaded message replies, mentions, attachment metadata and reactions" => {
+			"Ler respostas, menções, anexos e reações"
+		}
+		"Read my loaded friends, requests, blocked and ignored users" => {
+			"Ler amigos, pedidos, bloqueados e ignorados"
+		}
+		"Read loaded messages in the active conversation" => {
+			"Ler mensagens da conversa ativa"
+		}
+		"Read loaded members of the active conversation" => {
+			"Ler membros da conversa ativa"
+		}
+		"Read loaded user presence status" => "Ler status de presença",
+		"Read current call state and participant identifiers" => {
+			"Ler estado da chamada e participantes"
+		}
+		"Read unread and mention counts in the active conversation" => {
+			"Ler não lidas e menções da conversa ativa"
+		}
+		"Enable" => "Ativar",
+		"PNG or JPEG, up to 2 MiB. This image does not change the chat background." => {
+			"PNG ou JPEG, até 2 MiB. Não muda o fundo do chat."
+		}
+		"Disabling removes the extension and its local data. Re-enabling starts fresh." => {
+			"Desativar remove a extensão e os dados locais. Reativar começa do zero."
+		}
+		"Save Changes" => "Salvar mudanças",
+		"Back" => "Voltar",
+		"Working…" => "Trabalhando…",
+		"Theme details" => "Detalhes do tema",
+		"How your theme appears in the gallery." => {
+			"Como seu tema aparece na galeria."
+		}
+		"Theme name" => "Nome do tema",
+		"My theme" => "Meu tema",
+		"Theme name is required." => "Nome do tema é obrigatório.",
+		"Created by" => "Criado por",
+		"Your name" => "Seu nome",
+		"Creator name is required." => "Nome do criador é obrigatório.",
+		"Card cover" => "Capa do cartão",
+		"Choose the image shown on your theme card in Themes." => {
+			"Escolha a imagem do cartão do tema em Temas."
+		}
+		"App background" => "Fundo do app",
+		"Use one image behind your conversations and sidebars." => {
+			"Use uma imagem atrás das conversas e barras laterais."
+		}
+		"This older theme uses its original image placement." => {
+			"Este tema antigo usa o posicionamento original da imagem."
+		}
+		"Use image across the app" => "Usar imagem no app todo",
+		"Preview in app" => "Pré-visualizar no app",
+		"Save and apply" => "Salvar e aplicar",
+		"Basics" => "Básico",
+		"Background" => "Fundo",
+		"Colors" => "Cores",
+		"Advanced" => "Avançado",
+		"Discard unsaved theme?" => "Descartar tema não salvo?",
+		"Your changes have not been saved." => "Suas mudanças não foram salvas.",
+		"Discard changes" => "Descartar mudanças",
+		"Keep editing" => "Continuar editando",
+		"Custom cover" => "Capa personalizada",
+		"Automatic preview" => "Prévia automática",
+		"Replace cover" => "Trocar capa",
+		"Choose cover" => "Escolher capa",
+		"Background image" => "Imagem de fundo",
+		"No image selected" => "Nenhuma imagem",
+		"Replace image" => "Trocar imagem",
+		"Choose image" => "Escolher imagem",
+		"Editing" => "Editando",
+		"Dark" => "Escuro",
+		"Image opacity" => "Opacidade da imagem",
+		"Image fit" => "Ajuste da imagem",
+		"Fill area" => "Preencher área",
+		"Fit entire image" => "Imagem inteira",
+		"Section opacity" => "Opacidade da seção",
+		"Select an area, then choose how much of the image shows through." => {
+			"Selecione uma área e escolha quanto da imagem aparece."
+		}
+		"Window gradient" => "Degradê da janela",
+		"More colors" => "Mais cores",
+		"Surface opacity" => "Opacidade da superfície",
+		"0% shows the image. 100% is a solid section color." => {
+			"0% mostra a imagem. 100% é cor sólida."
+		}
+		"Selected section" => "Seção selecionada",
+		"Top bars" => "Barras superiores",
+		"Server list" => "Lista de servidores",
+		"People & channels" => "Pessoas e canais",
+		"Message list" => "Lista de mensagens",
+		"Member list" => "Lista de membros",
+		"Message input area" => "Área de digitação",
+		"Window title and conversation header" => "Título da janela e cabeçalho",
+		"The left server rail" => "A barra de servidores à esquerda",
+		"Direct messages and channel navigation" => "DMs e navegação de canais",
+		"The conversation timeline" => "A linha da conversa",
+		"The member and search pane on the right" => "O painel de membros e busca à direita",
+		"The area around the message box" => "A área ao redor da caixa de mensagem",
+		"Window background" => "Fundo da janela",
+		"Sidebar" => "Barra lateral",
+		"Message area" => "Área de mensagens",
+		"Cards & message input" => "Cartões e campo de mensagem",
+		"Hover" => "Passar o mouse",
+		"Selection" => "Seleção",
+		"Borders" => "Bordas",
+		"Headings" => "Títulos",
+		"Body text" => "Texto do corpo",
+		"Secondary text" => "Texto secundário",
+		"Text on accent" => "Texto no destaque",
+		"Success" => "Sucesso",
+		"Warning" => "Aviso",
+		"Error & danger" => "Erro e perigo",
+		"Mention background" => "Fundo de menção",
+		"Mention text" => "Texto de menção",
+		"Buttons, selection and highlights" => "Botões, seleção e destaques",
+		"Messages and regular labels" => "Mensagens e rótulos comuns",
+		"Timestamps and supporting text" => "Horários e textos de apoio",
+		"Channel, conversation and member lists" => "Listas de canais, conversas e membros",
+		"Background behind your messages" => "Fundo atrás das suas mensagens",
+		"Use the default color for this appearance" => {
+			"Usar a cor padrão desta aparência"
+		}
+		"Use #RRGGBB or #RRGGBBAA." => "Use #RRGGBB ou #RRGGBBAA.",
+		"Horizontal" => "Horizontal",
+		"Vertical" => "Vertical",
+		"Use the built-in value" => "Usar o valor original",
+		"Text, spacing & corners" => "Texto, espaçamento e cantos",
+		"These settings apply to dark and light appearances." => {
+			"Estas configurações valem para aparência clara e escura."
+		}
+		"Buttons" => "Botões",
+		"Small text" => "Texto pequeno",
+		"Code" => "Código",
+		"Control height" => "Altura dos controles",
+		"Item spacing" => "Espaço entre itens",
+		"Button padding" => "Margem dos botões",
+		"Control corners" => "Cantos dos controles",
+		"Window corners" => "Cantos da janela",
+		"Menu corners" => "Cantos dos menus",
+		"Sharing & export" => "Compartilhar e exportar",
+		"The license and version are required. A source URL is optional for local themes." => {
+			"Licença e versão são obrigatórias. URL de origem é opcional para temas locais."
+		}
+		"License" => "Licença",
+		"Version" => "Versão",
+		"Source URL" => "URL de origem",
+		"Optional" => "Opcional",
+		"Use a valid HTTPS source URL or leave this blank." => {
+			"Use uma URL de origem HTTPS válida ou deixe em branco."
+		}
+		"License and version are required." => "Licença e versão são obrigatórias.",
+		"Only share images you own or have permission to use. Keep required attribution." => {
+			"Só compartilhe imagens suas ou com permissão. Mantenha os créditos exigidos."
+		}
+		"Export theme" => "Exportar tema",
+		"Add a theme name and creator name before saving." => {
+			"Adicione nome do tema e do criador antes de salvar."
+		}
+		"Add a license and version before saving." => {
+			"Adicione licença e versão antes de salvar."
+		}
+		"Check the license, version, and optional source URL." => {
+			"Verifique licença, versão e URL de origem opcional."
+		}
+		"Correct the highlighted color value." => "Corrija a cor destacada.",
+		"Keep image and section opacity between 0% and 100%." => {
+			"Mantenha a opacidade da imagem e das seções entre 0% e 100%."
+		}
+		"Correct the highlighted gradient value." => "Corrija o degradê destacado.",
+		"Check the remaining theme settings before saving." => {
+			"Verifique o resto das configurações do tema antes de salvar."
+		}
+		"Reload server settings" => "Recarregar configurações",
+		"Loading server settings…" => "Carregando configurações…",
+		"Reconnect to load server settings." => "Reconecte para carregar as configurações.",
+		"Load server settings" => "Carregar configurações",
+		"Discard unsaved changes?" => "Descartar mudanças não salvas?",
+		"Your changes to this server will be lost." => {
+			"Suas mudanças neste servidor serão perdidas."
+		}
+		"Wait for the current save to finish before closing." => {
+			"Aguarde o salvamento atual terminar antes de fechar."
+		}
+		"Delete server" => "Excluir servidor",
+		"This action cannot be undone." => "Esta ação não pode ser desfeita.",
+		"Enter server name" => "Digite o nome do servidor",
+		"Deleting…" => "Excluindo…",
+		"Delete Server" => "Excluir servidor",
+		"Server Profile" => "Perfil do servidor",
+		"Customize how your server appears in invite links and, if enabled, in Server Discovery and Announcement Channel messages." => {
+			"Personalize como seu servidor aparece em links de convite e, se ativado, na Descoberta e em mensagens de canal de anúncios."
+		}
+		"Name" => "Nome",
+		"Icon" => "Ícone",
+		"We recommend an image of at least 512×512." => {
+			"Recomendamos imagem de pelo menos 512×512."
+		}
+		"Preparing icon…" => "Preparando ícone…",
+		"Change Server Icon" => "Trocar ícone do servidor",
+		"Remove Icon" => "Remover ícone",
+		"Banner" => "Banner",
+		"Traits" => "Características",
+		"Add up to 5 traits to show off your server's interests and personality." => {
+			"Adicione até 5 características para mostrar os interesses do servidor."
+		}
+		"Trait name" => "Nome da característica",
+		"Remove trait" => "Remover característica",
+		"Description" => "Descrição",
+		"How did your server get started? Why should people join?" => {
+			"Como seu servidor começou? Por que entrar?"
+		}
+		"Tell the world a bit about this server." => "Conte um pouco sobre este servidor.",
+		"Saving changes…" => "Salvando mudanças…",
+		"Careful — you have unsaved changes!" => "Cuidado — há mudanças não salvas!",
+		"Use a server name of 2–100 characters, a description of up to 300 characters, and valid traits without control characters." => {
+			"Use nome de 2–100 caracteres, descrição de até 300 e características válidas."
+		}
+		"Could not save these changes. Check the selected channels, reconnect, or reload the server settings and try again." => {
+			"Não foi possível salvar. Verifique os canais, reconecte ou recarregue e tente de novo."
+		}
+		"Reload the server settings before saving again. Your edits will be kept." => {
+			"Recarregue as configurações antes de salvar de novo. Suas edições serão mantidas."
+		}
+		"Reconnect to save changes." => "Reconecte para salvar as mudanças.",
+		"MODERATION" => "MODERAÇÃO",
+		"APPS" => "APPS",
+		"EXPRESSION" => "EXPRESSÃO",
+		"PEOPLE" => "PESSOAS",
+		"Engagement" => "Engajamento",
+		"Manage settings that help keep your server active." => {
+			"Configurações que mantêm seu servidor ativo."
+		}
+		"System Messages" => "Mensagens do sistema",
+		"Configure system event messages sent to your server." => {
+			"Configure mensagens de eventos do sistema."
+		}
+		"Send a random welcome message when someone joins this server." => {
+			"Enviar boas-vindas aleatórias quando alguém entrar."
+		}
+		"Prompt members to reply to welcome messages with a sticker." => {
+			"Pedir que membros respondam boas-vindas com figurinha."
+		}
+		"Send a message when someone boosts this server." => {
+			"Enviar mensagem quando alguém impulsionar o servidor."
+		}
+		"Send helpful tips for server setup." => "Enviar dicas de configuração.",
+		"System Messages Channel" => "Canal de mensagens do sistema",
+		"This is the channel we send system event messages to." => {
+			"É para este canal que enviamos mensagens do sistema."
+		}
+		"Activity Feed Settings" => "Feed de atividades",
+		"Shows a feed of activity from games and connected apps in this server." => {
+			"Mostra atividades de jogos e apps conectados."
+		}
+		"Display Activity Feed in this server" => "Mostrar feed de atividades aqui",
+		"Server default" => "Padrão do servidor",
+		"Default Notification Settings" => "Notificações padrão",
+		"This will determine whether members who have not explicitly set their notification settings receive a notification for every message sent in this server or not." => {
+			"Define se membros sem configuração própria recebem notificação de cada mensagem."
+		}
+		"All Messages" => "Todas as mensagens",
+		"Only @mentions" => "Só @menções",
+		"We highly recommend setting this to only @mentions for a Community Server." => {
+			"Recomendamos só @menções para servidor de comunidade."
+		}
+		"Inactive Channel" => "Canal de inativos",
+		"Inactive Timeout" => "Tempo de inatividade",
+		"Automatically move members to this channel and mute them when they have been idle for longer than the inactive timeout. This does not affect browsers." => {
+			"Move membros inativos para este canal e silencia. Não afeta navegadores."
+		}
+		"Unavailable channel" => "Canal indisponível",
+		"No Inactive Channel" => "Sem canal de inativos",
+		"No System Messages Channel" => "Sem canal de sistema",
+		"None" => "Nenhum",
+		"No accessible channels available." => "Nenhum canal acessível.",
+		"Stickers" => "Figurinhas",
+		"Members" => "Membros",
+		"Invites" => "Convites",
+		"Integrations" => "Integrações",
+		"Audit Log" => "Registro de auditoria",
 		"Navigation" => "Navegação",
 		"Move around Serein without reaching for the mouse." => {
 			"Navegue pelo Serein sem usar o mouse."
@@ -586,6 +1157,8 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Hide full licenses" => "Ocultar licenças completas",
 		"Hide offline members" => "Ocultar membros offline",
 		"Show offline members" => "Mostrar membros offline",
+		"Display" => "Exibição",
+		"GLOBAL" => "GLOBAL",
 		"Send as text file?" => "Enviar como arquivo de texto?",
 		"Your message is too long for chat, so it will be sent as a file." => {
 			"Sua mensagem é longa demais para o chat e será enviada como arquivo."
@@ -706,6 +1279,40 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"Customization" => "Personalización",
 		"My Account" => "Mi cuenta",
 		"Profile" => "Perfil",
+		"Mention" => "Mencionar",
+		"Add Note" => "Añadir nota",
+		"Edit Friend Nickname" => "Editar apodo de amigo",
+		"Add Friend Nickname" => "Añadir apodo de amigo",
+		"Private nicknames are available for confirmed friends." => {
+			"Los apodos privados están disponibles para amigos confirmados."
+		}
+		"Pin DM" => "Fijar MD",
+		"Unpin DM" => "Desfijar MD",
+		"Pinned direct messages are saved on this device." => {
+			"Los mensajes directos fijados se guardan en este dispositivo."
+		}
+		"Mute Conversation" => "Silenciar conversación",
+		"Unmute Conversation" => "Reactivar conversación",
+		"Mute this direct message's notifications until you unmute it." => {
+			"Silencia las notificaciones de esta conversación hasta que la reactives."
+		}
+		"Close DM" => "Cerrar MD",
+		"Remove this conversation from your DM list. Messages are kept." => {
+			"Quita esta conversación de tu lista. Los mensajes se conservan."
+		}
+		"No open direct message with this user." => {
+			"Ninguna conversación abierta con este usuario."
+		}
+		"Block" => "Bloquear",
+		"Unblock" => "Desbloquear",
+		"Change Nickname" => "Cambiar apodo",
+		"Nickname" => "Apodo",
+		"Roles" => "Roles",
+		"Kick" => "Expulsar",
+		"Save" => "Guardar",
+		"This removes the member from this server. They can rejoin with a new invite." => {
+			"Esto elimina al miembro de este servidor. Puede volver con una nueva invitación."
+		}
 		"General" => "General",
 		"Appearance" => "Apariencia",
 		"Chat" => "Chat",
@@ -1159,6 +1766,81 @@ fn spanish(key: &str) -> Option<&'static str> {
 		}
 		"Dismiss friend status warning" => "Descartar aviso de estado de amigos",
 		"Direct Messages" => "Mensajes directos",
+		"Spam Filters" => "Filtros de spam",
+		"Friend Requests" => "Solicitudes de amistad",
+		"Connected Games" => "Juegos conectados",
+		"Direct Message (DM) Permissions" => "Permisos de mensaje directo (MD)",
+		"Friend Request Permissions" => "Permisos de solicitud de amistad",
+		"Messaging in Connected Games" => "Mensajería en juegos conectados",
+		"Automatically filter suspected spam messages" => {
+			"Filtrar automáticamente mensajes sospechosos de spam"
+		}
+		"Discord can filter out some messages that contain spam. These messages go to your Spam inbox." => {
+			"Discord puede filtrar algunos mensajes con spam. Van a tu bandeja de spam."
+		}
+		"Filter all spam" => "Filtrar todo el spam",
+		"Filter messages from non-friends" => "Filtrar mensajes de no amigos",
+		"Don't filter spam" => "No filtrar spam",
+		"Your account uses a custom spam filter setting. Select an option to replace it." => {
+			"Tu cuenta usa un filtro de spam personalizado. Selecciona una opción para reemplazarlo."
+		}
+		"All servers" => "Todos los servidores",
+		"Server" => "Servidor",
+		"Some servers have different preferences. Choose a server to review its settings." => {
+			"Algunos servidores tienen preferencias distintas. Elige un servidor para revisar sus ajustes."
+		}
+		"Changes apply to all current servers and set the default for newly joined servers." => {
+			"Los cambios valen para los servidores actuales y quedan como ajuste de los nuevos."
+		}
+		"Changes apply to this server only." => "Los cambios valen solo para este servidor.",
+		"Allow DMs from other server members" => "Permitir MD de otros miembros del servidor",
+		"Filter messages from server members I may not know" => {
+			"Filtrar mensajes de miembros que quizá no conozca"
+		}
+		"Move messages from people you may not know into Message Requests." => {
+			"Mueve los mensajes de personas que quizá no conozcas a Solicitudes de mensaje."
+		}
+		"There are too many servers to update together. Choose an individual server." => {
+			"Hay demasiados servidores para actualizar juntos. Elige uno."
+		}
+		"Saving…" => "Guardando…",
+		"Loading your preferences…" => "Cargando tus preferencias…",
+		"Try again" => "Reintentar",
+		"Allow friend requests from" => "Permitir solicitudes de amistad de",
+		"Control who can send you friend requests and how they appear." => {
+			"Controla quién puede mandarte solicitudes de amistad y cómo aparecen."
+		}
+		"Everyone" => "Todos",
+		"Friends of friends" => "Amigos de amigos",
+		"Server members" => "Miembros del servidor",
+		"Only from servers where you also allow Direct Messages." => {
+			"Solo de servidores donde también permites mensajes directos."
+		}
+		"Show personalized messages" => "Mostrar mensajes personalizados",
+		"Show personalized messages on incoming friend requests. If you accept, the message will still appear in your DMs." => {
+			"Muestra mensajes personalizados en las solicitudes recibidas. Si aceptas, sigue en tus MD."
+		}
+		"Settings for games that use Discord to power their social experiences." => {
+			"Ajustes de juegos que usan Discord en sus experiencias sociales."
+		}
+		"Allow friends from games to send direct messages and invites" => {
+			"Permitir que amigos de juegos manden mensajes e invitaciones"
+		}
+		"Let friends from connected games send DMs and invite you to play, even when the game isn't open." => {
+			"Deja que amigos de juegos conectados manden MD y te inviten a jugar, incluso con el juego cerrado."
+		}
+		"Show Direct Messages in games" => "Mostrar mensajes directos en los juegos",
+		"Read and respond to DMs directly from in-game chats." => {
+			"Lee y responde MD directamente desde los chats del juego."
+		}
+		"Show all DMs" => "Mostrar todos los MD",
+		"Show only DMs from people who also play the game" => {
+			"Mostrar solo MD de quienes también juegan"
+		}
+		"Don't show DMs" => "No mostrar MD",
+		"Your account uses a custom in-game DM setting. Select an option to replace it." => {
+			"Tu cuenta usa un ajuste personalizado de MD en el juego. Selecciona una opción para reemplazarlo."
+		}
 		"Mark As Read" => "Marcar como leído",
 		"Server Settings" => "Ajustes del servidor",
 		"Create invite" => "Crear invitación",
@@ -1190,6 +1872,430 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"Restart to update" => "Reiniciar para actualizar",
 		"Updating…" => "Actualizando…",
 		"Update available" => "Actualización disponible",
+		"Dismiss update" => "Descartar actualización",
+		"Download update" => "Descargar actualización",
+		"Check for updates" => "Buscar actualizaciones",
+		"Update checks are disabled in debug builds." => {
+			"Las comprobaciones de actualización están desactivadas en compilaciones de depuración."
+		}
+		"Finish the current update before checking again." => {
+			"Termina la actualización actual antes de volver a comprobar."
+		}
+		"Search themes" => "Buscar temas",
+		"Search extensions" => "Buscar extensiones",
+		"Checking for packages and updates" => "Buscando paquetes y actualizaciones",
+		"Working on your last action" => "Procesando tu última acción",
+		"Clear search" => "Limpiar búsqueda",
+		"Create theme" => "Crear tema",
+		"More" => "Más",
+		"Import theme…" => "Importar tema…",
+		"Refresh catalog" => "Actualizar catálogo",
+		"Look for new packages and updates. Nothing installs on its own." => {
+			"Busca paquetes y actualizaciones. Nada se instala solo."
+		}
+		"Import package…" => "Importar paquete…",
+		"Open a package file from this computer." => {
+			"Abrir un archivo de paquete de este equipo."
+		}
+		"No matches" => "Sin resultados",
+		"No themes yet" => "Aún no hay temas",
+		"No extensions yet" => "Aún no hay extensiones",
+		"Refresh the catalog or import a creator's package to get started." => {
+			"Actualiza el catálogo o importa el paquete de un creador para empezar."
+		}
+		"Try a different name or creator." => "Prueba otro nombre o creador.",
+		"Preview" => "Vista previa",
+		"View preview" => "Ver vista previa",
+		"Loading preview..." => "Cargando vista previa...",
+		"Preview not loaded" => "Vista previa no cargada",
+		"Preview unavailable" => "Vista previa no disponible",
+		"Previewing theme" => "Viendo tema",
+		"Theme preview" => "Vista previa del tema",
+		"Changes are not saved yet" => "Cambios aún no guardados",
+		"Back to themes" => "Volver a los temas",
+		"Back to theme editor" => "Volver al editor",
+		"Customize" => "Personalizar",
+		"Use theme" => "Usar tema",
+		"Apply this installed theme to the app." => {
+			"Aplica este tema instalado a la app."
+		}
+		"Edit theme" => "Editar tema",
+		"Open tool" => "Abrir herramienta",
+		"Disable" => "Desactivar",
+		"Update" => "Actualizar",
+		"Active" => "Activo",
+		"Enabled" => "Activado",
+		"Remove" => "Quitar",
+		"by" => "por",
+		"Plugin" => "Plugin",
+		"Cleanup pending" => "Limpieza pendiente",
+		"Retry cleanup" => "Reintentar limpieza",
+		"Add a new tool to your conversations." => {
+			"Añade una herramienta nueva a tus conversaciones."
+		}
+		"Install theme" => "Instalar tema",
+		"Review & enable" => "Revisar y activar",
+		"Review the new release before it replaces this version." => {
+			"Revisa la nueva versión antes de que reemplace esta."
+		}
+		"Remove this theme and delete its local data." => {
+			"Quita este tema y borra sus datos locales."
+		}
+		"Finish removing this extension and its local data." => {
+			"Termina de quitar esta extensión y sus datos locales."
+		}
+		"Removes this extension and deletes its local data." => {
+			"Quita esta extensión y borra sus datos locales."
+		}
+		"Selecting artwork sends it as an image attachment." => {
+			"Elegir arte lo envía como adjunto de imagen."
+		}
+		"Example deleted-message appearance" => "Ejemplo de mensaje eliminado",
+		"Creator preview" => "Vista previa del creador",
+		"Close preview" => "Cerrar vista previa",
+		"Reviewed" => "Revisado",
+		"Unreviewed" => "Sin revisar",
+		"View source" => "Ver código fuente",
+		"Unreviewed package — its source has not been reviewed for the catalog." => {
+			"Paquete sin revisar — su código fuente no se revisó para el catálogo."
+		}
+		"No access to conversations or composer text." => {
+			"Sin acceso a conversaciones ni al texto del editor."
+		}
+		"Allow this extension to" => "Permitir que esta extensión",
+		"Enable this theme" => "Activar este tema",
+		"Enable this extension" => "Activar esta extensión",
+		"Everything it may touch is listed below." => {
+			"Todo lo que puede tocar está listado abajo."
+		}
+		"Allow every listed permission to continue." => {
+			"Permite todos los permisos listados para continuar."
+		}
+		"Enable explicit emoji and sticker image attachment selection" => {
+			"Permitir elegir imágenes de emoji y stickers"
+		}
+		"Customize app colors, typography and control styling" => {
+			"Personalizar colores, tipografía y controles de la app"
+		}
+		"Read live message events and text in the active conversation" => {
+			"Leer eventos y texto de la conversación activa"
+		}
+		"Read the message I choose for an action" => "Leer el mensaje que yo elija",
+		"Read my draft and propose text changes" => "Leer mi borrador y sugerir textos",
+		"Store up to 1 MiB of local data for this account" => {
+			"Guardar hasta 1 MiB de datos locales de esta cuenta"
+		}
+		"Read my account and current conversation details" => {
+			"Leer mi cuenta y detalles de la conversación actual"
+		}
+		"Read my loaded profile, including biography and pronouns" => {
+			"Leer mi perfil, incluyendo bio y pronombres"
+		}
+		"Read my loaded server names and identifiers" => {
+			"Leer nombres e identificadores de mis servidores"
+		}
+		"Read current channel metadata, recipients and permissions" => {
+			"Leer metadatos, participantes y permisos del canal"
+		}
+		"Receive changes to separately granted account and conversation data" => {
+			"Recibir cambios de datos con permiso separado"
+		}
+		"Read loaded embed text, stickers and message reference metadata" => {
+			"Leer embeds, stickers y referencias de mensajes"
+		}
+		"Read loaded forum and thread summaries" => "Leer resúmenes de foros e hilos",
+		"Read current typing users and loaded pins; observe reactions" => {
+			"Leer quién escribe, fijados y reacciones"
+		}
+		"Read loaded channel topics, categories, thread details and permissions" => {
+			"Leer temas, categorías, hilos y permisos"
+		}
+		"Read loaded server members, roles and server profiles" => {
+			"Leer miembros, roles y perfiles de los servidores"
+		}
+		"Read the list of loaded, readable conversations" => {
+			"Leer la lista de conversaciones legibles"
+		}
+		"Read loaded message replies, mentions, attachment metadata and reactions" => {
+			"Leer respuestas, menciones, adjuntos y reacciones"
+		}
+		"Read my loaded friends, requests, blocked and ignored users" => {
+			"Leer amigos, solicitudes, bloqueados e ignorados"
+		}
+		"Read loaded messages in the active conversation" => {
+			"Leer mensajes de la conversación activa"
+		}
+		"Read loaded members of the active conversation" => {
+			"Leer miembros de la conversación activa"
+		}
+		"Read loaded user presence status" => "Leer estado de presencia",
+		"Read current call state and participant identifiers" => {
+			"Leer estado de la llamada y participantes"
+		}
+		"Read unread and mention counts in the active conversation" => {
+			"Leer no leídos y menciones de la conversación activa"
+		}
+		"Enable" => "Activar",
+		"PNG or JPEG, up to 2 MiB. This image does not change the chat background." => {
+			"PNG o JPEG, hasta 2 MiB. No cambia el fondo del chat."
+		}
+		"Disabling removes the extension and its local data. Re-enabling starts fresh." => {
+			"Desactivar quita la extensión y sus datos locales. Reactivar empieza de cero."
+		}
+		"Save Changes" => "Guardar cambios",
+		"Back" => "Atrás",
+		"Working…" => "Trabajando…",
+		"Theme details" => "Detalles del tema",
+		"How your theme appears in the gallery." => {
+			"Cómo aparece tu tema en la galería."
+		}
+		"Theme name" => "Nombre del tema",
+		"My theme" => "Mi tema",
+		"Theme name is required." => "El nombre del tema es obligatorio.",
+		"Created by" => "Creado por",
+		"Your name" => "Tu nombre",
+		"Creator name is required." => "El nombre del creador es obligatorio.",
+		"Card cover" => "Portada de la tarjeta",
+		"Choose the image shown on your theme card in Themes." => {
+			"Elige la imagen de la tarjeta del tema en Temas."
+		}
+		"App background" => "Fondo de la app",
+		"Use one image behind your conversations and sidebars." => {
+			"Usa una imagen detrás de las conversaciones y barras laterales."
+		}
+		"This older theme uses its original image placement." => {
+			"Este tema antiguo usa la colocación original de la imagen."
+		}
+		"Use image across the app" => "Usar imagen en toda la app",
+		"Preview in app" => "Vista previa en la app",
+		"Save and apply" => "Guardar y aplicar",
+		"Basics" => "Básico",
+		"Background" => "Fondo",
+		"Colors" => "Colores",
+		"Advanced" => "Avanzado",
+		"Discard unsaved theme?" => "¿Descartar tema sin guardar?",
+		"Your changes have not been saved." => "Tus cambios no se han guardado.",
+		"Discard changes" => "Descartar cambios",
+		"Keep editing" => "Seguir editando",
+		"Custom cover" => "Portada personalizada",
+		"Automatic preview" => "Vista previa automática",
+		"Replace cover" => "Cambiar portada",
+		"Choose cover" => "Elegir portada",
+		"Background image" => "Imagen de fondo",
+		"No image selected" => "Ninguna imagen",
+		"Replace image" => "Cambiar imagen",
+		"Choose image" => "Elegir imagen",
+		"Editing" => "Editando",
+		"Dark" => "Oscuro",
+		"Image opacity" => "Opacidad de la imagen",
+		"Image fit" => "Ajuste de la imagen",
+		"Fill area" => "Llenar área",
+		"Fit entire image" => "Imagen completa",
+		"Section opacity" => "Opacidad de la sección",
+		"Select an area, then choose how much of the image shows through." => {
+			"Elige un área y cuánto de la imagen se ve."
+		}
+		"Window gradient" => "Degradado de la ventana",
+		"More colors" => "Más colores",
+		"Surface opacity" => "Opacidad de la superficie",
+		"0% shows the image. 100% is a solid section color." => {
+			"0% muestra la imagen. 100% es color sólido."
+		}
+		"Selected section" => "Sección seleccionada",
+		"Top bars" => "Barras superiores",
+		"Server list" => "Lista de servidores",
+		"People & channels" => "Personas y canales",
+		"Message list" => "Lista de mensajes",
+		"Member list" => "Lista de miembros",
+		"Message input area" => "Área de escritura",
+		"Window title and conversation header" => "Título de la ventana y encabezado",
+		"The left server rail" => "La barra de servidores a la izquierda",
+		"Direct messages and channel navigation" => "MD y navegación de canales",
+		"The conversation timeline" => "La línea de la conversación",
+		"The member and search pane on the right" => "El panel de miembros y búsqueda a la derecha",
+		"The area around the message box" => "El área alrededor del cuadro de mensaje",
+		"Window background" => "Fondo de la ventana",
+		"Sidebar" => "Barra lateral",
+		"Message area" => "Área de mensajes",
+		"Cards & message input" => "Tarjetas y campo de mensaje",
+		"Hover" => "Pasar el cursor",
+		"Selection" => "Selección",
+		"Borders" => "Bordes",
+		"Headings" => "Títulos",
+		"Body text" => "Texto del cuerpo",
+		"Secondary text" => "Texto secundario",
+		"Text on accent" => "Texto en el acento",
+		"Success" => "Éxito",
+		"Warning" => "Aviso",
+		"Error & danger" => "Error y peligro",
+		"Mention background" => "Fondo de mención",
+		"Mention text" => "Texto de mención",
+		"Buttons, selection and highlights" => "Botones, selección y resaltados",
+		"Messages and regular labels" => "Mensajes y etiquetas comunes",
+		"Timestamps and supporting text" => "Horas y textos de apoyo",
+		"Channel, conversation and member lists" => "Listas de canales, conversaciones y miembros",
+		"Background behind your messages" => "Fondo detrás de tus mensajes",
+		"Use the default color for this appearance" => {
+			"Usar el color original de esta apariencia"
+		}
+		"Use #RRGGBB or #RRGGBBAA." => "Usa #RRGGBB o #RRGGBBAA.",
+		"Horizontal" => "Horizontal",
+		"Vertical" => "Vertical",
+		"Use the built-in value" => "Usar el valor original",
+		"Text, spacing & corners" => "Texto, espaciado y esquinas",
+		"These settings apply to dark and light appearances." => {
+			"Estos ajustes valen para apariencia clara y oscura."
+		}
+		"Buttons" => "Botones",
+		"Small text" => "Texto pequeño",
+		"Code" => "Código",
+		"Control height" => "Altura de los controles",
+		"Item spacing" => "Espacio entre elementos",
+		"Button padding" => "Relleno de los botones",
+		"Control corners" => "Esquinas de los controles",
+		"Window corners" => "Esquinas de la ventana",
+		"Menu corners" => "Esquinas de los menús",
+		"Sharing & export" => "Compartir y exportar",
+		"The license and version are required. A source URL is optional for local themes." => {
+			"La licencia y la versión son obligatorias. La URL de origen es opcional para temas locales."
+		}
+		"License" => "Licencia",
+		"Version" => "Versión",
+		"Source URL" => "URL de origen",
+		"Optional" => "Opcional",
+		"Use a valid HTTPS source URL or leave this blank." => {
+			"Usa una URL de origen HTTPS válida o déjalo en blanco."
+		}
+		"License and version are required." => "La licencia y la versión son obligatorias.",
+		"Only share images you own or have permission to use. Keep required attribution." => {
+			"Solo comparte imágenes tuyas o con permiso. Mantén los créditos exigidos."
+		}
+		"Export theme" => "Exportar tema",
+		"Add a theme name and creator name before saving." => {
+			"Añade nombre del tema y del creador antes de guardar."
+		}
+		"Add a license and version before saving." => {
+			"Añade licencia y versión antes de guardar."
+		}
+		"Check the license, version, and optional source URL." => {
+			"Revisa la licencia, la versión y la URL de origen opcional."
+		}
+		"Correct the highlighted color value." => "Corrige el color resaltado.",
+		"Keep image and section opacity between 0% and 100%." => {
+			"Mantén la opacidad de la imagen y las secciones entre 0% y 100%."
+		}
+		"Correct the highlighted gradient value." => "Corrige el degradado resaltado.",
+		"Check the remaining theme settings before saving." => {
+			"Revisa el resto de ajustes del tema antes de guardar."
+		}
+		"Reload server settings" => "Recargar ajustes",
+		"Loading server settings…" => "Cargando ajustes…",
+		"Reconnect to load server settings." => "Reconéctate para cargar los ajustes.",
+		"Load server settings" => "Cargar ajustes",
+		"Discard unsaved changes?" => "¿Descartar cambios sin guardar?",
+		"Your changes to this server will be lost." => {
+			"Tus cambios en este servidor se perderán."
+		}
+		"Wait for the current save to finish before closing." => {
+			"Espera a que termine el guardado actual antes de cerrar."
+		}
+		"Delete server" => "Eliminar servidor",
+		"This action cannot be undone." => "Esta acción no se puede deshacer.",
+		"Enter server name" => "Escribe el nombre del servidor",
+		"Deleting…" => "Eliminando…",
+		"Delete Server" => "Eliminar servidor",
+		"Server Profile" => "Perfil del servidor",
+		"Customize how your server appears in invite links and, if enabled, in Server Discovery and Announcement Channel messages." => {
+			"Personaliza cómo aparece tu servidor en invitaciones y, si está activado, en Descubrimiento y mensajes de anuncios."
+		}
+		"Name" => "Nombre",
+		"Icon" => "Icono",
+		"We recommend an image of at least 512×512." => {
+			"Recomendamos una imagen de al menos 512×512."
+		}
+		"Preparing icon…" => "Preparando icono…",
+		"Change Server Icon" => "Cambiar icono del servidor",
+		"Remove Icon" => "Quitar icono",
+		"Banner" => "Banner",
+		"Traits" => "Características",
+		"Add up to 5 traits to show off your server's interests and personality." => {
+			"Añade hasta 5 características para mostrar los intereses del servidor."
+		}
+		"Trait name" => "Nombre de la característica",
+		"Remove trait" => "Quitar característica",
+		"Description" => "Descripción",
+		"How did your server get started? Why should people join?" => {
+			"¿Cómo empezó tu servidor? ¿Por qué unirse?"
+		}
+		"Tell the world a bit about this server." => "Cuenta un poco sobre este servidor.",
+		"Saving changes…" => "Guardando cambios…",
+		"Careful — you have unsaved changes!" => "Cuidado — ¡hay cambios sin guardar!",
+		"Use a server name of 2–100 characters, a description of up to 300 characters, and valid traits without control characters." => {
+			"Usa un nombre de 2–100 caracteres, descripción de hasta 300 y características válidas."
+		}
+		"Could not save these changes. Check the selected channels, reconnect, or reload the server settings and try again." => {
+			"No se pudo guardar. Revisa los canales, reconéctate o recarga e inténtalo de nuevo."
+		}
+		"Reload the server settings before saving again. Your edits will be kept." => {
+			"Recarga los ajustes antes de guardar de nuevo. Tus ediciones se conservan."
+		}
+		"Reconnect to save changes." => "Reconéctate para guardar los cambios.",
+		"MODERATION" => "MODERACIÓN",
+		"APPS" => "APPS",
+		"EXPRESSION" => "EXPRESIÓN",
+		"PEOPLE" => "PERSONAS",
+		"Engagement" => "Participación",
+		"Manage settings that help keep your server active." => {
+			"Ajustes que mantienen tu servidor activo."
+		}
+		"System Messages" => "Mensajes del sistema",
+		"Configure system event messages sent to your server." => {
+			"Configura los mensajes de eventos del sistema."
+		}
+		"Send a random welcome message when someone joins this server." => {
+			"Enviar bienvenida aleatoria cuando alguien se una."
+		}
+		"Prompt members to reply to welcome messages with a sticker." => {
+			"Pedir que respondan bienvenidas con un sticker."
+		}
+		"Send a message when someone boosts this server." => {
+			"Enviar mensaje cuando alguien impulse el servidor."
+		}
+		"Send helpful tips for server setup." => "Enviar consejos de configuración.",
+		"System Messages Channel" => "Canal de mensajes del sistema",
+		"This is the channel we send system event messages to." => {
+			"A este canal enviamos los mensajes del sistema."
+		}
+		"Activity Feed Settings" => "Feed de actividad",
+		"Shows a feed of activity from games and connected apps in this server." => {
+			"Muestra actividad de juegos y apps conectados."
+		}
+		"Display Activity Feed in this server" => "Mostrar feed de actividad aquí",
+		"Server default" => "Ajuste del servidor",
+		"Default Notification Settings" => "Notificaciones predeterminadas",
+		"This will determine whether members who have not explicitly set their notification settings receive a notification for every message sent in this server or not." => {
+			"Define si los miembros sin ajuste propio reciben aviso de cada mensaje."
+		}
+		"All Messages" => "Todos los mensajes",
+		"Only @mentions" => "Solo @menciones",
+		"We highly recommend setting this to only @mentions for a Community Server." => {
+			"Recomendamos solo @menciones para un servidor de comunidad."
+		}
+		"Inactive Channel" => "Canal de inactivos",
+		"Inactive Timeout" => "Tiempo de inactividad",
+		"Automatically move members to this channel and mute them when they have been idle for longer than the inactive timeout. This does not affect browsers." => {
+			"Mueve a los inactivos a este canal y los silencia. No afecta navegadores."
+		}
+		"Unavailable channel" => "Canal no disponible",
+		"No Inactive Channel" => "Sin canal de inactivos",
+		"No System Messages Channel" => "Sin canal del sistema",
+		"None" => "Ninguno",
+		"No accessible channels available." => "Ningún canal accesible.",
+		"Stickers" => "Stickers",
+		"Members" => "Miembros",
+		"Invites" => "Invitaciones",
+		"Integrations" => "Integraciones",
+		"Audit Log" => "Registro de auditoría",
 		"Navigation" => "Navegación",
 		"Move around Serein without reaching for the mouse." => {
 			"Muévete por Serein sin usar el ratón."
@@ -1275,6 +2381,8 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"Hide full licenses" => "Ocultar licencias completas",
 		"Hide offline members" => "Ocultar miembros sin conexión",
 		"Show offline members" => "Mostrar miembros sin conexión",
+		"Display" => "Pantalla",
+		"GLOBAL" => "GLOBAL",
 		"Send as text file?" => "¿Enviar como archivo de texto?",
 		"Your message is too long for chat, so it will be sent as a file." => {
 			"Tu mensaje es demasiado largo para el chat y se enviará como archivo."
@@ -1750,6 +2858,29 @@ mod tests {
 			"Include the pointer in the shared video.",
 			"Share Screen",
 			"Cancel",
+			"Profile",
+			"Mention",
+			"Add Note",
+			"Edit Friend Nickname",
+			"Add Friend Nickname",
+			"Private nicknames are available for confirmed friends.",
+			"Pin DM",
+			"Unpin DM",
+			"Pinned direct messages are saved on this device.",
+			"Mute Conversation",
+			"Unmute Conversation",
+			"Mute this direct message's notifications until you unmute it.",
+			"Close DM",
+			"Remove this conversation from your DM list. Messages are kept.",
+			"No open direct message with this user.",
+			"Block",
+			"Unblock",
+			"Change Nickname",
+			"Nickname",
+			"Roles",
+			"Kick",
+			"Save",
+			"This removes the member from this server. They can rejoin with a new invite.",
 			"Before you use SereinExt",
 			"SereinExt is an unofficial app for your own Discord account: it is not Discord, it is not endorsed by Discord, and Discord's rules still apply to your account. It also includes other people's work (libraries, fonts and icons) under their own licenses, and accepting here does not waive those licenses or shift their copyright. Continuing confirms that you understand both points.",
 			"Your app preferences could not be read, so SereinExt cannot tell whether you accepted this before.",
@@ -1757,6 +2888,8 @@ mod tests {
 			"Hide full licenses",
 			"Hide offline members",
 			"Show offline members",
+			"Display",
+			"GLOBAL",
 			"Send as text file?",
 			"Your message is too long for chat, so it will be sent as a file.",
 			"File name",
@@ -1777,8 +2910,330 @@ mod tests {
 			"Sign-in",
 			"Audio playback",
 			"Other dependencies",
+			"Spam Filters",
+			"Direct Messages",
+			"Friend Requests",
+			"Connected Games",
+			"Direct Message (DM) Permissions",
+			"Friend Request Permissions",
+			"Messaging in Connected Games",
+			"Automatically filter suspected spam messages",
+			"Discord can filter out some messages that contain spam. These messages go to your Spam inbox.",
+			"Filter all spam",
+			"Filter messages from non-friends",
+			"Recommended",
+			"Don't filter spam",
+			"Your account uses a custom spam filter setting. Select an option to replace it.",
+			"All servers",
+			"Server",
+			"Some servers have different preferences. Choose a server to review its settings.",
+			"Changes apply to all current servers and set the default for newly joined servers.",
+			"Changes apply to this server only.",
+			"Allow DMs from other server members",
+			"Filter messages from server members I may not know",
+			"Move messages from people you may not know into Message Requests.",
+			"There are too many servers to update together. Choose an individual server.",
+			"Saving…",
+			"Loading your preferences…",
+			"Try again",
+			"Allow friend requests from",
+			"Control who can send you friend requests and how they appear.",
+			"Everyone",
+			"Friends of friends",
+			"Server members",
+			"Only from servers where you also allow Direct Messages.",
+			"Show personalized messages",
+			"Show personalized messages on incoming friend requests. If you accept, the message will still appear in your DMs.",
+			"Settings for games that use Discord to power their social experiences.",
+			"Allow friends from games to send direct messages and invites",
+			"Let friends from connected games send DMs and invite you to play, even when the game isn't open.",
+			"Show Direct Messages in games",
+			"Read and respond to DMs directly from in-game chats.",
+			"Show all DMs",
+			"Show only DMs from people who also play the game",
+			"Don't show DMs",
+			"Your account uses a custom in-game DM setting. Select an option to replace it.",
+			"Search themes",
+			"Search extensions",
+			"Checking for packages and updates",
+			"Working on your last action",
+			"Clear search",
+			"Create theme",
+			"More",
+			"Import theme…",
+			"Refresh catalog",
+			"Look for new packages and updates. Nothing installs on its own.",
+			"Import package…",
+			"Open a package file from this computer.",
+			"No matches",
+			"No themes yet",
+			"No extensions yet",
+			"Refresh the catalog or import a creator's package to get started.",
+			"Try a different name or creator.",
+			"Preview",
+			"View preview",
+			"Loading preview...",
+			"Preview not loaded",
+			"Preview unavailable",
+			"Previewing theme",
+			"Theme preview",
+			"Changes are not saved yet",
+			"Back to themes",
+			"Back to theme editor",
+			"Customize",
+			"Use theme",
+			"Apply this installed theme to the app.",
+			"Edit theme",
+			"Open tool",
+			"Disable",
+			"Update",
+			"Active",
+			"Enabled",
+			"Remove",
+			"by",
+			"Plugin",
+			"Cleanup pending",
+			"Retry cleanup",
+			"Add a new tool to your conversations.",
+			"Install theme",
+			"Review & enable",
+			"Review the new release before it replaces this version.",
+			"Remove this theme and delete its local data.",
+			"Finish removing this extension and its local data.",
+			"Removes this extension and deletes its local data.",
+			"Selecting artwork sends it as an image attachment.",
+			"Example deleted-message appearance",
+			"Creator preview",
+			"Close preview",
+			"Reviewed",
+			"Unreviewed",
+			"View source",
+			"Unreviewed package — its source has not been reviewed for the catalog.",
+			"No access to conversations or composer text.",
+			"Allow this extension to",
+			"Enable this theme",
+			"Enable this extension",
+			"Everything it may touch is listed below.",
+			"Allow every listed permission to continue.",
+			"Disabling removes the extension and its local data. Re-enabling starts fresh.",
+			"Save Changes",
+			"Back",
+			"Working…",
+			"Theme details",
+			"How your theme appears in the gallery.",
+			"Theme name",
+			"My theme",
+			"Theme name is required.",
+			"Created by",
+			"Your name",
+			"Creator name is required.",
+			"Card cover",
+			"Choose the image shown on your theme card in Themes.",
+			"App background",
+			"Use one image behind your conversations and sidebars.",
+			"This older theme uses its original image placement.",
+			"Use image across the app",
+			"Preview in app",
+			"Save and apply",
+			"Basics",
+			"Background",
+			"Colors",
+			"Advanced",
+			"Discard unsaved theme?",
+			"Your changes have not been saved.",
+			"Discard changes",
+			"Keep editing",
+			"Custom cover",
+			"Automatic preview",
+			"Replace cover",
+			"Choose cover",
+			"Background image",
+			"No image selected",
+			"Replace image",
+			"Choose image",
+			"Editing",
+			"Dark",
+			"Image opacity",
+			"Image fit",
+			"Fill area",
+			"Fit entire image",
+			"Section opacity",
+			"Select an area, then choose how much of the image shows through.",
+			"Window gradient",
+			"More colors",
+			"Surface opacity",
+			"0% shows the image. 100% is a solid section color.",
+			"Selected section",
+			"Top bars",
+			"Server list",
+			"People & channels",
+			"Message list",
+			"Member list",
+			"Message input area",
+			"Window title and conversation header",
+			"The left server rail",
+			"Direct messages and channel navigation",
+			"The conversation timeline",
+			"The member and search pane on the right",
+			"The area around the message box",
+			"Window background",
+			"Sidebar",
+			"Message area",
+			"Cards & message input",
+			"Hover",
+			"Selection",
+			"Borders",
+			"Headings",
+			"Body text",
+			"Secondary text",
+			"Text on accent",
+			"Success",
+			"Warning",
+			"Error & danger",
+			"Mention background",
+			"Mention text",
+			"Buttons, selection and highlights",
+			"Messages and regular labels",
+			"Timestamps and supporting text",
+			"Channel, conversation and member lists",
+			"Background behind your messages",
+			"Use the default color for this appearance",
+			"Use #RRGGBB or #RRGGBBAA.",
+			"Horizontal",
+			"Vertical",
+			"Use the built-in value",
+			"Text, spacing & corners",
+			"These settings apply to dark and light appearances.",
+			"Buttons",
+			"Small text",
+			"Code",
+			"Control height",
+			"Item spacing",
+			"Button padding",
+			"Control corners",
+			"Window corners",
+			"Menu corners",
+			"Sharing & export",
+			"The license and version are required. A source URL is optional for local themes.",
+			"License",
+			"Version",
+			"Source URL",
+			"Optional",
+			"Use a valid HTTPS source URL or leave this blank.",
+			"License and version are required.",
+			"Only share images you own or have permission to use. Keep required attribution.",
+			"Export theme",
+			"Add a theme name and creator name before saving.",
+			"Add a license and version before saving.",
+			"Check the license, version, and optional source URL.",
+			"Correct the highlighted color value.",
+			"Keep image and section opacity between 0% and 100%.",
+			"Correct the highlighted gradient value.",
+			"Check the remaining theme settings before saving.",
+			"Reload server settings",
+			"Loading server settings…",
+			"Reconnect to load server settings.",
+			"Load server settings",
+			"Discard unsaved changes?",
+			"Your changes to this server will be lost.",
+			"Wait for the current save to finish before closing.",
+			"Delete server",
+			"This action cannot be undone.",
+			"Enter server name",
+			"Offline preview · no server changes",
+			"Deleting…",
+			"Delete Server",
+			"Server Profile",
+			"Customize how your server appears in invite links and, if enabled, in Server Discovery and Announcement Channel messages.",
+			"Name",
+			"Icon",
+			"We recommend an image of at least 512×512.",
+			"Preparing icon…",
+			"Change Server Icon",
+			"Remove Icon",
+			"Banner",
+			"Traits",
+			"Add up to 5 traits to show off your server's interests and personality.",
+			"Trait name",
+			"Remove trait",
+			"Description",
+			"How did your server get started? Why should people join?",
+			"Tell the world a bit about this server.",
+			"Saving changes…",
+			"Careful — you have unsaved changes!",
+			"Use a server name of 2–100 characters, a description of up to 300 characters, and valid traits without control characters.",
+			"Could not save these changes. Check the selected channels, reconnect, or reload the server settings and try again.",
+			"Reload the server settings before saving again. Your edits will be kept.",
+			"Reconnect to save changes.",
+			"MODERATION",
+			"APPS",
+			"EXPRESSION",
+			"PEOPLE",
+			"Engagement",
+			"Manage settings that help keep your server active.",
+			"System Messages",
+			"Configure system event messages sent to your server.",
+			"Send a random welcome message when someone joins this server.",
+			"Prompt members to reply to welcome messages with a sticker.",
+			"Send a message when someone boosts this server.",
+			"Send helpful tips for server setup.",
+			"System Messages Channel",
+			"This is the channel we send system event messages to.",
+			"Activity Feed Settings",
+			"Shows a feed of activity from games and connected apps in this server.",
+			"Display Activity Feed in this server",
+			"Server default",
+			"Default Notification Settings",
+			"This will determine whether members who have not explicitly set their notification settings receive a notification for every message sent in this server or not.",
+			"All Messages",
+			"Only @mentions",
+			"We highly recommend setting this to only @mentions for a Community Server.",
+			"Inactive Channel",
+			"Inactive Timeout",
+			"Automatically move members to this channel and mute them when they have been idle for longer than the inactive timeout. This does not affect browsers.",
+			"Unavailable channel",
+			"No Inactive Channel",
+			"No System Messages Channel",
+			"None",
+			"No accessible channels available.",
+			"Stickers",
+			"Members",
+			"Invites",
+			"Integrations",
+			"Audit Log",
+			"Enable explicit emoji and sticker image attachment selection",
+			"Customize app colors, typography and control styling",
+			"Read live message events and text in the active conversation",
+			"Read the message I choose for an action",
+			"Read my draft and propose text changes",
+			"Store up to 1 MiB of local data for this account",
+			"Read my account and current conversation details",
+			"Read my loaded profile, including biography and pronouns",
+			"Read my loaded server names and identifiers",
+			"Read current channel metadata, recipients and permissions",
+			"Receive changes to separately granted account and conversation data",
+			"Read loaded embed text, stickers and message reference metadata",
+			"Read loaded forum and thread summaries",
+			"Read current typing users and loaded pins; observe reactions",
+			"Read loaded channel topics, categories, thread details and permissions",
+			"Read loaded server members, roles and server profiles",
+			"Read the list of loaded, readable conversations",
+			"Read loaded message replies, mentions, attachment metadata and reactions",
+			"Read my loaded friends, requests, blocked and ignored users",
+			"Read loaded messages in the active conversation",
+			"Read loaded members of the active conversation",
+			"Read loaded user presence status",
+			"Read current call state and participant identifiers",
+			"Read unread and mention counts in the active conversation",
+			"Enable",
+			"PNG or JPEG, up to 2 MiB. This image does not change the chat background.",
 			"App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch.",
 			"Your session expired; sign in again to continue.",
+			"Dismiss update",
+			"Download update",
+			"Check for updates",
+			"Update checks are disabled in debug builds.",
+			"Finish the current update before checking again.",
 			"I understand — continue",
 		];
 		for key in KEYS {

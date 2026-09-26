@@ -141,12 +141,13 @@ mod tests {
 }
 impl Tab {
 	pub const ALL: [Self; 3] = [Self::Overview, Self::Sounds, Self::Badges];
-	pub fn label(self) -> &'static str {
-		match self {
+	pub fn label(self, language: model::Language) -> &'static str {
+		let english = match self {
 			Self::Overview => "Overview",
 			Self::Sounds => "Sounds",
 			Self::Badges => "Badges",
-		}
+		};
+		crate::i18n::text(language, english)
 	}
 }
 #[derive(Default)]
@@ -155,11 +156,12 @@ pub(super) struct Navigation {
 	pub jump: Option<Tab>,
 }
 impl Navigation {
-	fn heading(&mut self, ui: &mut egui::Ui, tab: Tab) {
+	fn heading(&mut self, ui: &mut egui::Ui, tab: Tab, language: model::Language) {
 		if tab != Tab::Overview {
 			ui.add_space(12.0);
 		}
-		let heading = ui.label(design::eyebrow(ui, tab.label(), design::palette(ui).muted));
+		let heading =
+			ui.label(design::eyebrow(ui, tab.label(language), design::palette(ui).muted));
 		if heading.rect.top() <= ui.clip_rect().top() + 28.0 {
 			self.active = tab;
 		}
@@ -175,7 +177,7 @@ impl MessagingUi {
 			ui.horizontal_wrapped(|ui| {
 				for tab in Tab::ALL {
 					if ui
-						.selectable_label(self.settings.notifications.active == tab, tab.label())
+						.selectable_label(self.settings.notifications.active == tab, tab.label(self.language))
 						.clicked()
 					{
 						self.settings.notifications.jump = Some(tab);
@@ -183,26 +185,31 @@ impl MessagingUi {
 				}
 			});
 		}
-		self.settings.notifications.heading(ui, Tab::Overview);
+		let language = self.language;
+		self.settings.notifications.heading(ui, Tab::Overview, language);
 		design::card(ui, |ui| {
 			design::switch(
 				ui,
-				"Enable Desktop Notifications",
-				Some(
+				crate::i18n::text(language, "Enable Desktop Notifications"),
+				Some(crate::i18n::text(
+					language,
 					"For per-channel or per-server notifications, right-click the channel or server and select Notification Settings.",
-				),
+				)),
 				&mut self.notifications_enabled,
 			);
 			if !demo && !self.notification_status.is_empty() {
 				design::hint(ui, self.notification_status);
 			}
 		});
-		self.settings.notifications.heading(ui, Tab::Sounds);
+		self.settings.notifications.heading(ui, Tab::Sounds, language);
 		design::card(ui, |ui| {
 			design::slider_row(
 				ui,
-				"Sound Volume",
-				Some("Adjusts the volume of all notification sounds and ringtones."),
+				crate::i18n::text(language, "Sound Volume"),
+				Some(crate::i18n::text(
+					language,
+					"Adjusts the volume of all notification sounds and ringtones.",
+				)),
 				&mut self.notification_options.volume,
 				0..=100,
 				"%",
@@ -210,71 +217,75 @@ impl MessagingUi {
 			design::card_divider(ui);
 			design::switch(
 				ui,
-				"Disable All Notification Sounds",
-				Some(
+				crate::i18n::text(language, "Disable All Notification Sounds"),
+				Some(crate::i18n::text(
+					language,
 					"Disables notification sounds. Your individual sound preferences are saved and restored when you turn this off.",
-				),
+				)),
 				&mut self.notification_options.disable_sounds,
 			);
 			design::card_divider(ui);
 			let sounds = vec![
 				(
-					"New Message",
+					crate::i18n::text(language, "New Message"),
 					&mut self.notification_options.new_message,
 					Sound::Message,
 				),
 				(
-					"New Message in the channel I'm currently reading",
+					crate::i18n::text(
+						language,
+						"New Message in the channel I'm currently reading",
+					),
 					&mut self.notification_options.current_channel,
 					Sound::CurrentChannel,
 				),
 				(
-					"Incoming Ring",
+					crate::i18n::text(language, "Incoming Ring"),
 					&mut self.notification_options.incoming_ring,
 					Sound::IncomingRing,
 				),
 				(
-					"Outgoing Ring",
+					crate::i18n::text(language, "Outgoing Ring"),
 					&mut self.notification_options.outgoing_ring,
 					Sound::OutgoingRing,
 				),
 				(
-					"Microphone Muted",
+					crate::i18n::text(language, "Microphone Muted"),
 					&mut self.notification_options.mute,
 					Sound::Mute,
 				),
 				(
-					"Microphone Unmuted",
+					crate::i18n::text(language, "Microphone Unmuted"),
 					&mut self.notification_options.unmute,
 					Sound::Unmute,
 				),
 				(
-					"Deafen",
+					crate::i18n::text(language, "Deafen"),
 					&mut self.notification_options.deafen,
 					Sound::Deafen,
 				),
 				(
-					"Undeafen",
+					crate::i18n::text(language, "Undeafen"),
 					&mut self.notification_options.undeafen,
 					Sound::Undeafen,
 				),
 				(
-					"Camera On",
+					crate::i18n::text(language, "Camera On"),
 					&mut self.notification_options.camera_on,
 					Sound::CameraOn,
 				),
 				(
-					"Screen Share Started",
+					crate::i18n::text(language, "Screen Share Started"),
 					&mut self.notification_options.screen_share_on,
 					Sound::ScreenShareOn,
 				),
 				(
-					"Call Joined",
+					crate::i18n::text(language, "Call Joined"),
 					&mut self.notification_options.user_join,
 					Sound::UserJoin,
 				),
 				(
-					"User Left Call",
+					crate::i18n::text(language, "User Left Call"),
 					&mut self.notification_options.user_leave,
 					Sound::UserLeave,
 				),
@@ -284,7 +295,8 @@ impl MessagingUi {
 					design::card_divider(ui);
 				}
 				design::switch(ui, label, None, value);
-				if design::text_action(ui, "Preview Sound").clicked() {
+				if design::text_action(ui, crate::i18n::text(language, "Preview Sound")).clicked()
+				{
 					self.notification_preview = Some(sound);
 				}
 			}
@@ -297,25 +309,40 @@ impl MessagingUi {
 		design::card(ui, |ui| {
 			if design::row(
 				ui,
-				"Voice & Video",
-				Some("Ringtones, call devices and microphone processing."),
-				|ui| design::button(ui, "Open", design::ButtonKind::Outline),
+				crate::i18n::text(language, "Voice & Video"),
+				Some(crate::i18n::text(
+					language,
+					"Ringtones, call devices and microphone processing.",
+				)),
+				|ui| {
+					design::button(
+						ui,
+						crate::i18n::text(language, "Open"),
+						design::ButtonKind::Outline,
+					)
+				},
 			)
 			.clicked()
 			{
 				self.open_voice_settings();
 			}
 		});
-		self.settings.notifications.heading(ui, Tab::Badges);
+		self.settings.notifications.heading(ui, Tab::Badges, language);
 		design::card(ui, |ui| {
 			ui.add_enabled_ui(cfg!(target_os = "windows"), |ui| {
 				design::switch(
 					ui,
-					"Enable Unread Message Badge",
+					crate::i18n::text(language, "Enable Unread Message Badge"),
 					Some(if cfg!(target_os = "windows") {
-						"Shows a red badge on the app icon when you have unread messages."
+						crate::i18n::text(
+							language,
+							"Shows a red badge on the app icon when you have unread messages.",
+						)
 					} else {
-						"App icon badges are not available on this platform yet."
+						crate::i18n::text(
+							language,
+							"App icon badges are not available on this platform yet.",
+						)
 					}),
 					&mut self.notification_options.unread_badge,
 				);

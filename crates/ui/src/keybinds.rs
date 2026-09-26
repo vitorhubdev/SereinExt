@@ -254,7 +254,11 @@ fn row(
 			|ui| {
 				ui.label(crate::i18n::text(language, action.label()));
 				if action.is_global() {
-					ui.label(RichText::new("GLOBAL").size(10.0).color(colors.accent));
+					ui.label(
+						RichText::new(crate::i18n::text(language, "GLOBAL"))
+							.size(10.0)
+							.color(colors.accent),
+					);
 				}
 				if let Some(ref msg) = conflict_text.filter(|_| fade_alpha > 0.0) {
 					let text_color = colors.danger.gamma_multiply(fade_alpha);
@@ -264,7 +268,7 @@ fn row(
 			},
 		);
 		ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-			if design::text_action(ui, "Reset").clicked() {
+			if design::text_action(ui, crate::i18n::text(language, "Reset")).clicked() {
 				*bindings.chord_mut(action) = Keybinds::default().chord(action).clone();
 				if *capturing == Some(action) {
 					*capturing = None;

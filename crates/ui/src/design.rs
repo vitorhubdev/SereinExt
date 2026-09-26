@@ -2248,17 +2248,21 @@ pub fn save_bar(
 	can_reset: bool,
 ) -> (bool, bool) {
 	let p = palette(ui);
+	// Shared helper reached from editors without a language parameter; the
+	// language comes from the per-frame temp stored by `MessagingUi`.
+	let language = crate::i18n::interface_language(ui.ctx());
+	let t = |english: &'static str| crate::i18n::text(language, english);
 	ui.horizontal(|ui| {
 		ui.spacing_mut().item_spacing.x = 8.0;
 		ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
 			let save = ui
 				.add_enabled_ui(can_save, |ui| {
-					button(ui, "Save Changes", ButtonKind::Primary)
+					button(ui, t("Save Changes"), ButtonKind::Primary)
 				})
 				.inner
 				.clicked();
 			let reset = ui
-				.add_enabled_ui(can_reset, |ui| button(ui, "Reset", ButtonKind::Neutral))
+				.add_enabled_ui(can_reset, |ui| button(ui, t("Reset"), ButtonKind::Neutral))
 				.inner
 				.clicked();
 			ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
@@ -2266,7 +2270,7 @@ pub fn save_bar(
 					egui::Label::new(
 						medium(
 							ui,
-							saving.unwrap_or("Careful — you have unsaved changes!"),
+							saving.unwrap_or(t("Careful — you have unsaved changes!")),
 							14.0,
 						)
 						.color(p.text_strong),

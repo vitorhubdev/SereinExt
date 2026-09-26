@@ -3510,6 +3510,7 @@ impl MessagingUi {
 	}
 
 	pub fn show(&mut self, ui: &mut egui::Ui, state: &mut State) -> Vec<Command> {
+		crate::i18n::store_interface_language(ui.ctx(), self.language);
 		crate::scroll::apply_preferences(ui.ctx(), self.reading_preferences);
 		if let Some(status) = state.take_user_action_status() {
 			self.toasts.push(design::Level::Error, status);

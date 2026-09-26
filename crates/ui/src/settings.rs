@@ -191,6 +191,7 @@ impl MessagingUi {
 			} else {
 				0.0
 			},
+			self.language,
 		) {
 			self.settings.open = true;
 			self.settings.page = Page::Themes;
@@ -378,7 +379,7 @@ impl MessagingUi {
 						}
 						ui.add_space(16.0);
 						if self.settings.page == Page::Themes && self.extensions.editing_theme() {
-							self.extensions.theme_editor_toolbar(ui);
+							self.extensions.theme_editor_toolbar(ui, self.language);
 							ui.add_space(12.0);
 						}
 						egui::ScrollArea::vertical()
@@ -448,7 +449,7 @@ impl MessagingUi {
 									Page::Extensions | Page::Themes => {
 										self.extensions
 											.select_themes(self.settings.page == Page::Themes);
-										self.extensions.settings(ui, state);
+										self.extensions.settings(ui, state, self.language);
 									}
 								}
 								if state.demo {
@@ -523,12 +524,12 @@ impl MessagingUi {
 						}
 						if page == Page::MessagingPermissions && self.settings.page == page {
 							ui.indent("messaging-permission-sections", |ui| {
-								for tab in crate::messaging_permissions::Tab::ALL {
-									if nav_item(
-										ui,
-										tab.label(),
-										self.settings.messaging_permissions.active == tab,
-									)
+							for tab in crate::messaging_permissions::Tab::ALL {
+								if nav_item(
+									ui,
+									tab.label(self.language),
+									self.settings.messaging_permissions.active == tab,
+								)
 									.clicked()
 									{
 										self.settings.messaging_permissions.jump = Some(tab);
@@ -539,12 +540,12 @@ impl MessagingUi {
 						}
 						if page == Page::Notifications && self.settings.page == page {
 							ui.indent("notification-sections", |ui| {
-								for tab in crate::notification_settings::Tab::ALL {
-									if nav_item(
-										ui,
-										tab.label(),
-										self.settings.notifications.active == tab,
-									)
+							for tab in crate::notification_settings::Tab::ALL {
+								if nav_item(
+									ui,
+									tab.label(self.language),
+									self.settings.notifications.active == tab,
+								)
 									.clicked()
 									{
 										self.settings.notifications.jump = Some(tab);
@@ -968,7 +969,11 @@ impl MessagingUi {
 		ui.set_min_width(324.0);
 		ui.set_max_width(324.0);
 		ui.spacing_mut().item_spacing.y = 6.0;
-		ui.label(design::eyebrow(ui, "Mode", colors.muted));
+		ui.label(design::eyebrow(
+			ui,
+			crate::i18n::text(self.language, "Mode"),
+			colors.muted,
+		));
 		theme_preference_cards(ui);
 		ui.add_space(6.0);
 		ui.label(design::eyebrow(
@@ -990,7 +995,11 @@ impl MessagingUi {
 			}
 		});
 		ui.add_space(6.0);
-		ui.label(design::eyebrow(ui, "Display", colors.muted));
+		ui.label(design::eyebrow(
+			ui,
+			crate::i18n::text(self.language, "Display"),
+			colors.muted,
+		));
 		let mut value = self.reading_preferences;
 		ui.spacing_mut().slider_width = 96.0;
 		self.zoom_row(ui, &mut value);
@@ -1580,6 +1589,75 @@ fn theme_preference_cards(ui: &mut egui::Ui) {
 	});
 	if let Some(preference) = chosen {
 		ui.ctx().set_theme(preference);
+	}
+}
+
+#[cfg(test)]
+mod translation_tests {
+	use super::*;
+
+	fn rendered_text(output: &egui::FullOutput) -> Vec<String> {
+		fn walk(shape: &egui::Shape, out: &mut Vec<String>) {
+			match shape {
+				egui::Shape::Text(text) => out.push(text.galley.job.text.clone()),
+				egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+				_ => {}
+			}
+		}
+		let mut labels = Vec::new();
+		for shape in &output.shapes {
+			walk(&shape.shape, &mut labels);
+		}
+		labels
+	}
+
+	#[test]
+	fn every_settings_page_renders_fully_translated_in_portuguese() {
+		let ctx = egui::Context::default();
+		let _ = crate::i18n::drain_untranslated_keys();
+		let mut missing_pages = Vec::new();
+		for (index, page) in Page::ALL.into_iter().enumerate() {
+			let tabs: Vec<Option<usize>> = if page == Page::MessagingPermissions {
+				vec![Some(0), Some(1), Some(2), Some(3), None]
+			} else {
+				vec![None]
+			};
+			for tab in tabs {
+				let mut view = MessagingUi::default();
+				view.language = model::Language::PortugueseBrazil;
+				view.settings.open = true;
+				view.settings.page = page;
+				let mut state = test_support::demo_state();
+				if page == Page::MessagingPermissions {
+					state.messaging_permissions.snapshot =
+						Some(model::messaging_permissions::Snapshot::default());
+					if let Some(tab) = tab {
+						view.settings.messaging_permissions.active =
+							crate::messaging_permissions::Tab::ALL[tab];
+					}
+				}
+				let mut commands = vec![];
+				let mut output = ctx.run_ui(
+					egui::RawInput {
+						screen_rect: Some(egui::Rect::from_min_size(
+							egui::Pos2::ZERO,
+							egui::vec2(1120.0, 760.0),
+						)),
+						..Default::default()
+					},
+					|_ui| {
+						view.show_settings(&ctx, &mut state, &mut commands);
+					},
+				);
+				output.textures_delta.clear();
+				let _ = rendered_text(&output);
+				let missing = crate::i18n::drain_untranslated_keys();
+				if !missing.is_empty() {
+					missing_pages.push((index, missing));
+				}
+			}
+		}
+		assert!(missing_pages.is_empty(), "untranslated settings keys: {missing_pages:?}");
 	}
 }
 
