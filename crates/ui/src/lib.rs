@@ -7022,12 +7022,17 @@ mod composer_tests {
 					if clear {
 						0
 					} else if dm {
-						3
+						2
 					} else {
 						1
 					},
 					"{painted}"
 				);
+				if !clear {
+					// The profile renders the Discord-style activity card with the
+					// heading and the game name as separate labels (see profiles.rs).
+					assert!(painted.contains("Playing\nStardew Valley"), "{painted}");
+				}
 				assert_eq!(painted.contains("Tending the farm"), !clear);
 				assert_eq!(painted.contains("Spring Day 12"), !clear);
 				assert_eq!(
