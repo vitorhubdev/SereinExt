@@ -3,7 +3,7 @@ use crate::shortcuts::{Intent, ShortcutView};
 use client_core::{Command, State};
 use model::{Shortcut, User};
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone)]
 pub enum Action {
 	Note(User),
 	Nickname(User),
@@ -12,6 +12,43 @@ pub enum Action {
 	Block { user: model::Id, blocked: bool },
 	Mute { channel: model::Id, muted: bool },
 	Shortcut(Intent),
+	/// Server moderation, gated by the same rules as Server Settings. The fence
+	/// inside `request_server_admin` re-checks permission before anything runs.
+	Admin {
+		guild: model::Id,
+		action: model::server_admin::Action,
+	},
+}
+impl PartialEq for Action {
+	fn eq(&self, other: &Self) -> bool {
+		match (self, other) {
+			(Action::Note(a), Action::Note(b)) => a == b,
+			(Action::Nickname(a), Action::Nickname(b)) => a == b,
+			(Action::Mention(a), Action::Mention(b)) => a == b,
+			(Action::CloseDm(a), Action::CloseDm(b)) => a == b,
+			(
+				Action::Block { user: a, blocked: ab },
+				Action::Block { user: b, blocked: bb },
+			) => a == b && ab == bb,
+			(
+				Action::Mute { channel: a, muted: am },
+				Action::Mute { channel: b, muted: bm },
+			) => a == b && am == bm,
+			(Action::Shortcut(a), Action::Shortcut(b)) => a == b,
+			// The inner server-admin action has no equality; tests match on it.
+			(Action::Admin { .. }, Action::Admin { .. }) => false,
+			_ => false,
+		}
+	}
+}
+
+/// Nickname being edited from the member menu; kept in egui temp storage so the
+/// popup itself stays stateless.
+#[derive(Clone)]
+struct NickDraft {
+	guild: model::Id,
+	user: model::Id,
+	name: String,
 }
 impl std::fmt::Debug for Action {
 	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -25,6 +62,7 @@ pub(super) fn prepare(action: Action, state: &mut State) -> Option<Command> {
 		Action::CloseDm(channel) => state.close_dm(channel),
 		Action::Block { user, blocked } => state.set_user_blocked(user, blocked),
 		Action::Mute { channel, muted } => state.set_dm_muted(channel, muted),
+		Action::Admin { guild, action } => state.request_server_admin(guild, action),
 	}
 }
 
@@ -52,6 +90,9 @@ pub(super) fn popup(response: &egui::Response, id: egui::Id) -> egui::Popup<'_> 
 	} else {
 		egui::Popup::context_menu(response)
 	}
+	// Admin confirmations render on later frames while the menu stays open; every
+	// action below still closes the menu explicitly once it fires.
+	.close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
 	.id(id);
 	if keyboard {
 		popup = popup
@@ -87,6 +128,131 @@ pub(super) fn show_with_pin(
 		.show(|ui| contents(ui, state, user, profile, action, view));
 }
 
+/// Guild of the channel the menu was opened from; `None` in DMs and elsewhere
+/// without a server, where the admin section stays hidden.
+fn admin_guild(state: &State) -> Option<model::Id> {
+	state
+		.selected
+		.and_then(|id| state.channel(id))
+		.and_then(|channel| channel.guild)
+}
+
+/// Guild member behind the right-clicked user, if their row is loaded.
+fn guild_member<'a>(state: &'a State, user: model::Id) -> Option<&'a model::Member> {
+	state.members.as_ref()?.slots.iter().filter_map(|slot| slot.as_ref()).find_map(
+		|slot| match slot {
+			model::MemberSlot::Person(member) if member.user.id == user => Some(member),
+			_ => None,
+		},
+	)
+}
+
+fn kick_key(user: model::Id) -> egui::Id {
+	egui::Id::unique(("member-admin-kick", user.0))
+}
+
+fn nick_key(user: model::Id) -> egui::Id {
+	egui::Id::unique(("member-admin-nick", user.0))
+}
+
+/// Renders a pending kick confirmation or nickname dialog. Returns true while one
+/// is open so the menu itself stays out of the way.
+fn pending_admin_dialog(
+	ui: &mut egui::Ui,
+	state: &State,
+	user: &User,
+	action: &mut Option<Action>,
+) -> bool {
+	let ctx = ui.ctx();
+	if ctx.data(|data| data.get_temp::<bool>(kick_key(user.id))).unwrap_or(false) {
+		let name = user.name.clone();
+		match crate::dialog::Confirm::new(
+			"member-admin-kick",
+			format!("Kick {name}?"),
+			format!("{name} will be removed from this server. They can rejoin with a new invite."),
+		)
+		.danger()
+		.confirm_label("Kick")
+		.cancel_label("Cancel")
+		.show(ctx)
+		{
+			Some(crate::dialog::Choice::Confirmed) => {
+				ctx.data_mut(|data| data.remove_temp::<bool>(kick_key(user.id)));
+				if let Some(guild) = admin_guild(state) {
+					*action = Some(Action::Admin {
+						guild,
+						action: model::server_admin::Action::Kick { user: user.id },
+					});
+				}
+				ui.close();
+			}
+			Some(crate::dialog::Choice::Cancelled) => {
+				ctx.data_mut(|data| data.remove_temp::<bool>(kick_key(user.id)));
+			}
+			None => {}
+		}
+		return true;
+	}
+	if ctx
+		.data(|data| data.get_temp::<Option<NickDraft>>(nick_key(user.id)))
+		.unwrap_or(None)
+		.is_some()
+	{
+		let mut save = false;
+		let mut cancel = false;
+		crate::dialog::Dialog::new("member-admin-nickname", "Change Nickname")
+			.width(400.0)
+			.show(ctx, |d| {
+				d.content(|ui| {
+					crate::dialog::label(ui, "Nickname");
+					let mut draft: Option<NickDraft> = ctx
+						.data(|data| data.get_temp(nick_key(user.id)))
+						.unwrap_or(None);
+					if let Some(draft) = draft.as_mut() {
+						crate::dialog::input(
+							ui,
+							egui::TextEdit::singleline(&mut draft.name).hint_text(&user.name),
+						);
+						let ready = !draft.name.chars().any(char::is_control)
+							&& state.can_edit_guild_nickname(draft.guild, draft.user);
+						if crate::dialog::action(ui, "Save", crate::dialog::Action::Primary)
+							.clicked() && ready
+						{
+							save = true;
+						}
+						ctx.data_mut(|data| {
+							data.insert_temp(nick_key(user.id), Some(draft.clone()))
+						});
+					}
+				});
+				d.footer(|ui| {
+					if crate::dialog::action(ui, "Cancel", crate::dialog::Action::Neutral).clicked()
+					{
+						cancel = true;
+					}
+				});
+			});
+		if save {
+			if let Some(Some(draft)) =
+				ctx.data_mut(|data| data.remove_temp::<Option<NickDraft>>(nick_key(user.id)))
+			{
+				*action = Some(Action::Admin {
+					guild: draft.guild,
+					action: model::server_admin::Action::SetNickname {
+						user: draft.user,
+						nick: draft.name,
+					},
+				});
+			}
+			ui.close();
+		} else if cancel {
+			ctx.data_mut(|data| data.remove_temp::<Option<NickDraft>>(nick_key(user.id)));
+		}
+		return true;
+	}
+	false
+}
+
 pub(super) fn contents(
 	ui: &mut egui::Ui,
 	state: &State,
@@ -98,6 +264,9 @@ pub(super) fn contents(
 	let colors = crate::design::palette(ui);
 	ui.set_min_width(200.0);
 	ui.spacing_mut().button_padding = egui::vec2(8.0, 6.0);
+	if pending_admin_dialog(ui, state, user, action) {
+		return;
+	}
 	if ui.button("Profile").clicked() {
 		profile.command_open(user.clone());
 		ui.close();
@@ -207,6 +376,78 @@ pub(super) fn contents(
 		});
 		ui.close();
 	}
+	if let Some(guild) = admin_guild(state) {
+		let member = guild_member(state, user.id);
+		let can_nickname = state.can_edit_guild_nickname(guild, user.id);
+		let roles: Vec<(model::Id, String)> = state
+			.guild_roles(guild)
+			.map(|roles| {
+				roles
+					.iter()
+					.filter(|role| state.can_edit_member_role(guild, user.id, role.id))
+					.map(|role| (role.id, role.name.clone()))
+					.collect()
+			})
+			.unwrap_or_default();
+		let can_kick = state.can_kick_guild_member(guild, user.id);
+		if can_nickname || !roles.is_empty() || can_kick {
+			ui.separator();
+			if can_nickname && ui.button("Change Nickname").clicked() {
+				ctx_data_insert_nick(ui, guild, user.id, member.and_then(|m| m.nick.clone()));
+			}
+			if !roles.is_empty() {
+				ui.menu_button("Roles", |ui| {
+					let assigned_roles: Vec<model::Id> = member
+						.map(|m| m.roles.clone())
+						.unwrap_or_default();
+					for (role, name) in &roles {
+						let mut assigned = assigned_roles.contains(role);
+						if ui
+							.add_enabled(
+								!state.server_admin.pending,
+								egui::Checkbox::new(&mut assigned, name),
+							)
+							.changed()
+						{
+							*action = Some(Action::Admin {
+								guild,
+								action: model::server_admin::Action::SetRole {
+									user: user.id,
+									role: *role,
+									assigned,
+								},
+							});
+							ui.close();
+						}
+					}
+				});
+			}
+			if can_kick
+				&& ui
+					.button(
+						egui::RichText::new(format!("Kick {}", user.name)).color(colors.danger),
+					)
+					.clicked()
+			{
+				ui.ctx().data_mut(|data| data.insert_temp(kick_key(user.id), true));
+			}
+		}
+	}
+}
+
+/// Opens the nickname editor for the member menu; split out so the borrow of `ui`
+/// for the temp store does not overlap the menu widgets.
+fn ctx_data_insert_nick(ui: &egui::Ui, guild: model::Id, user: model::Id, nick: Option<String>) {
+	ui.ctx().data_mut(|data| {
+		data.insert_temp(
+			nick_key(user),
+			Some(NickDraft {
+				guild,
+				user,
+				name: nick.unwrap_or_default(),
+			}),
+		)
+	});
 }
 
 #[cfg(test)]
@@ -367,6 +608,207 @@ mod tests {
 				assert!(!egui::Popup::is_any_open(&ctx));
 			}
 		}
+	}
+
+	fn admin_state(target_position: i32) -> (State, model::Id, model::User) {
+		use model::permissions as p;
+		let guild = model::Id(10);
+		let role = |id: u64, bits: u128, position: i32| p::Role {
+			id: model::Id(id),
+			bits,
+			name: format!("role{id}"),
+			color: 0,
+			position,
+			hoist: false,
+		};
+		let target = model::User {
+			id: model::Id(3),
+			name: "Target".into(),
+			avatar: None,
+			webhook: false,
+			kind: Default::default(),
+			discriminator: 0,
+			primary_guild: None,
+		};
+		let mut state = test_support::demo_state();
+		state.user = Some(model::User {
+			id: model::Id(2),
+			name: "Moderator".into(),
+			avatar: None,
+			webhook: false,
+			kind: Default::default(),
+			discriminator: 0,
+			primary_guild: None,
+		});
+		state.selected = Some(model::Id(20));
+		state.permissions.guilds.insert(
+			guild,
+			p::Guild {
+				id: guild,
+				owner: Some(model::Id(1)),
+				member: Some(p::Member {
+					roles: vec![model::Id(30)],
+					timeout_until: None,
+				}),
+				roles: Some(vec![
+					role(10, 0, 0),
+					role(
+						30,
+						p::KICK_MEMBERS | p::MANAGE_ROLES | p::MANAGE_NICKNAMES,
+						5,
+					),
+					role(31, 0, target_position),
+				]),
+			},
+		);
+		state.server_admin.guild = Some(guild);
+		state.server_admin.members = Some(model::server_admin::Members {
+			items: vec![model::server_admin::Member {
+				user: target.clone(),
+				nick: None,
+				roles: vec![model::Id(31)],
+				joined_at: None,
+				join_source: None,
+				invite_code: None,
+				flags: None,
+				unusual_dm_until: None,
+				timeout_until: None,
+			}],
+			roles: vec![
+				model::server_admin::Role {
+					role: role(30, p::KICK_MEMBERS | p::MANAGE_ROLES, 5),
+					managed: false,
+				},
+				model::server_admin::Role {
+					role: role(31, 0, target_position),
+					managed: false,
+				},
+			],
+			total: 1,
+			..Default::default()
+		});
+		(state, guild, target)
+	}
+
+	fn open_menu(
+		ctx: &egui::Context,
+		state: &State,
+		user: &model::User,
+	) -> (crate::profiles::ProfileSession, Option<Action>, Vec<(String, Rect)>) {
+		let (mut profile, mut action) = (crate::profiles::ProfileSession::default(), None);
+		let (row, _) = frame(ctx, state, user, vec![], &mut profile, &mut action);
+		for pressed in [true, false] {
+			frame(
+				ctx,
+				state,
+				user,
+				pointer(row.rect.center(), PointerButton::Secondary, pressed),
+				&mut profile,
+				&mut action,
+			);
+		}
+		let (_, text) = frame(ctx, state, user, vec![], &mut profile, &mut action);
+		(profile, action, text)
+	}
+
+	fn click_label(
+		ctx: &egui::Context,
+		state: &State,
+		user: &model::User,
+		profile: &mut crate::profiles::ProfileSession,
+		action: &mut Option<Action>,
+		text: &[(String, Rect)],
+		label: &str,
+	) {
+		let pos = text
+			.iter()
+			.find(|(s, _)| s == label)
+			.unwrap_or_else(|| panic!("Missing {label}: {text:?}"))
+			.1
+			.center();
+		for pressed in [true, false] {
+			frame(ctx, state, user, pointer(pos, PointerButton::Primary, pressed), profile, action);
+		}
+	}
+
+	#[test]
+	fn member_without_permission_sees_no_admin_section() {
+		let ctx = egui::Context::default();
+		let mut state = test_support::demo_state();
+		state.selected = Some(model::Id(20));
+		let target = model::User {
+			id: model::Id(3),
+			name: "Target".into(),
+			avatar: None,
+			webhook: false,
+			kind: Default::default(),
+			discriminator: 0,
+			primary_guild: None,
+		};
+		let (_, action, text) = open_menu(&ctx, &state, &target);
+		assert!(action.is_none());
+		for hidden in ["Roles", "Change Nickname"] {
+			assert!(
+				text.iter().all(|(s, _)| s != hidden),
+				"unexpected {hidden}: {text:?}"
+			);
+		}
+		assert!(
+			text.iter().all(|(s, _)| !s.starts_with("Kick ")),
+			"unexpected kick entry: {text:?}"
+		);
+	}
+
+	#[test]
+	fn kick_respects_role_hierarchy() {
+		let ctx = egui::Context::default();
+		let (state, _, target) = admin_state(1);
+		let (_, action, text) = open_menu(&ctx, &state, &target);
+		assert!(action.is_none());
+		assert!(text.iter().any(|(s, _)| s == "Roles"));
+		assert!(text.iter().any(|(s, _)| s == "Change Nickname"));
+		assert!(text.iter().any(|(s, _)| s == "Kick Target"));
+		let (higher, _, _) = admin_state(10);
+		let (_, action, text) = open_menu(&ctx, &higher, &target);
+		assert!(action.is_none());
+		assert!(
+			text.iter().all(|(s, _)| !s.starts_with("Kick ")),
+			"hierarchy ignored: {text:?}"
+		);
+	}
+
+	#[test]
+	fn kick_requires_confirmation_before_dispatch() {
+		let ctx = egui::Context::default();
+		let (state, guild, target) = admin_state(1);
+		let (mut profile, mut action) = (crate::profiles::ProfileSession::default(), None);
+		let (row, _) = frame(&ctx, &state, &target, vec![], &mut profile, &mut action);
+		for pressed in [true, false] {
+			frame(
+				&ctx,
+				&state,
+				&target,
+				pointer(row.rect.center(), PointerButton::Secondary, pressed),
+				&mut profile,
+				&mut action,
+			);
+		}
+		let (_, text) = frame(&ctx, &state, &target, vec![], &mut profile, &mut action);
+		click_label(&ctx, &state, &target, &mut profile, &mut action, &text, "Kick Target");
+		assert!(action.is_none(), "kick dispatched without confirmation");
+		let (_, text) = frame(&ctx, &state, &target, vec![], &mut profile, &mut action);
+		assert!(text.iter().any(|(s, _)| s == "Kick Target?"));
+		click_label(&ctx, &state, &target, &mut profile, &mut action, &text, "Kick");
+		assert!(
+			matches!(
+				action,
+				Some(Action::Admin {
+					guild: g,
+					action: model::server_admin::Action::Kick { user },
+				}) if g == guild && user == target.id
+			),
+		 "expected confirmed kick, got {action:?}"
+		);
 	}
 
 	#[test]
