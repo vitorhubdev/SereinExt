@@ -122,10 +122,10 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Microphone, speakers, camera and voice processing." => {
 			"Microfone, alto-falantes, câmera e processamento de voz."
 		}
-		"Keyboard shortcuts for SereinExt." => "Atalhos de teclado do SereinExt.",
-		"What SereinExt keeps on this device." => "O que o SereinExt mantém neste dispositivo.",
-		"Keep SereinExt up to date on this device." => {
-			"Mantenha o SereinExt atualizado neste dispositivo."
+		"Keyboard shortcuts for Nivra." => "Atalhos de teclado do Nivra.",
+		"What Nivra keeps on this device." => "O que o Nivra mantém neste dispositivo.",
+		"Keep Nivra up to date on this device." => {
+			"Mantenha o Nivra atualizado neste dispositivo."
 		}
 		"Manage community plugins." => "Gerencie plugins da comunidade.",
 		"Choose a community theme." => "Escolha um tema da comunidade.",
@@ -135,9 +135,9 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 			"As alterações são aplicadas imediatamente e salvas neste dispositivo."
 		}
 		"Startup" => "Inicialização",
-		"Open SereinExt when your computer starts" => "Abrir o SereinExt ao iniciar o computador",
-		"SereinExt signs in and connects in the background." => {
-			"O SereinExt entra na conta e conecta em segundo plano."
+		"Open Nivra when your computer starts" => "Abrir o Nivra ao iniciar o computador",
+		"Nivra signs in and connects in the background." => {
+			"O Nivra entra na conta e conecta em segundo plano."
 		}
 		"Start minimized" => "Iniciar minimizado",
 		"Start in the background, out of your way." => {
@@ -147,12 +147,12 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 			"A inicialização automática está disponível no Windows e macOS."
 		}
 		"Window" => "Janela",
-		"Hide SereinExt title bar" => "Ocultar a barra de título do SereinExt",
+		"Hide Nivra title bar" => "Ocultar a barra de título do Nivra",
 		"Use the system title bar and window buttons instead." => {
 			"Use a barra de título e os botões de janela do sistema."
 		}
-		"Keep SereinExt in the menu bar" => "Manter o SereinExt na barra de menus",
-		"Keep SereinExt in the system tray" => "Manter o SereinExt na bandeja do sistema",
+		"Keep Nivra in the menu bar" => "Manter o Nivra na barra de menus",
+		"Keep Nivra in the system tray" => "Manter o Nivra na bandeja do sistema",
 		"The tray is unavailable on this platform." => {
 			"A bandeja do sistema não está disponível nesta plataforma."
 		}
@@ -190,8 +190,8 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Choose primary color" => "Escolher cor primária",
 		"Window effects" => "Efeitos da janela",
 		"Transparency & blur" => "Transparência e desfoque",
-		"Restart SereinExt after changing this. Themes can customize effects while enabled." => {
-			"Reinicie o SereinExt após alterar isto. Temas podem personalizar os efeitos enquanto estiverem ativos."
+		"Restart Nivra after changing this. Themes can customize effects while enabled." => {
+			"Reinicie o Nivra após alterar isto. Temas podem personalizar os efeitos enquanto estiverem ativos."
 		}
 		"Transparency" => "Transparência",
 		"Blur" => "Desfoque",
@@ -224,27 +224,27 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Removes cached messages and media. Drafts and your login stay." => {
 			"Remove mensagens e mídias em cache. Rascunhos e seu login permanecem."
 		}
-		"Messages and drafts are cached on this device inside bounded, account-isolated files. Cache data is not encrypted by SereinExt; saved login tokens use the OS credential store." => {
-			"Mensagens e rascunhos ficam em cache neste dispositivo em arquivos limitados e isolados por conta. Os dados de cache não são criptografados pelo SereinExt; tokens de login salvos usam o armazenamento de credenciais do sistema."
+		"Messages and drafts are cached on this device inside bounded, account-isolated files. Cache data is not encrypted by Nivra; saved login tokens use the OS credential store." => {
+			"Mensagens e rascunhos ficam em cache neste dispositivo em arquivos limitados e isolados por conta. Os dados de cache não são criptografados pelo Nivra; tokens de login salvos usam o armazenamento de credenciais do sistema."
 		}
 		"Your privacy" => "Sua privacidade",
-		"SereinExt does not collect telemetry or upload diagnostics. Discord retains service-side data according to its own policies." => {
-			"O SereinExt não coleta telemetria nem envia diagnósticos. O Discord mantém dados do serviço de acordo com as próprias políticas."
+		"Nivra does not collect telemetry or upload diagnostics. Discord retains service-side data according to its own policies." => {
+			"O Nivra não coleta telemetria nem envia diagnósticos. O Discord mantém dados do serviço de acordo com as próprias políticas."
 		}
 		"Offline preview · changes stay in this session and are never sent." => {
 			"Prévia offline · as alterações ficam nesta sessão e nunca são enviadas."
 		}
-		"Closing the window keeps SereinExt in the menu bar. Quit from its menu to exit." => {
-			"Fechar a janela mantém o SereinExt na barra de menus. Use o menu para encerrar."
+		"Closing the window keeps Nivra in the menu bar. Quit from its menu to exit." => {
+			"Fechar a janela mantém o Nivra na barra de menus. Use o menu para encerrar."
 		}
-		"Closing keeps SereinExt running. Use the tray to show, minimize or quit." => {
-			"Fechar mantém o SereinExt em execução. Use a bandeja para mostrar, minimizar ou encerrar."
+		"Closing keeps Nivra running. Use the tray to show, minimize or quit." => {
+			"Fechar mantém o Nivra em execução. Use a bandeja para mostrar, minimizar ou encerrar."
 		}
-		"Closing the window keeps SereinExt in the notification area. Quit from its menu to exit." => {
-			"Fechar a janela mantém o SereinExt na área de notificação. Use o menu para encerrar."
+		"Closing the window keeps Nivra in the notification area. Quit from its menu to exit." => {
+			"Fechar a janela mantém o Nivra na área de notificação. Use o menu para encerrar."
 		}
-		"Takes effect the next time SereinExt starts." => {
-			"Entra em vigor na próxima vez que o SereinExt iniciar."
+		"Takes effect the next time Nivra starts." => {
+			"Entra em vigor na próxima vez que o Nivra iniciar."
 		}
 		"Online" => "Online",
 		"Idle" => "Ausente",
@@ -257,7 +257,7 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Today" => "Hoje",
 		"Switch to" => "Alternar para",
 		"Forget" => "Esquecer",
-		"SereinExt clears it" => "O SereinExt limpa o status",
+		"Nivra clears it" => "O Nivra limpa o status",
 		"You" => "Você",
 		"Custom status" => "Status personalizado",
 		"Shown next to your name across Discord." => "Exibido ao lado do seu nome no Discord.",
@@ -288,7 +288,7 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Use another account" => "Usar outra conta",
 		"Continue with Discord" => "Continuar com o Discord",
 		"Welcome back" => "Bem-vindo de volta",
-		"Welcome to SereinExt" => "Bem-vindo ao SereinExt",
+		"Welcome to Nivra" => "Bem-vindo ao Nivra",
 		"Continue with a saved account, or sign in with another one." => {
 			"Continue com uma conta salva ou entre com outra."
 		}
@@ -403,8 +403,8 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Friends complaining about noise? Choose Maximum. If your voice cuts out or your PC slows down, go back to Standard." => {
 			"Amigos reclamando do barulho? Escolha Máxima. Se sua voz começar a picotar ou o PC ficar lento, volte para Padrão."
 		}
-		"Your PC couldn't keep up with Maximum, so SereinExt switched to Standard to keep your voice smooth." => {
-			"Seu PC não acompanhou a Máxima, então o SereinExt voltou para Padrão para sua voz não travar."
+		"Your PC couldn't keep up with Maximum, so Nivra switched to Standard to keep your voice smooth." => {
+			"Seu PC não acompanhou a Máxima, então o Nivra voltou para Padrão para sua voz não travar."
 		}
 		"The defaults work for most people. Change these only if something sounds wrong." => {
 			"Os padrões servem para a maioria. Mude só se algo estiver soando errado."
@@ -476,8 +476,8 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		}
 		"Rescan devices" => "Procurar dispositivos de novo",
 		"Reset levels" => "Restaurar volumes",
-		"System default follows your operating-system choice. Select a device only when you want SereinExt to stay pinned to it." => {
-			"O padrão do sistema segue a escolha do sistema operacional. Escolha um dispositivo só quando quiser que o SereinExt fique nele."
+		"System default follows your operating-system choice. Select a device only when you want Nivra to stay pinned to it." => {
+			"O padrão do sistema segue a escolha do sistema operacional. Escolha um dispositivo só quando quiser que o Nivra fique nele."
 		}
 		"System default (recommended)" => "Padrão do sistema (recomendado)",
 		"Device unavailable — choose another" => "Dispositivo indisponível — escolha outro",
@@ -1146,12 +1146,12 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Include the pointer in the shared video." => "Inclui o ponteiro no vídeo compartilhado.",
 		"Share Screen" => "Compartilhar tela",
 		"Cancel" => "Cancelar",
-		"Before you use SereinExt" => "Antes de usar o SereinExt",
-		"SereinExt is an unofficial app for your own Discord account: it is not Discord, it is not endorsed by Discord, and Discord's rules still apply to your account. It also includes other people's work (libraries, fonts and icons) under their own licenses, and accepting here does not waive those licenses or shift their copyright. Continuing confirms that you understand both points." => {
-			"O SereinExt é um aplicativo não oficial para a sua própria conta do Discord: não é o Discord, não é endossado pelo Discord, e as regras do Discord continuam valendo para a sua conta. Ele também inclui trabalho de outras pessoas (bibliotecas, fontes e ícones) sob as licenças delas, e aceitar aqui não anula essas licenças nem transfere o direito autoral delas. Ao continuar, você confirma que entendeu esses dois pontos."
+		"Before you use Nivra" => "Antes de usar o Nivra",
+		"Nivra is an unofficial app for your own Discord account: it is not Discord, it is not endorsed by Discord, and Discord's rules still apply to your account. It also includes other people's work (libraries, fonts and icons) under their own licenses, and accepting here does not waive those licenses or shift their copyright. Continuing confirms that you understand both points." => {
+			"O Nivra é um aplicativo não oficial para a sua própria conta do Discord: não é o Discord, não é endossado pelo Discord, e as regras do Discord continuam valendo para a sua conta. Ele também inclui trabalho de outras pessoas (bibliotecas, fontes e ícones) sob as licenças delas, e aceitar aqui não anula essas licenças nem transfere o direito autoral delas. Ao continuar, você confirma que entendeu esses dois pontos."
 		}
-		"Your app preferences could not be read, so SereinExt cannot tell whether you accepted this before." => {
-			"Não foi possível ler as preferências do aplicativo, então o SereinExt não sabe se você já aceitou isto antes."
+		"Your app preferences could not be read, so Nivra cannot tell whether you accepted this before." => {
+			"Não foi possível ler as preferências do aplicativo, então o Nivra não sabe se você já aceitou isto antes."
 		}
 		"View full licenses" => "Ver licenças completas",
 		"Hide full licenses" => "Ocultar licenças completas",
@@ -1168,8 +1168,8 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"That file name will not work." => "Esse nome de arquivo não vai funcionar.",
 		"Licenses" => "Licenças",
 		"Legal" => "Informações legais",
-		"Licenses for the libraries, fonts, icons and sounds included in SereinExt." => {
-			"Licenças das bibliotecas, fontes, ícones e sons incluídos no SereinExt."
+		"Licenses for the libraries, fonts, icons and sounds included in Nivra." => {
+			"Licenças das bibliotecas, fontes, ícones e sons incluídos no Nivra."
 		}
 		"Filter licenses" => "Filtrar licenças",
 		"No licenses match this filter." => "Nenhuma licença corresponde a este filtro.",
@@ -1185,8 +1185,8 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Sign-in" => "Entrada na conta",
 		"Audio playback" => "Reprodução de áudio",
 		"Other dependencies" => "Outras dependências",
-		"App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch." => {
-			"As preferências do aplicativo não foram salvas. Se o seu aceite dos termos não foi registrado, o SereinExt vai perguntar de novo na próxima vez que abrir."
+		"App preferences were not saved. If your acceptance of the terms was not recorded, Nivra will ask again next launch." => {
+			"As preferências do aplicativo não foram salvas. Se o seu aceite dos termos não foi registrado, o Nivra vai perguntar de novo na próxima vez que abrir."
 		}
 		"Your session expired; sign in again to continue." => "Sua sessão expirou; entre de novo para continuar.",
 		"I understand — continue" => "Entendi — continuar",
@@ -1348,10 +1348,10 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"Microphone, speakers, camera and voice processing." => {
 			"Micrófono, altavoces, cámara y procesamiento de voz."
 		}
-		"Keyboard shortcuts for SereinExt." => "Atajos de teclado de SereinExt.",
-		"What SereinExt keeps on this device." => "Lo que SereinExt guarda en este dispositivo.",
-		"Keep SereinExt up to date on this device." => {
-			"Mantén SereinExt actualizado en este dispositivo."
+		"Keyboard shortcuts for Nivra." => "Atajos de teclado de Nivra.",
+		"What Nivra keeps on this device." => "Lo que Nivra guarda en este dispositivo.",
+		"Keep Nivra up to date on this device." => {
+			"Mantén Nivra actualizado en este dispositivo."
 		}
 		"Manage community plugins." => "Administra plugins de la comunidad.",
 		"Choose a community theme." => "Elige un tema de la comunidad.",
@@ -1361,9 +1361,9 @@ fn spanish(key: &str) -> Option<&'static str> {
 			"Los cambios se aplican inmediatamente y se guardan en este dispositivo."
 		}
 		"Startup" => "Inicio",
-		"Open SereinExt when your computer starts" => "Abrir SereinExt al iniciar el equipo",
-		"SereinExt signs in and connects in the background." => {
-			"SereinExt inicia sesión y se conecta en segundo plano."
+		"Open Nivra when your computer starts" => "Abrir Nivra al iniciar el equipo",
+		"Nivra signs in and connects in the background." => {
+			"Nivra inicia sesión y se conecta en segundo plano."
 		}
 		"Start minimized" => "Iniciar minimizado",
 		"Start in the background, out of your way." => {
@@ -1373,12 +1373,12 @@ fn spanish(key: &str) -> Option<&'static str> {
 			"El inicio automático está disponible en Windows y macOS."
 		}
 		"Window" => "Ventana",
-		"Hide SereinExt title bar" => "Ocultar la barra de título de SereinExt",
+		"Hide Nivra title bar" => "Ocultar la barra de título de Nivra",
 		"Use the system title bar and window buttons instead." => {
 			"Usa la barra de título y los botones de ventana del sistema."
 		}
-		"Keep SereinExt in the menu bar" => "Mantener SereinExt en la barra de menús",
-		"Keep SereinExt in the system tray" => "Mantener SereinExt en la bandeja del sistema",
+		"Keep Nivra in the menu bar" => "Mantener Nivra en la barra de menús",
+		"Keep Nivra in the system tray" => "Mantener Nivra en la bandeja del sistema",
 		"The tray is unavailable on this platform." => {
 			"La bandeja del sistema no está disponible en esta plataforma."
 		}
@@ -1416,8 +1416,8 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"Choose primary color" => "Elegir color principal",
 		"Window effects" => "Efectos de ventana",
 		"Transparency & blur" => "Transparencia y desenfoque",
-		"Restart SereinExt after changing this. Themes can customize effects while enabled." => {
-			"Reinicia SereinExt después de cambiar esto. Los temas pueden personalizar los efectos mientras estén activos."
+		"Restart Nivra after changing this. Themes can customize effects while enabled." => {
+			"Reinicia Nivra después de cambiar esto. Los temas pueden personalizar los efectos mientras estén activos."
 		}
 		"Transparency" => "Transparencia",
 		"Blur" => "Desenfoque",
@@ -1450,27 +1450,27 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"Removes cached messages and media. Drafts and your login stay." => {
 			"Elimina mensajes y medios en caché. Los borradores y tu inicio de sesión se conservan."
 		}
-		"Messages and drafts are cached on this device inside bounded, account-isolated files. Cache data is not encrypted by SereinExt; saved login tokens use the OS credential store." => {
-			"Los mensajes y borradores se guardan en caché en este dispositivo, en archivos limitados y aislados por cuenta. SereinExt no cifra los datos de caché; los tokens de inicio de sesión guardados usan el almacén de credenciales del sistema."
+		"Messages and drafts are cached on this device inside bounded, account-isolated files. Cache data is not encrypted by Nivra; saved login tokens use the OS credential store." => {
+			"Los mensajes y borradores se guardan en caché en este dispositivo, en archivos limitados y aislados por cuenta. Nivra no cifra los datos de caché; los tokens de inicio de sesión guardados usan el almacén de credenciales del sistema."
 		}
 		"Your privacy" => "Tu privacidad",
-		"SereinExt does not collect telemetry or upload diagnostics. Discord retains service-side data according to its own policies." => {
-			"SereinExt no recopila telemetría ni envía diagnósticos. Discord conserva los datos del servicio según sus propias políticas."
+		"Nivra does not collect telemetry or upload diagnostics. Discord retains service-side data according to its own policies." => {
+			"Nivra no recopila telemetría ni envía diagnósticos. Discord conserva los datos del servicio según sus propias políticas."
 		}
 		"Offline preview · changes stay in this session and are never sent." => {
 			"Vista previa sin conexión · los cambios permanecen en esta sesión y nunca se envían."
 		}
-		"Closing the window keeps SereinExt in the menu bar. Quit from its menu to exit." => {
-			"Cerrar la ventana mantiene SereinExt en la barra de menús. Sal desde su menú para terminar."
+		"Closing the window keeps Nivra in the menu bar. Quit from its menu to exit." => {
+			"Cerrar la ventana mantiene Nivra en la barra de menús. Sal desde su menú para terminar."
 		}
-		"Closing keeps SereinExt running. Use the tray to show, minimize or quit." => {
-			"Cerrar mantiene SereinExt en ejecución. Usa la bandeja para mostrar, minimizar o salir."
+		"Closing keeps Nivra running. Use the tray to show, minimize or quit." => {
+			"Cerrar mantiene Nivra en ejecución. Usa la bandeja para mostrar, minimizar o salir."
 		}
-		"Closing the window keeps SereinExt in the notification area. Quit from its menu to exit." => {
-			"Cerrar la ventana mantiene SereinExt en el área de notificación. Sal desde su menú para terminar."
+		"Closing the window keeps Nivra in the notification area. Quit from its menu to exit." => {
+			"Cerrar la ventana mantiene Nivra en el área de notificación. Sal desde su menú para terminar."
 		}
-		"Takes effect the next time SereinExt starts." => {
-			"Se aplica la próxima vez que se inicie SereinExt."
+		"Takes effect the next time Nivra starts." => {
+			"Se aplica la próxima vez que se inicie Nivra."
 		}
 		"Online" => "En línea",
 		"Idle" => "Ausente",
@@ -1483,7 +1483,7 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"Today" => "Hoy",
 		"Switch to" => "Cambiar a",
 		"Forget" => "Olvidar",
-		"SereinExt clears it" => "SereinExt borra el estado",
+		"Nivra clears it" => "Nivra borra el estado",
 		"You" => "Tú",
 		"Custom status" => "Estado personalizado",
 		"Shown next to your name across Discord." => "Se muestra junto a tu nombre en Discord.",
@@ -1512,7 +1512,7 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"Use another account" => "Usar otra cuenta",
 		"Continue with Discord" => "Continuar con Discord",
 		"Welcome back" => "Bienvenido de nuevo",
-		"Welcome to SereinExt" => "Bienvenido a SereinExt",
+		"Welcome to Nivra" => "Bienvenido a Nivra",
 		"Continue with a saved account, or sign in with another one." => {
 			"Continúa con una cuenta guardada o entra con otra."
 		}
@@ -1627,8 +1627,8 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"Friends complaining about noise? Choose Maximum. If your voice cuts out or your PC slows down, go back to Standard." => {
 			"¿Tus amigos se quejan del ruido? Elige Máxima. Si tu voz se corta o el PC va lento, vuelve a Estándar."
 		}
-		"Your PC couldn't keep up with Maximum, so SereinExt switched to Standard to keep your voice smooth." => {
-			"Tu PC no pudo con Máxima, así que SereinExt volvió a Estándar para que tu voz no se corte."
+		"Your PC couldn't keep up with Maximum, so Nivra switched to Standard to keep your voice smooth." => {
+			"Tu PC no pudo con Máxima, así que Nivra volvió a Estándar para que tu voz no se corte."
 		}
 		"The defaults work for most people. Change these only if something sounds wrong." => {
 			"Los valores predeterminados sirven a la mayoría. Cámbialos solo si algo suena mal."
@@ -1700,8 +1700,8 @@ fn spanish(key: &str) -> Option<&'static str> {
 		}
 		"Rescan devices" => "Buscar dispositivos de nuevo",
 		"Reset levels" => "Restablecer volumen",
-		"System default follows your operating-system choice. Select a device only when you want SereinExt to stay pinned to it." => {
-			"El predeterminado del sistema sigue la elección del sistema operativo. Elige un dispositivo solo si quieres que SereinExt se quede en él."
+		"System default follows your operating-system choice. Select a device only when you want Nivra to stay pinned to it." => {
+			"El predeterminado del sistema sigue la elección del sistema operativo. Elige un dispositivo solo si quieres que Nivra se quede en él."
 		}
 		"System default (recommended)" => "Predeterminado del sistema (recomendado)",
 		"Device unavailable — choose another" => "Dispositivo no disponible — elige otro",
@@ -2370,12 +2370,12 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"Include the pointer in the shared video." => "Incluye el puntero en el video compartido.",
 		"Share Screen" => "Compartir pantalla",
 		"Cancel" => "Cancelar",
-		"Before you use SereinExt" => "Antes de usar SereinExt",
-		"SereinExt is an unofficial app for your own Discord account: it is not Discord, it is not endorsed by Discord, and Discord's rules still apply to your account. It also includes other people's work (libraries, fonts and icons) under their own licenses, and accepting here does not waive those licenses or shift their copyright. Continuing confirms that you understand both points." => {
-			"SereinExt es una aplicación no oficial para tu propia cuenta de Discord: no es Discord, Discord no la respalda y las reglas de Discord siguen aplicando a tu cuenta. También incluye trabajo de otras personas (bibliotecas, fuentes e iconos) bajo sus propias licencias, y aceptar aquí no deja sin efecto esas licencias ni transfiere sus derechos de autor. Al continuar, confirmas que entiendes ambos puntos."
+		"Before you use Nivra" => "Antes de usar Nivra",
+		"Nivra is an unofficial app for your own Discord account: it is not Discord, it is not endorsed by Discord, and Discord's rules still apply to your account. It also includes other people's work (libraries, fonts and icons) under their own licenses, and accepting here does not waive those licenses or shift their copyright. Continuing confirms that you understand both points." => {
+			"Nivra es una aplicación no oficial para tu propia cuenta de Discord: no es Discord, Discord no la respalda y las reglas de Discord siguen aplicando a tu cuenta. También incluye trabajo de otras personas (bibliotecas, fuentes e iconos) bajo sus propias licencias, y aceptar aquí no deja sin efecto esas licencias ni transfiere sus derechos de autor. Al continuar, confirmas que entiendes ambos puntos."
 		}
-		"Your app preferences could not be read, so SereinExt cannot tell whether you accepted this before." => {
-			"No se pudieron leer las preferencias de la aplicación, así que SereinExt no puede saber si ya aceptaste esto antes."
+		"Your app preferences could not be read, so Nivra cannot tell whether you accepted this before." => {
+			"No se pudieron leer las preferencias de la aplicación, así que Nivra no puede saber si ya aceptaste esto antes."
 		}
 		"View full licenses" => "Ver licencias completas",
 		"Hide full licenses" => "Ocultar licencias completas",
@@ -2392,8 +2392,8 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"That file name will not work." => "Ese nombre de archivo no va a funcionar.",
 		"Licenses" => "Licencias",
 		"Legal" => "Información legal",
-		"Licenses for the libraries, fonts, icons and sounds included in SereinExt." => {
-			"Licencias de las bibliotecas, fuentes, iconos y sonidos incluidos en SereinExt."
+		"Licenses for the libraries, fonts, icons and sounds included in Nivra." => {
+			"Licencias de las bibliotecas, fuentes, iconos y sonidos incluidos en Nivra."
 		}
 		"Filter licenses" => "Filtrar licencias",
 		"No licenses match this filter." => "Ninguna licencia coincide con este filtro.",
@@ -2409,8 +2409,8 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"Sign-in" => "Inicio de sesión",
 		"Audio playback" => "Reproducción de audio",
 		"Other dependencies" => "Otras dependencias",
-		"App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch." => {
-			"Las preferencias de la aplicación no se guardaron. Si tu aceptación de los términos no quedó registrada, SereinExt volverá a preguntar la próxima vez que se abra."
+		"App preferences were not saved. If your acceptance of the terms was not recorded, Nivra will ask again next launch." => {
+			"Las preferencias de la aplicación no se guardaron. Si tu aceptación de los términos no quedó registrada, Nivra volverá a preguntar la próxima vez que se abra."
 		}
 		"Your session expired; sign in again to continue." => "Tu sesión expiró; inicia sesión de nuevo para continuar.",
 		"I understand — continue" => "Entendido — continuar",
@@ -2514,7 +2514,7 @@ mod tests {
 			"Today",
 			"Switch to",
 			"Forget",
-			"SereinExt clears it",
+			"Nivra clears it",
 			"You",
 			"Custom status",
 			"Shown next to your name across Discord.",
@@ -2558,7 +2558,7 @@ mod tests {
 			"Choose primary color",
 			"Window effects",
 			"Transparency & blur",
-			"Restart SereinExt after changing this. Themes can customize effects while enabled.",
+			"Restart Nivra after changing this. Themes can customize effects while enabled.",
 			"Transparency",
 			"Blur",
 			"Zero disables blur; the native compositor controls its exact strength.",
@@ -2578,20 +2578,20 @@ mod tests {
 			"Local storage",
 			"Clear cache",
 			"Removes cached messages and media. Drafts and your login stay.",
-			"Messages and drafts are cached on this device inside bounded, account-isolated files. Cache data is not encrypted by SereinExt; saved login tokens use the OS credential store.",
+			"Messages and drafts are cached on this device inside bounded, account-isolated files. Cache data is not encrypted by Nivra; saved login tokens use the OS credential store.",
 			"Your privacy",
-			"SereinExt does not collect telemetry or upload diagnostics. Discord retains service-side data according to its own policies.",
+			"Nivra does not collect telemetry or upload diagnostics. Discord retains service-side data according to its own policies.",
 			"Offline preview · changes stay in this session and are never sent.",
-			"Closing the window keeps SereinExt in the menu bar. Quit from its menu to exit.",
-			"Closing keeps SereinExt running. Use the tray to show, minimize or quit.",
-			"Closing the window keeps SereinExt in the notification area. Quit from its menu to exit.",
-			"Takes effect the next time SereinExt starts.",
+			"Closing the window keeps Nivra in the menu bar. Quit from its menu to exit.",
+			"Closing keeps Nivra running. Use the tray to show, minimize or quit.",
+			"Closing the window keeps Nivra in the notification area. Quit from its menu to exit.",
+			"Takes effect the next time Nivra starts.",
 			"Use a different account",
 			"Waiting for Discord…",
 			"Use another account",
 			"Continue with Discord",
 			"Welcome back",
-			"Welcome to SereinExt",
+			"Welcome to Nivra",
 			"Continue with a saved account, or sign in with another one.",
 			"Sign in with Discord.",
 			"Saved accounts",
@@ -2693,7 +2693,7 @@ mod tests {
 			"PC usage: low",
 			"PC usage: medium",
 			"Friends complaining about noise? Choose Maximum. If your voice cuts out or your PC slows down, go back to Standard.",
-			"Your PC couldn't keep up with Maximum, so SereinExt switched to Standard to keep your voice smooth.",
+			"Your PC couldn't keep up with Maximum, so Nivra switched to Standard to keep your voice smooth.",
 			"The defaults work for most people. Change these only if something sounds wrong.",
 			"Click to turn on or off · right-click to choose the level",
 			"Noise suppression is unavailable in this build or preview.",
@@ -2727,7 +2727,7 @@ mod tests {
 			"100% is the original level. Higher levels may distort.",
 			"Rescan devices",
 			"Reset levels",
-			"System default follows your operating-system choice. Select a device only when you want SereinExt to stay pinned to it.",
+			"System default follows your operating-system choice. Select a device only when you want Nivra to stay pinned to it.",
 			"System default (recommended)",
 			"Device unavailable — choose another",
 			"Looking for audio devices...",
@@ -2881,9 +2881,9 @@ mod tests {
 			"Kick",
 			"Save",
 			"This removes the member from this server. They can rejoin with a new invite.",
-			"Before you use SereinExt",
-			"SereinExt is an unofficial app for your own Discord account: it is not Discord, it is not endorsed by Discord, and Discord's rules still apply to your account. It also includes other people's work (libraries, fonts and icons) under their own licenses, and accepting here does not waive those licenses or shift their copyright. Continuing confirms that you understand both points.",
-			"Your app preferences could not be read, so SereinExt cannot tell whether you accepted this before.",
+			"Before you use Nivra",
+			"Nivra is an unofficial app for your own Discord account: it is not Discord, it is not endorsed by Discord, and Discord's rules still apply to your account. It also includes other people's work (libraries, fonts and icons) under their own licenses, and accepting here does not waive those licenses or shift their copyright. Continuing confirms that you understand both points.",
+			"Your app preferences could not be read, so Nivra cannot tell whether you accepted this before.",
 			"View full licenses",
 			"Hide full licenses",
 			"Hide offline members",
@@ -2897,7 +2897,7 @@ mod tests {
 			"That file name will not work.",
 			"Licenses",
 			"Legal",
-			"Licenses for the libraries, fonts, icons and sounds included in SereinExt.",
+			"Licenses for the libraries, fonts, icons and sounds included in Nivra.",
 			"Filter licenses",
 			"No licenses match this filter.",
 			"All licenses",
@@ -3227,7 +3227,7 @@ mod tests {
 			"Read unread and mention counts in the active conversation",
 			"Enable",
 			"PNG or JPEG, up to 2 MiB. This image does not change the chat background.",
-			"App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch.",
+			"App preferences were not saved. If your acceptance of the terms was not recorded, Nivra will ask again next launch.",
 			"Your session expired; sign in again to continue.",
 			"Dismiss update",
 			"Download update",

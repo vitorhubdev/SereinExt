@@ -2175,7 +2175,7 @@ impl MessagingUi {
 			ui,
 			crate::i18n::text(
 				self.language,
-				"System default follows your operating-system choice. Select a device only when you want SereinExt to stay pinned to it.",
+				"System default follows your operating-system choice. Select a device only when you want Nivra to stay pinned to it.",
 			),
 		);
 		// Both settings surfaces use this path. Queue discovery once, without opening streams.
@@ -2361,7 +2361,7 @@ impl MessagingUi {
 				design::Level::Warning,
 				crate::i18n::text(
 					language,
-					"Your PC couldn't keep up with Maximum, so SereinExt switched to Standard to keep your voice smooth.",
+					"Your PC couldn't keep up with Maximum, so Nivra switched to Standard to keep your voice smooth.",
 				),
 			);
 		}
@@ -4226,7 +4226,7 @@ fn call_failure(ui: &mut egui::Ui, error: Option<&str>, color: egui::Color32) {
 				.clicked()
 			{
 				ui.ctx()
-					.copy_text(format!("SereinExt call failed\nReason: {error}"));
+					.copy_text(format!("Nivra call failed\nReason: {error}"));
 			}
 			ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
 				ui.add(

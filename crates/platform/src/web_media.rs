@@ -201,7 +201,7 @@ impl WebMediaView {
 		});
 		view.connect_context_menu(|_, _, _| true);
 		let window = gtk4::Window::builder()
-			.title("Web media preview · SereinExt")
+			.title("Web media preview · Nivra")
 			.default_width(960)
 			.default_height(720)
 			.child(&view)

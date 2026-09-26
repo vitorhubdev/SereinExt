@@ -3068,7 +3068,7 @@ mod sign_in_widget_tests {
 						ui.scope_builder(egui::UiBuilder::new().max_rect(area), |ui| {
 							ui.spacing_mut().item_spacing.y = 0.0;
 							clicks.0 = account_row(ui, "Riley Quinn", "@riley").clicked();
-							clicks.1 = disclosure(ui, "About SereinExt", false).clicked();
+							clicks.1 = disclosure(ui, "About Nivra", false).clicked();
 						});
 					},
 				);
@@ -3091,7 +3091,7 @@ mod sign_in_widget_tests {
 				(text, clicks)
 			};
 			let (text, _) = run(vec![]);
-			for expected in ["Riley Quinn", "@riley", "About SereinExt", "RQ"] {
+			for expected in ["Riley Quinn", "@riley", "About Nivra", "RQ"] {
 				assert!(text.iter().any(|value| value == expected), "{expected}");
 			}
 			// The row owns the full width; the expander sits directly beneath it.

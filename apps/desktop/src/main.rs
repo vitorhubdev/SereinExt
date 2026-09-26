@@ -298,7 +298,7 @@ fn main() -> eframe::Result {
 	let options = eframe::NativeOptions {
 		viewport: {
 			let builder = egui::ViewportBuilder::default()
-				.with_title("SereinExt")
+				.with_title("Nivra")
 				.with_transparent(transparency_available)
 				.with_inner_size([1120.0, 760.0])
 				.with_min_inner_size([760.0, 520.0])
@@ -353,7 +353,7 @@ fn main() -> eframe::Result {
 		..Default::default()
 	};
 	eframe::run_native(
-		"SereinExt",
+		"Nivra",
 		options,
 		Box::new(move |cc| {
 			let desktop = Desktop::new(cc, demo, frame_sample, transparency_available)?;
@@ -911,9 +911,9 @@ fn user_action_notice(event: &Event) -> Option<(ui::design::Level, &'static str)
 		Err(failure) => (ui::design::Level::Error, failure.label()),
 	})
 }
-const NOTICES_SUMMARY: &str = "SereinExt is an unofficial app for your own Discord account: it is not Discord, it is not endorsed by Discord, and Discord's rules still apply to your account. It also includes other people's work (libraries, fonts and icons) under their own licenses, and accepting here does not waive those licenses or shift their copyright. Continuing confirms that you understand both points.";
-const NOTICES_PREFERENCES_UNREAD: &str = "Your app preferences could not be read, so SereinExt cannot tell whether you accepted this before.";
-const APP_PREFERENCES_NOT_SAVED: &str = "App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch.";
+const NOTICES_SUMMARY: &str = "Nivra is an unofficial app for your own Discord account: it is not Discord, it is not endorsed by Discord, and Discord's rules still apply to your account. It also includes other people's work (libraries, fonts and icons) under their own licenses, and accepting here does not waive those licenses or shift their copyright. Continuing confirms that you understand both points.";
+const NOTICES_PREFERENCES_UNREAD: &str = "Your app preferences could not be read, so Nivra cannot tell whether you accepted this before.";
+const APP_PREFERENCES_NOT_SAVED: &str = "App preferences were not saved. If your acceptance of the terms was not recorded, Nivra will ask again next launch.";
 /// Layperson warning shown on the sign-in screen after the saved session expires.
 /// The raw state status ("reconnect explicitly; drafts remain in RAM") stays for
 /// diagnostics; this line tells the owner that signing in again is all it takes.
@@ -2542,7 +2542,7 @@ impl Desktop {
 		}
 		let (pings, voice, language) = status;
 		let t = |english: &'static str| ui::i18n::text(language, english);
-		let mut tooltip = "SereinExt".to_owned();
+		let mut tooltip = "Nivra".to_owned();
 		if let Some(call) = match voice {
 			Voice::Idle => None,
 			Voice::Connected => Some(t("In a call")),
@@ -3923,7 +3923,7 @@ impl Desktop {
 					})
 					.show(ui, |ui| {
 						ui.horizontal(|ui| {
-							ui.label(ui::design::semibold(ui, "SereinExt", 16.0).color(p.muted));
+							ui.label(ui::design::semibold(ui, "Nivra", 16.0).color(p.muted));
 							ui.with_layout(
 								egui::Layout::right_to_left(egui::Align::Center),
 								|ui| {
@@ -4031,7 +4031,7 @@ impl Desktop {
 		// footer action ends this dialog, so `close` from Escape/backdrop is ignored.
 		ui::dialog::Dialog::new(
 			"notices-first-run",
-			ui::i18n::text(language, "Before you use SereinExt"),
+			ui::i18n::text(language, "Before you use Nivra"),
 		)
 		.persistent()
 		.width(500.0)
@@ -4170,7 +4170,7 @@ public static class SereinExtShortcut {
 							);
 							ui.add_space(8.0);
 							ui.label(
-								ui::design::semibold(ui, "SereinExt", 16.0).color(p.text_strong),
+								ui::design::semibold(ui, "Nivra", 16.0).color(p.text_strong),
 							);
 							ui.add_space(8.0);
 							// Painted rather than framed: the pill must hug the text, not the row height.
@@ -4423,7 +4423,7 @@ public static class SereinExtShortcut {
 					if returning {
 						ui::i18n::text(self.messaging.language, "Welcome back")
 					} else {
-						ui::i18n::text(self.messaging.language, "Welcome to SereinExt")
+						ui::i18n::text(self.messaging.language, "Welcome to Nivra")
 					},
 					22.0,
 				)
@@ -4740,7 +4740,7 @@ public static class SereinExtShortcut {
 	/// Secondary panels: what this client is, and the owner's own session token.
 	fn sign_in_disclosures(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
 		let p = ui::design::palette(ui);
-		if ui::design::disclosure(ui, "About SereinExt", self.about_open).clicked() {
+		if ui::design::disclosure(ui, "About Nivra", self.about_open).clicked() {
 			self.about_open = !self.about_open;
 		}
 		if self.about_open {
@@ -4945,7 +4945,7 @@ public static class SereinExtShortcut {
 						{
 							self.messaging.channel_preferences_reload = false;
 							self.messaging.channel_preferences_load_pending = false;
-							self.messaging.channel_preferences_status = "Local storage worker stopped; restart SereinExt to restore channel preferences.";
+							self.messaging.channel_preferences_status = "Local storage worker stopped; restart Nivra to restore channel preferences.";
 						}
 						presence_cache_stopped = self.presence_load_pending;
 						break;
@@ -7022,7 +7022,7 @@ mod tests {
 	#[test]
 	fn notices_strings_are_translated() {
 		for key in [
-			"Before you use SereinExt",
+			"Before you use Nivra",
 			NOTICES_SUMMARY,
 			NOTICES_PREFERENCES_UNREAD,
 			"View full licenses",
@@ -7032,6 +7032,31 @@ mod tests {
 		] {
 			for language in [model::Language::PortugueseBrazil, model::Language::Spanish] {
 				assert_ne!(ui::i18n::text(language, key), key, "{language:?}: {key}");
+			}
+		}
+	}
+
+	#[test]
+	fn user_visible_strings_call_the_app_nivra() {
+		for key in [
+			"Before you use Nivra",
+			"Welcome to Nivra",
+			"About Nivra",
+			"Open Nivra when your computer starts",
+			"Hide Nivra title bar",
+			"Keep Nivra in the system tray",
+			"Keep Nivra in the menu bar",
+			NOTICES_SUMMARY,
+			NOTICES_PREFERENCES_UNREAD,
+			APP_PREFERENCES_NOT_SAVED,
+		] {
+			for language in [model::Language::English, model::Language::PortugueseBrazil] {
+				let rendered = ui::i18n::text(language, key);
+				assert!(rendered.contains("Nivra"), "{language:?} dropped the name: {rendered}");
+				assert!(
+					!rendered.contains("SereinExt"),
+					"{language:?} still shows the old name: {rendered}"
+				);
 			}
 		}
 	}

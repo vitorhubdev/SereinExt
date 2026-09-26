@@ -194,22 +194,22 @@ impl Updater {
 						match result {
 							Ok(Outcome::Checked(package)) => {
 								self.status = package.as_ref().map_or_else(
-									|| "SereinExt is up to date on this channel.".into(),
+									|| "Nivra is up to date on this channel.".into(),
 									|p| {
 										if install::flatpak_session() {
 											format!(
-												"SereinExt {} is available. Update with `flatpak update` or your Software center.",
+												"Nivra {} is available. Update with `flatpak update` or your Software center.",
 												p.version,
 											)
 										} else if let Some(cmd) =
 											install::linux_package_manager_update_command()
 										{
 											format!(
-												"SereinExt {} is available. Run `{cmd}` to update.",
+												"Nivra {} is available. Run `{cmd}` to update.",
 												p.version,
 											)
 										} else {
-											format!("SereinExt {} is available.", p.version)
+											format!("Nivra {} is available.", p.version)
 										}
 									},
 								);
@@ -228,7 +228,7 @@ impl Updater {
 								self.armed = true;
 								self.close_requested = true;
 								self.status =
-									"Update ready. Close SereinExt to install and restart.".into();
+									"Update ready. Close Nivra to install and restart.".into();
 							}
 							Err(error) => {
 								self.auto_download = false;
@@ -292,7 +292,7 @@ impl Updater {
 					.expect("a supported platform's checked package has a downloadable archive")
 					.size;
 				self.auto_download = false;
-				self.status = format!("Downloading SereinExt {}…", package.version);
+				self.status = format!("Downloading Nivra {}…", package.version);
 				self.start(runtime, ctx, total, move |cancel, progress| {
 					download_package(package, cancel, progress)
 				});

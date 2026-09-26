@@ -31,7 +31,7 @@ pub const MPL_SOURCE_PREFIX: &str =
 
 /// Component groups in display order, with the English label used as the i18n key.
 const COMPONENTS: &[(&str, &str)] = &[
-	("sereinext", "SereinExt"),
+	("sereinext", "Nivra"),
 	("sounds", "Notification sounds"),
 	("fonts", "Fonts"),
 	("emoji", "Emoji"),

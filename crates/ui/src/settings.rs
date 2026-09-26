@@ -111,9 +111,9 @@ impl Page {
 			Self::Notifications => "Choose which notifications you receive and how they appear.",
 			Self::Activity => "Show others what you are playing.",
 			Self::Voice => "Microphone, speakers, camera and voice processing.",
-			Self::Keybinds => "Keyboard shortcuts for SereinExt.",
-			Self::Storage => "What SereinExt keeps on this device.",
-			Self::Updates => "Keep SereinExt up to date on this device.",
+			Self::Keybinds => "Keyboard shortcuts for Nivra.",
+			Self::Storage => "What Nivra keeps on this device.",
+			Self::Updates => "Keep Nivra up to date on this device.",
 			Self::Extensions => "Manage community plugins.",
 			Self::Themes => "Choose a community theme.",
 		};
@@ -562,7 +562,7 @@ impl MessagingUi {
 				self.settings_logout(ui, state.demo);
 				ui.add_space(12.0);
 				ui.label(
-					RichText::new(format!("SereinExt {}", self.build.version))
+					RichText::new(format!("Nivra {}", self.build.version))
 						.size(12.0)
 						.color(colors.muted),
 				);
@@ -823,10 +823,10 @@ impl MessagingUi {
 			ui.add_enabled_ui(self.startup_available && !self.startup_busy, |ui| {
 				design::switch(
 					ui,
-					crate::i18n::text(self.language, "Open SereinExt when your computer starts"),
+					crate::i18n::text(self.language, "Open Nivra when your computer starts"),
 					Some(crate::i18n::text(
 						self.language,
-						"SereinExt signs in and connects in the background.",
+						"Nivra signs in and connects in the background.",
 					)),
 					&mut self.startup_enabled,
 				);
@@ -860,7 +860,7 @@ impl MessagingUi {
 			{
 				design::switch(
 					ui,
-					crate::i18n::text(self.language, "Hide SereinExt title bar"),
+					crate::i18n::text(self.language, "Hide Nivra title bar"),
 					Some(crate::i18n::text(
 						self.language,
 						"Use the system title bar and window buttons instead.",
@@ -873,24 +873,24 @@ impl MessagingUi {
 				design::switch(
 					ui,
 					if cfg!(target_os = "macos") {
-						crate::i18n::text(self.language, "Keep SereinExt in the menu bar")
+						crate::i18n::text(self.language, "Keep Nivra in the menu bar")
 					} else {
-						crate::i18n::text(self.language, "Keep SereinExt in the system tray")
+						crate::i18n::text(self.language, "Keep Nivra in the system tray")
 					},
 					Some(if cfg!(target_os = "macos") {
 						crate::i18n::text(
 							self.language,
-							"Closing the window keeps SereinExt in the menu bar. Quit from its menu to exit.",
+							"Closing the window keeps Nivra in the menu bar. Quit from its menu to exit.",
 						)
 					} else if cfg!(target_os = "linux") {
 						crate::i18n::text(
 							self.language,
-							"Closing keeps SereinExt running. Use the tray to show, minimize or quit.",
+							"Closing keeps Nivra running. Use the tray to show, minimize or quit.",
 						)
 					} else {
 						crate::i18n::text(
 							self.language,
-							"Closing the window keeps SereinExt in the notification area. Quit from its menu to exit.",
+							"Closing the window keeps Nivra in the notification area. Quit from its menu to exit.",
 						)
 					}),
 					&mut self.minimize_to_tray,
@@ -909,12 +909,12 @@ impl MessagingUi {
 			let detail = if self.gpu_adapter.is_empty() {
 				crate::i18n::text(
 					self.language,
-					"Takes effect the next time SereinExt starts.",
+					"Takes effect the next time Nivra starts.",
 				)
 				.to_owned()
 			} else {
 				format!(
-					"Currently drawing with {}. Takes effect the next time SereinExt starts.",
+					"Currently drawing with {}. Takes effect the next time Nivra starts.",
 					self.gpu_adapter
 				)
 			};
@@ -945,7 +945,7 @@ impl MessagingUi {
 				crate::i18n::text(self.language, "Licenses"),
 				Some(crate::i18n::text(
 					self.language,
-					"Licenses for the libraries, fonts, icons and sounds included in SereinExt.",
+					"Licenses for the libraries, fonts, icons and sounds included in Nivra.",
 				)),
 				|ui| {
 					if design::button(
@@ -1062,7 +1062,7 @@ impl MessagingUi {
 					crate::i18n::text(self.language, "Transparency & blur"),
 					Some(crate::i18n::text(
 						self.language,
-						"Restart SereinExt after changing this. Themes can customize effects while enabled.",
+						"Restart Nivra after changing this. Themes can customize effects while enabled.",
 					)),
 					&mut self.transparency_blur,
 				);
@@ -1290,7 +1290,7 @@ impl MessagingUi {
 					ui,
 					crate::i18n::text(
 						self.language,
-						"Messages and drafts are cached on this device inside bounded, account-isolated files. Cache data is not encrypted by SereinExt; saved login tokens use the OS credential store.",
+						"Messages and drafts are cached on this device inside bounded, account-isolated files. Cache data is not encrypted by Nivra; saved login tokens use the OS credential store.",
 					),
 				);
 			},
@@ -1300,7 +1300,7 @@ impl MessagingUi {
 				ui,
 				crate::i18n::text(
 					self.language,
-					"SereinExt does not collect telemetry or upload diagnostics. Discord retains service-side data according to its own policies.",
+					"Nivra does not collect telemetry or upload diagnostics. Discord retains service-side data according to its own policies.",
 				),
 			);
 		});
@@ -1658,6 +1658,51 @@ mod translation_tests {
 			}
 		}
 		assert!(missing_pages.is_empty(), "untranslated settings keys: {missing_pages:?}");
+	}
+
+	#[test]
+	fn settings_pages_call_the_app_nivra_in_english_and_portuguese() {
+		for language in [
+			model::Language::English,
+			model::Language::PortugueseBrazil,
+		] {
+			let ctx = egui::Context::default();
+			let _ = crate::i18n::drain_untranslated_keys();
+			let mut labels = Vec::new();
+			for page in Page::ALL {
+				let mut view = MessagingUi::default();
+				view.language = language;
+				view.settings.open = true;
+				view.settings.page = page;
+				let mut state = test_support::demo_state();
+				let mut commands = vec![];
+				let mut output = ctx.run_ui(
+					egui::RawInput {
+						screen_rect: Some(egui::Rect::from_min_size(
+							egui::Pos2::ZERO,
+							egui::vec2(1120.0, 760.0),
+						)),
+						..Default::default()
+					},
+					|_ui| {
+						view.show_settings(&ctx, &mut state, &mut commands);
+					},
+				);
+				output.textures_delta.clear();
+				labels.extend(rendered_text(&output));
+			}
+			let rendered = labels.join(" | ");
+			assert!(
+				rendered.contains("Nivra"),
+				"{language:?} never shows the product name: {rendered}"
+			);
+			assert!(
+				!rendered.contains("SereinExt"),
+				"{language:?} still shows the old product name: {rendered}"
+			);
+			let missing = crate::i18n::drain_untranslated_keys();
+			assert!(missing.is_empty(), "untranslated settings keys: {missing:?}");
+		}
 	}
 }
 
