@@ -69,6 +69,7 @@ fn main() {
 				} else {
 					vec![]
 				},
+				clients: model::ClientPlatforms::default(),
 			}))
 		})
 		.collect();

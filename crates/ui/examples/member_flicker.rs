@@ -85,6 +85,7 @@ fn main() {
 					status: Some("online".into()),
 					custom_status: None,
 					activities: vec![],
+					clients: model::ClientPlatforms::default(),
 				}))
 			})
 			.collect();
@@ -137,6 +138,7 @@ fn main() {
 				} else {
 					vec![]
 				},
+				clients: model::ClientPlatforms::default(),
 			};
 			state.apply(Envelope {
 				generation: state.generation,

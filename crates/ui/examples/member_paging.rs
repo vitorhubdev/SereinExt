@@ -16,6 +16,7 @@ fn reply(state: &mut State, start: usize, total: u64) {
 				status: None,
 				custom_status: None,
 				activities: vec![],
+				clients: model::ClientPlatforms::default(),
 			}))
 		})
 		.collect();
