@@ -139,6 +139,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn profile_edits_send_only_changes_confirm_readback_and_do_not_retry() {
+		crate::ensure_tls_provider();
 		tokio::time::timeout(Duration::from_secs(10), async {
 			let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 			let mut api = DiscordApi::new(Arc::new(

@@ -111,6 +111,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn sharing_reads_fresh_preserves_status_and_never_retries_unconfirmed_writes() {
+		crate::ensure_tls_provider();
 		tokio::time::timeout(Duration::from_secs(10), async {
 			let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 			let mut api = DiscordApi::new(Arc::new(

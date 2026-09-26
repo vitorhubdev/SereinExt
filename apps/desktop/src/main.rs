@@ -68,14 +68,8 @@ const SIGN_IN_HEADER_HEIGHT: f32 = if cfg!(target_os = "windows") {
 	60.0
 };
 
-/// Installs the ring crypto provider for rustls/reqwest, once per process.
-/// Later calls are silent no-ops, so tests can share this single point.
-pub fn ensure_tls_provider() {
-	let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
 fn main() -> eframe::Result {
-	ensure_tls_provider();
+	discord_api::ensure_tls_provider();
 	#[cfg(all(debug_assertions, feature = "demo"))]
 	if std::env::args().any(|arg| arg == "--demo")
 		&& std::env::args().any(|arg| arg == "--demo-check-spotify")
@@ -6991,10 +6985,10 @@ mod tests {
 	}
 	#[test]
 	fn tls_provider_supports_reqwest_client_build() {
-		ensure_tls_provider();
+		discord_api::ensure_tls_provider();
 		assert!(reqwest::Client::builder().build().is_ok());
 		// Installing twice is a silent no-op, never an error.
-		ensure_tls_provider();
+		discord_api::ensure_tls_provider();
 		assert!(reqwest::Client::builder().build().is_ok());
 	}
 	#[test]

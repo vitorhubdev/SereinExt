@@ -119,6 +119,7 @@ mod tests {
 	};
 	#[tokio::test]
 	async fn invites_http_pause_preserves_features_and_revoke_reconciles_without_retry() {
+		crate::ensure_tls_provider();
 		tokio::time::timeout(Duration::from_secs(10), async {
 			let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 			let mut api = DiscordApi::new(Arc::new(SessionSecret::from_owner_input("SYNTHETIC_INVITES_TOKEN".into()).unwrap())).unwrap();

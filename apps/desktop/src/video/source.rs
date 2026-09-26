@@ -230,7 +230,7 @@ mod tests {
 
 	#[test]
 	fn alternating_tracks_reuse_buffered_ranges() {
-		crate::ensure_tls_provider();
+		discord_api::ensure_tls_provider();
 		let listener = TcpListener::bind("127.0.0.1:0").unwrap();
 		let address = listener.local_addr().unwrap();
 		let url = url::Url::parse(&format!("http://{address}/tracks.mov")).unwrap();
@@ -312,6 +312,7 @@ mod tests {
 
 	#[test]
 	fn cancellation_interrupts_a_stalled_range_body() {
+		discord_api::ensure_tls_provider();
 		let listener = TcpListener::bind("127.0.0.1:0").unwrap();
 		let url = url::Url::parse(&format!(
 			"http://{}/stalled.mov",
@@ -357,6 +358,7 @@ mod tests {
 
 	#[test]
 	fn ranges_follow_reads_and_seeks_and_reject_changed_responses() {
+		discord_api::ensure_tls_provider();
 		let listener = TcpListener::bind("127.0.0.1:0").unwrap();
 		let url = url::Url::parse(&format!(
 			"http://{}/synthetic.mov",

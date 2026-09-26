@@ -221,6 +221,7 @@ mod tests {
 	use super::*;
 	#[tokio::test]
 	async fn slash_catalog_and_submission_use_typed_bounded_account_transport() {
+		crate::ensure_tls_provider();
 		use client_core::{Command, Event, auth::SessionSecret};
 		use model::{
 			Id,

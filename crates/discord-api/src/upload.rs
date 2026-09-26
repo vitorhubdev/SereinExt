@@ -445,6 +445,7 @@ impl DiscordApi {
 		let client = self
 			.upload_client
 			.get_or_try_init(|| async {
+				crate::ensure_tls_provider();
 				reqwest::Client::builder()
 					.redirect(reqwest::redirect::Policy::none())
 					.retry(reqwest::retry::never())
@@ -728,6 +729,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn staged_upload_streams_without_credentials_and_reconciles_message() {
+		crate::ensure_tls_provider();
 		tokio::time::timeout(Duration::from_secs(10), async {
             let fixture = Fixture::new(&vec![b'x'; CHUNK_BYTES * 2 + 9]).await;
             let source = Source::inspect(fixture.0.clone()).await.unwrap();
@@ -781,6 +783,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn upload_rejects_changed_missing_oversized_sources_and_untrusted_targets() {
+		crate::ensure_tls_provider();
 		let fixture = Fixture::new(b"synthetic").await;
 		let source = Source::inspect(fixture.0.clone()).await.unwrap();
 		tokio::fs::write(&fixture.0, b"changed").await.unwrap();
@@ -820,6 +823,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn upload_cancel_before_write_and_redirect_never_send_message() {
+		crate::ensure_tls_provider();
 		tokio::time::timeout(Duration::from_secs(10), async {
             let fixture = Fixture::new(b"synthetic").await;
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -855,6 +859,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn cancellation_during_message_post_keeps_outcome_unknown() {
+		crate::ensure_tls_provider();
 		tokio::time::timeout(Duration::from_secs(10), async {
             let fixture = Fixture::new(b"synthetic").await;
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -888,6 +893,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn cancelling_put_or_changing_its_source_never_creates_message() {
+		crate::ensure_tls_provider();
 		tokio::time::timeout(Duration::from_secs(10), async {
             for cancel_put in [true, false] {
                 let fixture = Fixture::new(&vec![b'x'; CHUNK_BYTES * 2 + 9]).await;

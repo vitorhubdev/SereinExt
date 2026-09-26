@@ -1021,7 +1021,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn transfer_limits_and_cancel_stalled_response() {
-		crate::ensure_tls_provider();
+		discord_api::ensure_tls_provider();
 		use tokio::io::{AsyncReadExt, AsyncWriteExt};
 		let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let url = url::Url::parse(&format!(

@@ -85,6 +85,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn forum_posts_are_scoped_paged_and_reject_foreign_rows() {
+		crate::ensure_tls_provider();
 		tokio::time::timeout(Duration::from_secs(10), async {
 			let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 			let mut api = DiscordApi::new(Arc::new(

@@ -1843,6 +1843,7 @@ mod tests {
 	}
 	#[test]
 	fn bounded_images_cache_reopen_eviction_and_cancelled_cleanup() {
+		discord_api::ensure_tls_provider();
 		assert!(cdn_url("../token").is_none());
 		assert_eq!(
 			cdn_url("banner-1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(),
@@ -2068,7 +2069,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn synthetic_download_limits_redirects_and_retry_delay() {
-		crate::ensure_tls_provider();
+		discord_api::ensure_tls_provider();
 		let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let address = listener.local_addr().unwrap();
 		let bytes = png(2, 2);

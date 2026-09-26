@@ -115,6 +115,7 @@ mod tests {
 	};
 	#[tokio::test]
 	async fn friend_invites_scope_dm_and_confirm_message_without_retry() {
+		crate::ensure_tls_provider();
 		let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let mut api = DiscordApi::new(Arc::new(
 			SessionSecret::from_owner_input("SYNTHETIC_INVITE_TOKEN".into()).unwrap(),
@@ -210,6 +211,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn server_actions_routes_scope_and_uncertain_writes() {
+		crate::ensure_tls_provider();
 		let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let mut api = DiscordApi::new(Arc::new(
 			SessionSecret::from_owner_input("SYNTHETIC_SERVER_TOKEN".into()).unwrap(),

@@ -36,6 +36,7 @@ impl Metadata {
 
 /// One client per sharing session; no credentials, proxy, redirects, persistence or retries.
 pub fn client() -> Result<Client, &'static str> {
+	crate::ensure_tls_provider();
 	Client::builder()
 		.https_only(true)
 		.no_proxy()
@@ -161,6 +162,7 @@ mod tests {
 	use super::*;
 	#[tokio::test]
 	async fn lookup_rejects_redirects_oversize_and_honors_shared_cooldown() {
+		crate::ensure_tls_provider();
 		use tokio::io::{AsyncReadExt, AsyncWriteExt};
 		let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let url = format!("http://{}/synthetic", listener.local_addr().unwrap());

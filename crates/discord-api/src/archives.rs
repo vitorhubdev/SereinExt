@@ -59,6 +59,7 @@ mod tests {
 	};
 	#[tokio::test]
 	async fn archive_routes_are_read_only_scoped_and_encode_the_correct_cursor() {
+		crate::ensure_tls_provider();
 		tokio::time::timeout(Duration::from_secs(10),async {
             let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
             let mut api=DiscordApi::new(Arc::new(SessionSecret::from_owner_input("SYNTHETIC_ARCHIVE_TOKEN".into()).unwrap())).unwrap();

@@ -228,6 +228,7 @@ mod tests {
 	};
 	#[tokio::test]
 	async fn role_edit_http_preserves_fresh_unknown_bits_and_reconciles() {
+		crate::ensure_tls_provider();
 		tokio::time::timeout(Duration::from_secs(10), async {
 			let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 			let mut api = DiscordApi::new(Arc::new(SessionSecret::from_owner_input("SYNTHETIC_ROLE_TOKEN".into()).unwrap())).unwrap();

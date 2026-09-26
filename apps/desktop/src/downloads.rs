@@ -833,7 +833,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn embedded_image_download_requires_bounded_png_length() {
-		crate::ensure_tls_provider();
+		discord_api::ensure_tls_provider();
 		let failed = Arc::new(AtomicBool::new(false));
 		let file = CopyFile::create("image.png", failed.clone()).unwrap();
 		let client = reqwest::Client::builder()
@@ -928,6 +928,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn explicit_download_stream_limits_cancel_and_atomic_replacement() {
+		discord_api::ensure_tls_provider();
 		let mut image = attachment();
 		assert!(original_url(&image).is_some());
 		// Admission depends on a bounded original CDN target, not an image MIME type.

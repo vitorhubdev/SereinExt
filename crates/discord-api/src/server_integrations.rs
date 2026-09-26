@@ -273,6 +273,7 @@ mod tests {
 	};
 	#[tokio::test]
 	async fn webhook_url_copy_uses_authenticated_get_and_rejects_wrong_scope() {
+		crate::ensure_tls_provider();
 		tokio::time::timeout(Duration::from_secs(10), async {
             let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let mut api = DiscordApi::new(Arc::new(SessionSecret::from_owner_input("SYNTHETIC_ACCOUNT_TOKEN".into()).unwrap())).unwrap();
@@ -302,6 +303,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn integrations_http_permission_scopes_mutation_reconciliation_and_no_retry() {
+		crate::ensure_tls_provider();
 		for scope in [None, Some(Id(4))] {
 			tokio::time::timeout(Duration::from_secs(10),async {
 			let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();

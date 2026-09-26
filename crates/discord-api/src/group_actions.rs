@@ -106,6 +106,7 @@ mod tests {
 	};
 	#[tokio::test]
 	async fn group_routes_validate_outcomes_and_never_retry_uncertain_writes() {
+		crate::ensure_tls_provider();
 		let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let mut api = DiscordApi::new(Arc::new(
 			SessionSecret::from_owner_input("SYNTHETIC_GROUP_TOKEN".into()).unwrap(),

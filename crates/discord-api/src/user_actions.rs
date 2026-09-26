@@ -229,6 +229,7 @@ mod tests {
 	/// Regression: note reads handle empty, missing and forbidden responses without writes.
 	#[tokio::test]
 	async fn notes_read_empty_missing_existing_and_forbidden_without_writes() {
+		crate::ensure_tls_provider();
 		for (status, body, expected) in [
 			(
 				200,
@@ -287,6 +288,7 @@ mod tests {
 	/// Regression: account and friend actions use scoped routes and confirm outcomes.
 	#[tokio::test]
 	async fn account_and_friend_request_actions_use_scoped_routes_and_confirm_remote_outcomes() {
+		crate::ensure_tls_provider();
 		let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let mut api = DiscordApi::new(Arc::new(
 			SessionSecret::from_owner_input("SYNTHETIC_USER_ACTION_TOKEN".into()).unwrap(),
@@ -586,6 +588,7 @@ mod tests {
 	/// Regression: a challenged friend request surfaces and resumes once with the solution.
 	#[tokio::test]
 	async fn friend_request_captcha_surfaces_and_resumes_once_with_the_solution() {
+		crate::ensure_tls_provider();
 		// Discord can answer a friend request with a per-action captcha. The session must
 		// stay usable, the challenge must surface to the user, and the solved token must be
 		// replayed on that same write only.

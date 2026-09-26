@@ -875,6 +875,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn channel_routes_preserve_permissions_scope_partial_edits_and_never_retry() {
+		crate::ensure_tls_provider();
 		let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let mut api = DiscordApi::new(Arc::new(
 			SessionSecret::from_owner_input("SYNTHETIC_CHANNEL_TOKEN".into()).unwrap(),
@@ -1066,6 +1067,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn channel_move_uses_the_guild_position_route() {
+		crate::ensure_tls_provider();
 		let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let mut api = DiscordApi::new(Arc::new(
 			SessionSecret::from_owner_input("SYNTHETIC_CHANNEL_TOKEN".into()).unwrap(),

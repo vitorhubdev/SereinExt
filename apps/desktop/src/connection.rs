@@ -859,7 +859,7 @@ fn scope_history_failure(event: Event, channel: model::Id, request: u64) -> Even
 mod tests {
 	#[tokio::test]
 	async fn activity_privacy_waits_for_opt_in_and_propagates_expired_session() {
-		crate::ensure_tls_provider();
+		discord_api::ensure_tls_provider();
 		let api = Arc::new(
 			DiscordApi::new(Arc::new(
 				SessionSecret::from_owner_input("SYNTHETIC_ACTIVITY_PRIVACY_TOKEN".into()).unwrap(),

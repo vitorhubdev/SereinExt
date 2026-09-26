@@ -1,4 +1,11 @@
 // Direct, origin-fixed REST adapter. No cookies, redirects, logging, persistence or bot SDK.
+
+/// Installs the ring crypto provider for rustls/reqwest, once per process.
+/// Later calls are silent no-ops, so every client builder and test shares this single point.
+pub fn ensure_tls_provider() {
+	let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 mod activity_sharing;
 mod archives;
 mod channel_actions;
@@ -1439,6 +1446,7 @@ mod tests {
 	use super::*;
 	#[tokio::test]
 	async fn guild_creation_posts_once_and_waits_for_gateway_state() {
+		crate::ensure_tls_provider();
 		use tokio::{
 			io::{AsyncReadExt, AsyncWriteExt},
 			net::TcpListener,
@@ -1541,6 +1549,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn invite_captcha_preserves_fatal_auth_and_malformed_challenges() {
+		crate::ensure_tls_provider();
 		assert_eq!(invite_captcha(br#"{"captcha_service":"hcaptcha","captcha_sitekey":"synthetic-sitekey","captcha_rqdata":"escaped\/data"}"#).unwrap().rqdata(), Some("escaped/data"));
 		for (status, code, service) in [
 			("403 Forbidden", 0, "hcaptcha"),
@@ -1609,6 +1618,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn invite_captcha_only_resumes_explicit_matching_write() {
+		crate::ensure_tls_provider();
 		let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let mut api = DiscordApi::new(Arc::new(
 			SessionSecret::from_owner_input("SYNTHETIC_INVITE_OWNER_TOKEN".into()).unwrap(),
@@ -1723,6 +1733,7 @@ mod tests {
 	};
 	#[tokio::test]
 	async fn single_message_delete_confirms_only_success_and_never_retries_ambiguity() {
+		crate::ensure_tls_provider();
 		use model::Id;
 		tokio::time::timeout(Duration::from_secs(10), async {
 			let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1789,6 +1800,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn history_after_includes_zero_and_rejects_combined_cursors() {
+		crate::ensure_tls_provider();
 		use model::Id;
 		tokio::time::timeout(Duration::from_secs(10), async {
 			let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -1893,6 +1905,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn search_routes_are_encoded_scoped_and_indexing_never_auto_retries() {
+		crate::ensure_tls_provider();
 		use client_core::search::Outcome;
 		use model::Id;
 		tokio::time::timeout(Duration::from_secs(10),async {
@@ -1936,6 +1949,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn read_ack_is_explicit_scoped_and_chains_only_session_tokens() {
+		crate::ensure_tls_provider();
 		use model::Id;
 		tokio::time::timeout(Duration::from_secs(10), async {
 			let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2024,6 +2038,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn reaction_routes_encode_one_component_and_read_back_scoped_counts() {
+		crate::ensure_tls_provider();
 		use client_core::reactions::{Command as R, Event as E};
 		use model::{Id, ReactionEmoji};
 		let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -2166,6 +2181,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn sticker_send_writes_one_id_and_preserves_reply() {
+		crate::ensure_tls_provider();
 		tokio::time::timeout(Duration::from_secs(5), async {
             let listener=TcpListener::bind("127.0.0.1:0").await.unwrap();
             let mut api=DiscordApi::new(Arc::new(SessionSecret::from_owner_input("SYNTHETIC_STICKER_TOKEN".into()).unwrap())).unwrap();
@@ -2195,6 +2211,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn send_response_must_belong_to_the_requested_channel() {
+		crate::ensure_tls_provider();
 		tokio::time::timeout(Duration::from_secs(5), async {
 			let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 			let mut api = DiscordApi::new(Arc::new(
@@ -2267,6 +2284,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn profiles_are_scoped_capped_and_do_not_block_message_writes() {
+		crate::ensure_tls_provider();
 		let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let mut api = DiscordApi::new(Arc::new(
 			SessionSecret::from_owner_input("SYNTHETIC_PROFILE_TOKEN".into()).unwrap(),
@@ -2403,6 +2421,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn explicit_dm_ring_and_decline_use_only_scoped_routes() {
+		crate::ensure_tls_provider();
 		let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let mut api = DiscordApi::new(Arc::new(
 			SessionSecret::from_owner_input("SYNTHETIC_OWNER_TOKEN".into()).unwrap(),
@@ -2435,6 +2454,7 @@ mod tests {
 	}
 	#[tokio::test]
 	async fn local_http_checks_redirect_expiry_rate_limits_and_response_cap() {
+		crate::ensure_tls_provider();
 		for (status, body, expected) in [
 			(
 				"302 Found",
