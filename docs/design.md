@@ -35,7 +35,7 @@ their renamed presets, so a stored preference survives the rename. `--demo --dem
 ## Brand mark and server rail
 
 The application mark is the Serein chat-wave (`assets/brand/`), not a third-party logo. Its
-silhouette is rasterized into the shared icon atlas as `serein-mark` and painted wherever the
+silhouette is rasterized into the shared icon atlas as `nivra-mark` and painted wherever the
 client identifies itself: the loading screen, the sign-in card and its button, the login header
 and the Direct Messages tile at the top of the server rail.
 

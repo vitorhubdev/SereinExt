@@ -26,10 +26,10 @@ legal disclaimer applies. The license file is staged in both packages as
 One repository-drawn glyph, `thread.svg` (four slanted round-capped bars on the same 256-unit
 grid), marks threads; it is rasterized with the Phosphor set and carries no upstream license.
 
-- `atlas.png`: 512×896 RGBA, 117,224 bytes.
-  SHA-256 `173c28750d0e54e07ee1aeb3b3cd22fa080b2aa3daba40c45fdcae69cbb95279`.
+- `atlas.png`: 512×896 RGBA, 26,184 bytes.
+  SHA-256 `48600eeb93c610656eb0703b19ef83074e3b646be6db46da57ff5d03c5cfa947`.
 - `index.tsv`: icon name, tab, zero-based cell; SHA-256
-  `d5521392722faa09bb94659373af9f688e0fd4575a8e216f29840894383d1f7b`.
+  `1c3e114310a014eac01c208ff02a99ef2b88ee5945105fe24ada091c621872d1`.
 
 The bot badge and bot-conversation visibility glyphs are unmodified Phosphor `robot-fill.svg`
 and `eye-fill.svg`, fetched from the same pinned 2.1.1 package on September 25, 2026.
@@ -52,8 +52,8 @@ The folder and open-folder glyphs are unmodified Phosphor `folder-fill.svg` and
 The media-viewer caret and download glyphs are unmodified Phosphor `caret-left-bold.svg` and
 `download-simple-bold.svg`, fetched from the same pinned 2.1.1 package on September 11, 2026.
 
-The `serein-mark` cell is our own artwork, not an upstream icon: it is the solid silhouette of
-the Serein chat-wave from `assets/brand/serein-mark.svg`, trimmed to its bounding box so it
+The `nivra-mark` cell is our own artwork, not an upstream icon: it is the solid silhouette of
+the Nivra N from `assets/brand/nivra-mark.svg`, trimmed and squared to its bounding box so it
 matches Phosphor's glyph weight in the cell. It replaced the Discord brand mark that previously
 occupied cell 58; no third-party application logo is bundled any more. `tools/generate-icons.py`
 pins its SHA-256 like every upstream source and rasterizes it from the repository rather than a

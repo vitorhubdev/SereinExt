@@ -18,7 +18,7 @@ fn main() {
 
 fn windows_icon() {
 	use std::{path::PathBuf, process::Command};
-	println!("cargo:rerun-if-changed=../../packaging/windows/Serein.ico");
+	println!("cargo:rerun-if-changed=../../packaging/windows/Nivra.ico");
 	println!("cargo:rerun-if-changed=../../packaging/windows/serein.rc");
 	let root = PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap())
 		.join("../../packaging/windows");

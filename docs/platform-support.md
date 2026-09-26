@@ -142,7 +142,7 @@ Close can never strand the application without a way back.
 The adapter uses existing user32/Shell APIs and dependencies, with no background
 polling. A synthetic native Windows test verifies registration,
 minimize/restore, own-window taskbar recovery, Quit event and cleanup. macOS uses a native menu bar icon with Show Serein / Quit actions; it draws Serein's own
-mark (`assets/brand/serein-tray.png`, rendered from the brand SVG) as an 18-point template
+mark (`assets/brand/nivra-tray.png`, rendered from the brand SVG) as an 18-point template
 image, so the system tints it for light, dark and highlighted menu bars. Minimized windows
 remain in the Dock.
 

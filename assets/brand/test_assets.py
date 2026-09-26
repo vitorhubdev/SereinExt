@@ -19,6 +19,7 @@ SVG_NS = '{http://www.w3.org/2000/svg}'
 
 CANVAS = 1024
 TRAY = 72
+HICOLOR_SIZES = (16, 22, 24, 32, 48, 64, 96, 128, 256, 512, 1024)
 
 # A fringe pixel may not fall below this share of the plate median luminance,
 # and at most this share of the fringe is allowed to do so.
@@ -172,6 +173,137 @@ class BrandAssetTest(unittest.TestCase):
         for path in paths:
             fill = path.attrib.get('fill', root.attrib.get('fill', ''))
             self.assertIn(fill.lower(), ('#fff', '#ffffff', 'white'))
+
+
+import struct
+from pathlib import Path
+ROOT = Path(__file__).resolve().parents[2]
+PACKAGING = ROOT / 'packaging'
+# References that must survive this change: each icon name is bound to an application
+# identity (the .desktop entry, the AppImage file name, the Flatpak app id or the macOS
+# bundle) that is renamed in the next phase, not here.
+BOUND_TO_APP_ID = {
+    'packaging/appimage/build.py': [
+        'packaging/linux/hicolor/256x256/apps/serein.png',
+    ],
+    'packaging/flatpak/cz.viceverse.serein.json': [
+        '/app/share/icons/hicolor/1024x1024/apps/serein.png',
+    ],
+    'packaging/macos/Info.plist': [
+        'Serein.icns',
+    ],
+    'packaging/macos/compile-icon.sh': [
+        'Serein.icns',
+        'Serein.icon',
+    ],
+}
+BRAND_REFERENCE_PATTERNS = (
+    'brand/serein-',
+    'apps/serein.png',
+    'Serein.ico',
+    'Serein.icns',
+    'Serein.icon',
+    'serein-mark',
+)
+SCANNED = ('apps', 'crates', 'tools', 'packaging', 'assets', 'docs')
+TEXT_SUFFIXES = ('.rs', '.py', '.cjs', '.ts', '.js', '.md', '.nsi', '.rc', '.sh',
+                 '.plist', '.json', '.toml', '.yml', '.yaml', '.svg', '.desktop', '.txt')
+def packaged_icon_paths():
+    hicolor = PACKAGING / 'linux' / 'hicolor'
+    for size in HICOLOR_SIZES:
+        yield hicolor / f'{size}x{size}' / 'apps' / 'nivra.png'
+    yield hicolor / 'scalable' / 'apps' / 'nivra.svg'
+    yield hicolor / 'scalable' / 'apps' / 'nivra-symbolic.svg'
+    yield PACKAGING / 'windows' / 'Nivra.ico'
+    yield PACKAGING / 'windows' / 'nivra.png'
+    yield PACKAGING / 'macos' / 'Nivra.icns'
+class PackagedIconTest(unittest.TestCase):
+    def test_hicolor_theme_carries_every_nivra_size(self):
+        hicolor = PACKAGING / 'linux' / 'hicolor'
+        for size in HICOLOR_SIZES:
+            with self.subTest(size=size):
+                path = hicolor / f'{size}x{size}' / 'apps' / 'nivra.png'
+                self.assertTrue(path.is_file(), f'missing {path}')
+                width, height, channels, _ = read_png(path)
+                self.assertEqual((width, height), (size, size))
+                self.assertEqual(channels, 4, 'hicolor icons must carry an alpha channel')
+    def test_hicolor_icons_have_transparent_corners(self):
+        hicolor = PACKAGING / 'linux' / 'hicolor'
+        for size in HICOLOR_SIZES:
+            with self.subTest(size=size):
+                width, _, _, rows = read_png(hicolor / f'{size}x{size}' / 'apps' / 'nivra.png')
+                first, last = rows[0], rows[width - 1]
+                for line, column in ((first, 0), (first, width - 1), (last, 0), (last, width - 1)):
+                    self.assertEqual(line[column * 4 + 3], 0, 'the plate corner must be clear')
+    def test_scalable_sources_parse(self):
+        scalable = PACKAGING / 'linux' / 'hicolor' / 'scalable' / 'apps'
+        for name in ('nivra.svg', 'nivra-symbolic.svg'):
+            with self.subTest(name=name):
+                root = ET.parse(scalable / name).getroot()
+                self.assertEqual(root.tag, SVG_NS + 'svg')
+                self.assertTrue(root.findall('.//' + SVG_NS + 'path'))
+    def test_symbolic_icon_is_monochrome(self):
+        root = ET.parse(
+            PACKAGING / 'linux' / 'hicolor' / 'scalable' / 'apps' / 'nivra-symbolic.svg'
+        ).getroot()
+        for path in root.findall('.//' + SVG_NS + 'path'):
+            fill = path.attrib.get('fill', root.attrib.get('fill', ''))
+            self.assertIn(fill.lower(), ('#000', '#000000', 'black'))
+    def test_windows_icon_carries_the_required_frames(self):
+        data = (PACKAGING / 'windows' / 'Nivra.ico').read_bytes()
+        reserved, kind, count = struct.unpack('<HHH', data[:6])
+        self.assertEqual((reserved, kind), (0, 1))
+        sides = set()
+        offset = 6
+        for _ in range(count):
+            width, height, _, _, _, _, size, start = struct.unpack('<BBBBHHII', data[offset:offset + 16])
+            offset += 16
+            sides.add(width or 256)
+            self.assertEqual(width, height, 'every frame must be square')
+            self.assertLessEqual(start + size, len(data), 'a frame runs past the end of the file')
+        for required in (16, 24, 32, 48, 64, 128, 256):
+            self.assertIn(required, sides, f'the icon set has no {required} pixel frame')
+    def test_windows_icon_png_is_the_256_frame(self):
+        width, height, channels, _ = read_png(PACKAGING / 'windows' / 'nivra.png')
+        self.assertEqual((width, height, channels), (256, 256, 4))
+    def test_macos_icon_set_is_well_formed(self):
+        data = (PACKAGING / 'macos' / 'Nivra.icns').read_bytes()
+        self.assertEqual(data[:4], b'icns')
+        self.assertEqual(struct.unpack('>I', data[4:8])[0], len(data))
+        pos = 8
+        entries = 0
+        while pos < len(data):
+            kind = data[pos:pos + 4]
+            length = struct.unpack('>I', data[pos + 4:pos + 8])[0]
+            self.assertGreaterEqual(length, 8, f'{kind} is too small to hold a header')
+            self.assertLessEqual(pos + length, len(data), f'{kind} runs past the end of the file')
+            if kind != b'TOC ' and kind != b'icns':
+                entries += 1
+            pos += length
+        self.assertEqual(pos, len(data), 'the icon set does not end on an entry boundary')
+        self.assertGreaterEqual(entries, 8, 'the icon set is missing the macOS ladder')
+    def test_only_app_id_bound_references_name_the_old_brand(self):
+        found = []
+        for folder in SCANNED:
+            for path in sorted((ROOT / folder).rglob('*')):
+                if path.suffix not in TEXT_SUFFIXES or not path.is_file():
+                    continue
+                if path.resolve() == Path(__file__).resolve():
+                    continue  # this file names the patterns on purpose
+                try:
+                    text = path.read_text(encoding='utf-8')
+                except (UnicodeDecodeError, OSError):
+                    continue
+                relative = path.relative_to(ROOT).as_posix()
+                allowed = BOUND_TO_APP_ID.get(relative, [])
+                for number, line in enumerate(text.splitlines(), start=1):
+                    for pattern in BRAND_REFERENCE_PATTERNS:
+                        if pattern not in line:
+                            continue
+                        if any(token in line for token in allowed):
+                            continue
+                        found.append(f'{relative}:{number}: {line.strip()}')
+        self.assertEqual(found, [], 'stale Serein brand references: ' + '; '.join(found))
 
 
 if __name__ == '__main__':

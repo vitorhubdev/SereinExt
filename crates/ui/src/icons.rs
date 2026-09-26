@@ -301,7 +301,7 @@ impl Icon {
 			Icon::Copy => "copy",
 			Icon::Verified => "seal-check",
 			Icon::Calendar => "calendar-blank",
-			Icon::Serein => "serein-mark",
+			Icon::Serein => "nivra-mark",
 			Icon::File => "file",
 			Icon::FileImage => "file-image",
 			Icon::FilePdf => "file-pdf",

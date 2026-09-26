@@ -54,7 +54,7 @@ impl Tray {
 		let worker_events = events.clone();
 		runtime.spawn(async move {
 			let Ok(icon) = image::load_from_memory_with_format(
-				include_bytes!("../../../../packaging/linux/hicolor/32x32/apps/serein.png"),
+				include_bytes!("../../../../packaging/linux/hicolor/32x32/apps/nivra.png"),
 				image::ImageFormat::Png,
 			) else {
 				worker_events.push(Event::Unavailable);
