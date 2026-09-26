@@ -86,6 +86,13 @@ fn query_value<'a>(query: &'a str, name: &str) -> Option<&'a str> {
 	})
 }
 
+fn valid_x_username(value: &str) -> bool {
+	(1..=15).contains(&value.len())
+		&& value
+			.bytes()
+			.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+}
+
 fn video_id(value: &str) -> Option<&str> {
 	(!value.is_empty()
 		&& value.len() <= 32
@@ -96,7 +103,7 @@ fn video_id(value: &str) -> Option<&str> {
 }
 
 fn provider_host(host: &str) -> &str {
-	host.trim_start_matches("www.")
+	host.strip_prefix("www.").unwrap_or(host)
 }
 
 /// Strict HTTPS host check used by the chat play button.
@@ -149,6 +156,7 @@ pub fn normalize(value: &str) -> Option<String> {
 				.take(4)
 				.collect();
 			if parts.len() < 3
+				|| !valid_x_username(parts[0])
 				|| parts[1] != "status"
 				|| !parts[2].bytes().all(|byte| byte.is_ascii_digit())
 			{
@@ -158,7 +166,9 @@ pub fn normalize(value: &str) -> Option<String> {
 		}
 		"vimeo.com" => {
 			let id = path_segments(url.path)
-				.find(|part| part.bytes().all(|byte| byte.is_ascii_digit()))?;
+				.find(|part| {
+					!part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())
+				})?;
 			if id.is_empty() {
 				return None;
 			}
@@ -281,6 +291,34 @@ mod tests {
 			assert!(!is_supported_host(url), "{url}");
 			assert!(normalize(url).is_none(), "{url}");
 		}
+	}
+
+	#[test]
+	fn doubled_www_prefix_is_not_a_supported_host() {
+		assert!(!is_supported_host(
+			"https://www.www.youtube.com/watch?v=dQw4w9WgXcQ"
+		));
+		assert!(normalize("https://www.www.youtube.com/watch?v=dQw4w9WgXcQ").is_none());
+		assert!(is_supported_host(
+			"https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+		));
+	}
+
+	#[test]
+	fn x_usernames_use_the_platform_charset() {
+		assert!(normalize("https://x.com/a\"b<>/status/123").is_none());
+		assert_eq!(
+			normalize("https://x.com/jack/status/20").as_deref(),
+			Some("https://x.com/jack/status/20")
+		);
+	}
+
+	#[test]
+	fn vimeo_ids_skip_empty_path_segments() {
+		assert_eq!(
+			normalize("https://vimeo.com/channels//123456").as_deref(),
+			Some("https://player.vimeo.com/video/123456?autoplay=1")
+		);
 	}
 
 	#[test]
