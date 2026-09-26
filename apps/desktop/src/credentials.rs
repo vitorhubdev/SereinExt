@@ -204,7 +204,18 @@ pub fn loaded_status(result: &Result<Option<SessionSecret>, CredentialError>) ->
 		Ok(None) => "No saved login found. Sign in with Discord to save one.",
 		Err(CredentialError::Invalid) => "Saved login is invalid. Sign in with Discord again.",
 		Err(CredentialError::NoStore) => {
-			"No OS keyring found; sign in each launch. Install GNOME Keyring or KWallet to stay signed in."
+			#[cfg(target_os = "windows")]
+			{
+				"No OS keyring found (Windows Credential Manager unavailable); sign in each launch."
+			}
+			#[cfg(target_os = "macos")]
+			{
+				"No OS keyring found (macOS Keychain unavailable); sign in each launch."
+			}
+			#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+			{
+				"No OS keyring found; sign in each launch. Install GNOME Keyring or KWallet to stay signed in."
+			}
 		}
 		Err(CredentialError::Unavailable) => {
 			"Saved login unavailable; sign in with Discord. No plaintext fallback."
@@ -223,6 +234,18 @@ mod tests {
 		let status = loaded_status(&Err(CredentialError::NoStore));
 		assert!(status.contains("No OS keyring"));
 		assert!(status.contains("sign in each launch"));
+	}
+
+	#[test]
+	fn no_store_message_matches_current_platform() {
+		let status = loaded_status(&Err(CredentialError::NoStore));
+		assert!(status.contains("sign in each launch"));
+		#[cfg(target_os = "windows")]
+		assert!(status.contains("Windows Credential Manager"));
+		#[cfg(target_os = "macos")]
+		assert!(status.contains("Keychain"));
+		#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+		assert!(status.contains("GNOME Keyring"));
 	}
 
 	#[test]
