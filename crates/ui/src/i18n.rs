@@ -587,6 +587,7 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch." => {
 			"As preferências do aplicativo não foram salvas. Se o seu aceite dos termos não foi registrado, o SereinExt vai perguntar de novo na próxima vez que abrir."
 		}
+		"Your session expired; sign in again to continue." => "Sua sessão expirou; entre de novo para continuar.",
 		"I understand — continue" => "Entendi — continuar",
 		"Zoom" => "Zoom",
 		"Scales text and controls across the app." => {
@@ -1247,6 +1248,7 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch." => {
 			"Las preferencias de la aplicación no se guardaron. Si tu aceptación de los términos no quedó registrada, SereinExt volverá a preguntar la próxima vez que se abra."
 		}
+		"Your session expired; sign in again to continue." => "Tu sesión expiró; inicia sesión de nuevo para continuar.",
 		"I understand — continue" => "Entendido — continuar",
 		"Zoom" => "Zoom",
 		"Scales text and controls across the app." => {
@@ -1698,6 +1700,7 @@ mod tests {
 			"View full licenses",
 			"Hide full licenses",
 			"App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch.",
+			"Your session expired; sign in again to continue.",
 			"I understand — continue",
 		];
 		for key in KEYS {

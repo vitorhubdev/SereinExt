@@ -913,6 +913,10 @@ fn user_action_notice(event: &Event) -> Option<(ui::design::Level, &'static str)
 const NOTICES_SUMMARY: &str = "SereinExt is an unofficial app for your own Discord account: it is not Discord, it is not endorsed by Discord, and Discord's rules still apply to your account. It also includes other people's work (libraries, fonts and icons) under their own licenses, and accepting here does not waive those licenses or shift their copyright. Continuing confirms that you understand both points.";
 const NOTICES_PREFERENCES_UNREAD: &str = "Your app preferences could not be read, so SereinExt cannot tell whether you accepted this before.";
 const APP_PREFERENCES_NOT_SAVED: &str = "App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch.";
+/// Layperson warning shown on the sign-in screen after the saved session expires.
+/// The raw state status ("reconnect explicitly; drafts remain in RAM") stays for
+/// diagnostics; this line tells the owner that signing in again is all it takes.
+const SESSION_EXPIRED_SIGN_IN_AGAIN: &str = "Your session expired; sign in again to continue.";
 /// Full license texts, revealed on demand from the first-run notices dialog.
 const THIRD_PARTY_NOTICES: &str = include_str!("../../../THIRD_PARTY_NOTICES.md");
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -933,6 +937,12 @@ fn notices_prompt(demo: bool, settings: &app_settings::Settings, unread: bool) -
 	NoticesPrompt::Show {
 		preferences_unread: unread,
 	}
+}
+/// Returns the sign-in warning key when an expired session is what brought the
+/// owner back to the sign-in screen, so the banner reads as guidance instead of
+/// a technical state dump. Any other auth state keeps its current status line.
+fn expired_session_notice(auth: &AuthState) -> Option<&'static str> {
+	matches!(auth, AuthState::Expired).then_some(SESSION_EXPIRED_SIGN_IN_AGAIN)
 }
 /// Records acceptance in memory and queues it for the next preferences save.
 fn accept_notices(settings: &mut app_settings::Settings) {
@@ -4645,7 +4655,19 @@ public static class SereinExtShortcut {
 					}
 					ui.vertical(|ui| {
 						ui.spacing_mut().item_spacing.y = 3.0;
-						if self.state.status != "Disconnected" || attention {
+						if let Some(expired) = expired_session_notice(&self.state.auth) {
+							ui.add(
+								egui::Label::new(
+									egui::RichText::new(ui::i18n::text(
+										self.messaging.language,
+										expired,
+									))
+									.size(13.0)
+									.color(color),
+								)
+								.wrap(),
+							);
+						} else if self.state.status != "Disconnected" || attention {
 							ui.add(
 								egui::Label::new(
 									egui::RichText::new(self.state.status)
@@ -7026,6 +7048,22 @@ mod tests {
 			for language in [model::Language::PortugueseBrazil, model::Language::Spanish] {
 				assert_ne!(ui::i18n::text(language, key), key, "{language:?}: {key}");
 			}
+		}
+	}
+	#[test]
+	fn expired_session_shows_sign_in_warning() {
+		assert_eq!(
+			expired_session_notice(&AuthState::Expired),
+			Some(SESSION_EXPIRED_SIGN_IN_AGAIN)
+		);
+		for auth in [
+			AuthState::Unauthenticated,
+			AuthState::Authenticating,
+			AuthState::Authenticated,
+			AuthState::Failed,
+			AuthState::Challenged,
+		] {
+			assert_eq!(expired_session_notice(&auth), None);
 		}
 	}
 	#[test]
