@@ -3641,7 +3641,24 @@ fn noise_level_row(
 			text_width,
 		)
 	});
-	let text_height = title.size().y + detail.as_ref().map_or(0.0, |d| d.size().y + 3.0);
+	// The meter starts 62 px before the right edge. When title, engine and
+	// badge do not fit ahead of it, the badge drops to its own line instead
+	// of painting over the meter and the radio. Only compact rows qualify:
+	// wider rows always have their detail line below the title.
+	let pill_width = badge.as_ref().map_or(0.0, |pill| pill.size().x + 12.0);
+	let inline_end = text_left
+		+ title.size().x
+		+ 8.0
+		+ engine.as_ref().map_or(0.0, |engine| engine.size().x + 8.0)
+		+ pill_width;
+	let badge_below =
+		compact && badge.is_some() && inline_end > width - 62.0 - 4.0;
+	let badge_height = badge
+		.as_ref()
+		.map_or(0.0, |pill| pill.size().y + 4.0);
+	let text_height = title.size().y
+		+ detail.as_ref().map_or(0.0, |d| d.size().y + 3.0)
+		+ badge_below.then_some(3.0 + badge_height).unwrap_or(0.0);
 	let padding = if compact { 7.0 } else { 10.0 };
 	let (rect, response) = ui.allocate_exact_size(
 		egui::vec2(width, text_height.max(glyph) + padding * 2.0),
@@ -3714,10 +3731,20 @@ fn noise_level_row(
 	}
 	if let Some(badge) = badge {
 		let size = badge.size();
-		let pill = egui::Rect::from_min_size(
-			egui::pos2(x, mid - size.y * 0.5 - 2.0),
-			size + egui::vec2(12.0, 4.0),
-		);
+		let pill = if badge_below {
+			egui::Rect::from_min_size(
+				egui::pos2(
+					rect.left() + text_left,
+					top + title_height + 3.0,
+				),
+				size + egui::vec2(12.0, 4.0),
+			)
+		} else {
+			egui::Rect::from_min_size(
+				egui::pos2(x, mid - size.y * 0.5 - 2.0),
+				size + egui::vec2(12.0, 4.0),
+			)
+		};
 		painter.rect_filled(pill, 9, p.accent.gamma_multiply(0.16));
 		painter.galley(pill.min + egui::vec2(6.0, 2.0), badge, p.accent);
 	}
@@ -5199,6 +5226,58 @@ mod tests {
 			"name hover shows {combined:?}: {:?}",
 			texts(&output).iter().map(|(text, _)| text).collect::<Vec<_>>()
 		);
+	}
+
+	#[test]
+	fn noise_badge_stays_before_the_meter_in_compact_menus() {
+		// Compact Portuguese menu, 260 px wide: title, engine and badge
+		// must all end before the usage meter, or the pill paints over
+		// the radio side and looks broken.
+		let ctx = egui::Context::default();
+		design::apply(&ctx);
+		let mut view = MessagingUi::default();
+		view.language = model::Language::PortugueseBrazil;
+		let mut output = ctx.run_ui(
+			egui::RawInput {
+				screen_rect: Some(egui::Rect::from_min_size(
+					egui::Pos2::ZERO,
+					egui::vec2(400.0, 600.0),
+				)),
+				events: vec![],
+				..Default::default()
+			},
+			|ui| {
+				ui.allocate_ui(egui::vec2(260.0, 600.0), |ui| {
+					view.noise_level_picker(ui, true);
+				});
+			},
+		);
+		output.textures_delta.clear();
+		// Meter bars: 5 px wide, 4 to 12 px tall, at the row's right side.
+		let mut meter_left = f32::MAX;
+		for shape in &output.shapes {
+			if let egui::Shape::Rect(rect) = &shape.shape {
+				let size = rect.rect.size();
+				if (size.x - 5.0).abs() < 0.6 && (4.0..=12.0).contains(&size.y) {
+					meter_left = meter_left.min(rect.rect.left());
+				}
+			}
+		}
+		assert!(
+			meter_left < f32::MAX,
+			"compact rows paint their usage meter"
+		);
+		for name in ["Padrão", "RNNoise", "Recomendado"] {
+			let end = texts(&output)
+				.iter()
+				.find(|(text, _)| text == name)
+				.map(|(_, rect)| rect.right())
+				.unwrap();
+			assert!(
+				end < meter_left,
+			 "{name} paints past the meter at {meter_left}: ends at {end}"
+			);
+		}
 	}
 
 	#[test]
