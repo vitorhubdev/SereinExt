@@ -3,6 +3,17 @@
 [graph]
 all-features = true
 
+# Accepted risk: RUSTSEC-2026-0217 is an out-of-bounds read in the tract-nnef
+# NNEF tensor parser, reachable only through tract_nnef::nnef().model_for_path /
+# model_for_read. The pinned deep_filter rev 978576aa loads its embedded model
+# (models/DeepFilterNet3_onnx.tar.gz via include_bytes!) only through
+# tract_onnx::onnx().model_for_path / model_for_read (libDF/src/tract.rs); the
+# pinned tree contains no nnef reference and libDF does not depend on tract-nnef,
+# so the vulnerable reader never runs in this build. Updating tract past 0.19.16
+# is blocked by pinned version conflicts (libm and half).
+[advisories]
+ignore = ["RUSTSEC-2026-0217"]
+
 [licenses]
 confidence-threshold = 0.95
 unused-allowed-license = "warn"
