@@ -1,38 +1,38 @@
 # Notification sounds
 
-The `discord/` files are byte-original assets downloaded September 21, 2026 from
-Discord's public asset host. Symbolic names were verified in the public
-[app bundle](https://discord.com/assets/web.9a6d63589ff469f3.js).
-They are 44.1 kHz stereo MP3s, each below 128 KiB and six seconds. Playback converts
-from the source sample rate; no re-encoding, metadata stripping or trimming is applied.
+The `nivra/` files are Nivra's own notification pack. Every cue was commissioned and
+produced for this project, so the whole set is covered by this repository's MIT and
+Apache-2.0 licences like the rest of the code, and nothing here needs a separate
+redistribution grant.
 
-| Bundled file | Official source | SHA-256 |
+They are Ogg Vorbis, stereo, 48 kHz, each below 128 KiB encoded and six seconds decoded.
+Playback converts from the source sample rate; no re-encoding, metadata stripping or
+trimming is applied. The longer cues are the two rings, which repeat so a call is still
+audible after the clip ends.
+
+| Bundled file | Bytes | SHA-256 |
 | --- | --- | --- |
-| `message.mp3` | [message1](https://discord.com/assets/3ed22d14f3c30bc4.mp3) | `31ad0482eee7770597b8aa723a80fd041ade0b076679b12293664f1f1777211b` |
-| `current-channel.mp3` | [message3](https://discord.com/assets/4f53c2f31ea0cdd8.mp3) | `295dccacbdb0728ffbb8b220a278a9f3384f5966fe9b1428f33518ffa2998505` |
-| `incoming-ring.mp3` | [call_ringing](https://discord.com/assets/c2a7111bb44b8da0.mp3) | `a2365a04f839099538271d06889147475ceef0845f8cc010425618f5dc412880` |
-| `outgoing-ring.mp3` | [call_calling](https://discord.com/assets/5146737af413d88e.mp3) | `c3999dbbbea7fca113d6f396b81d6054dd2dd6df79f442b62dfb74afddd36934` |
-| `mute.mp3` | [mute](https://discord.com/assets/2d3b4ba32c34c862.mp3) | `f6194168829b0701e8b40817d5173afed4b3b1e0b5074ab82ca31d97e4cb65c1` |
-| `unmute.mp3` | [unmute](https://discord.com/assets/e74c4a06134a20e4.mp3) | `1572881f90703c1e0cd138fe7486d2e53c0ac5d8509cade32029fb31650b9304` |
-| `deafen.mp3` | [deafen](https://discord.com/assets/529ff198eac567af.mp3) | `dee4468bbafb321b159dcab42f52d1fbfb1d01358437e0a3088c3345979211b8` |
-| `undeafen.mp3` | [undeafen](https://discord.com/assets/b150f03c89944403.mp3) | `690b64977594baa41c7978d76259224f67799ba337df2d1045dce970ef82b243` |
-| `camera-on.mp3` | [camera_on](https://discord.com/assets/855607d0932ea396.mp3) | `faeb721a072575c96d1e140aaecd469bf3f7278347596968dddf22fdb65005bf` |
-| `screen-share-on.mp3` | [stream_started](https://discord.com/assets/abe52a3c92953edb.mp3) | `b5cb29d5d5cc0e8e22fa014bac4a1c2d601f6890ae6db1c18d4b6310283a3271` |
-| `user-join.mp3` | [user_join](https://discord.com/assets/b135ff6c8e091b43.mp3) | `d30746caf3e4675ae0d822d51461a9ad24832afa1e20179c3c2fc7b50b911a26` |
-| `user-leave.mp3` | [user_leave](https://discord.com/assets/7b9a183742515fc2.mp3) | `9fd71c2d8112c82a7fb316602bb1645bc65f5edfa260110bbaae80090fbe9df0` |
+| `camera-on.ogg` | 6153 | `4f736c9f3bfb6989cf9db4bca22a174f6a78ef8e43b58b89723259c427d2c8fa` |
+| `current-channel.ogg` | 6428 | `c77b5b4505a6ea1d71b7a89a70b1023c3ea309af08857d967c8ce553e99a9dec` |
+| `deafen.ogg` | 6228 | `606ac1cbd387d774a0bfa382819ae67f00ff6ec809f60a6cebf6d06383f6eb29` |
+| `incoming-ring.ogg` | 16664 | `f793e925b8ef1d3e078dfce7bcf48be0e01a9a98508e60d11a5f50462a7c7908` |
+| `message.ogg` | 6580 | `9d837adc0f1f24fa717bf819b729179fbc73a6a1d36113bb2688c4bb6708a190` |
+| `mute.ogg` | 6291 | `385d725527c981a400b2c0f3da622ec38c35b918f329f191175e3b93dba2c584` |
+| `outgoing-ring.ogg` | 10533 | `a1152abff6ed0a51934d93d8a4177a9903401785038cbc29c29be1441b9c6e96` |
+| `screen-share-on.ogg` | 6979 | `1638547b939a000f9d85c1e85191c47b0a68d7a1f2f480750775ce26cea29620` |
+| `undeafen.ogg` | 5865 | `f86225fe3a775e80ab101d1dd4f4b0e5e16be11b3b027e026e8650ce0c87d792` |
+| `unmute.ogg` | 6266 | `b68315dad770179ac324e8ae9abf08a4c4385869e812d6ecaad43d3e2f3ae06c` |
+| `user-join.ogg` | 6400 | `86765d74a613a5567b0b22b6dea5b5c51b9ab2037ed32c9331aab5868a369277` |
+| `user-leave.ogg` | 6415 | `8215d96a16170d4f00ad9cf2361101da151f133f4a7c13d7b22773f96d7f087c` |
 
-The twelve files total 595,870 bytes; each distinct cue is bundled independently. No network fetch or user-file access occurs during playback.
-Incoming and outgoing rings repeat every six and three seconds respectively,
-leaving enough time for each complete clip before its next playback.
+The twelve files total 90,802 bytes; each distinct cue is bundled independently. No
+network fetch or user-file access occurs during playback.
 
 ## Attribution
 
-All bundled notification sounds are credited to Discord, Inc. The source links
-and SHA-256 hashes above identify each original asset. Serein is an unofficial
-client and is not affiliated with or endorsed by Discord.
+These sounds are Nivra's own work and carry no third-party attribution requirement.
+Nivra is an unofficial Discord client and is not affiliated with or endorsed by
+Discord; the cue names describe interface events, not Discord assets.
 
-These sound assets belong to Discord, Inc. and are not covered by Serein's
-MIT/Apache licenses. No redistribution grant is documented in this repository;
-review the [Discord terms](https://discord.com/terms) and obtain appropriate
-permission before distributing builds containing them. Public download access
-is not a redistribution license.
+`apps/desktop/src/notification_sounds.rs` maps each `Sound` variant to one file, and a
+test decodes all twelve through the real playback decoder so a bad file cannot ship.

@@ -284,9 +284,10 @@ network endpoint, persistent metadata, background job, or storage migration is i
 Emoji information cards resolve names and source servers on demand from the loaded catalogs;
 unknown/deleted source metadata remains explicitly unknown.
 
-Notification sounds (September 21): the Discord sound pack is embedded, with no
-runtime files or downloads. The files total 583,331 bytes on disk;
-source attribution and redistribution limitations are in `assets/sounds/README.md`.
+Notification sounds: the Nivra sound pack is embedded, with no
+runtime files or downloads. The twelve cues total 90,802 bytes on disk. They are the
+project's own work, so the repository's MIT/Apache licences cover them and no separate
+redistribution grant is outstanding; per-cue provenance is in `assets/sounds/README.md`.
 The existing single lazy worker and one-slot fixed-size request queue decode one
 track at a time outside rendering/audio callbacks. Each asset is capped at
 128 KiB encoded, 44.1 or 48 kHz stereo and six seconds decoded (at most 576,000

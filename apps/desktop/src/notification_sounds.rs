@@ -119,24 +119,40 @@ impl Drop for Sounds {
 	}
 }
 
+/// Every notification cue, in the order the settings screen lists them.
+const ALL_SOUNDS: [Sound; 12] = [
+	Sound::Message,
+	Sound::CurrentChannel,
+	Sound::IncomingRing,
+	Sound::OutgoingRing,
+	Sound::Mute,
+	Sound::Unmute,
+	Sound::Deafen,
+	Sound::Undeafen,
+	Sound::CameraOn,
+	Sound::ScreenShareOn,
+	Sound::UserJoin,
+	Sound::UserLeave,
+];
+
 fn samples(sound: Sound, rate: u32, current: &impl Fn() -> bool) -> Result<Vec<[f32; 2]>, ()> {
 	let bytes: &[u8] = match sound {
-		Sound::Message => include_bytes!("../../../assets/sounds/discord/message.mp3"),
+		Sound::Message => include_bytes!("../../../assets/sounds/nivra/message.ogg"),
 		Sound::CurrentChannel => {
-			include_bytes!("../../../assets/sounds/discord/current-channel.mp3")
+			include_bytes!("../../../assets/sounds/nivra/current-channel.ogg")
 		}
-		Sound::IncomingRing => include_bytes!("../../../assets/sounds/discord/incoming-ring.mp3"),
-		Sound::OutgoingRing => include_bytes!("../../../assets/sounds/discord/outgoing-ring.mp3"),
-		Sound::Mute => include_bytes!("../../../assets/sounds/discord/mute.mp3"),
-		Sound::Unmute => include_bytes!("../../../assets/sounds/discord/unmute.mp3"),
-		Sound::Deafen => include_bytes!("../../../assets/sounds/discord/deafen.mp3"),
-		Sound::Undeafen => include_bytes!("../../../assets/sounds/discord/undeafen.mp3"),
-		Sound::CameraOn => include_bytes!("../../../assets/sounds/discord/camera-on.mp3"),
+		Sound::IncomingRing => include_bytes!("../../../assets/sounds/nivra/incoming-ring.ogg"),
+		Sound::OutgoingRing => include_bytes!("../../../assets/sounds/nivra/outgoing-ring.ogg"),
+		Sound::Mute => include_bytes!("../../../assets/sounds/nivra/mute.ogg"),
+		Sound::Unmute => include_bytes!("../../../assets/sounds/nivra/unmute.ogg"),
+		Sound::Deafen => include_bytes!("../../../assets/sounds/nivra/deafen.ogg"),
+		Sound::Undeafen => include_bytes!("../../../assets/sounds/nivra/undeafen.ogg"),
+		Sound::CameraOn => include_bytes!("../../../assets/sounds/nivra/camera-on.ogg"),
 		Sound::ScreenShareOn => {
-			include_bytes!("../../../assets/sounds/discord/screen-share-on.mp3")
+			include_bytes!("../../../assets/sounds/nivra/screen-share-on.ogg")
 		}
-		Sound::UserJoin => include_bytes!("../../../assets/sounds/discord/user-join.mp3"),
-		Sound::UserLeave => include_bytes!("../../../assets/sounds/discord/user-leave.mp3"),
+		Sound::UserJoin => include_bytes!("../../../assets/sounds/nivra/user-join.ogg"),
+		Sound::UserLeave => include_bytes!("../../../assets/sounds/nivra/user-leave.ogg"),
 	};
 	if bytes.len() > 128 * 1024 || !(8000..=192000).contains(&rate) {
 		return Err(());
@@ -315,6 +331,22 @@ fn callback<T: cpal::SizedSample + cpal::FromSample<f32>>(
 mod tests {
 	use super::*;
 	#[test]
+	fn every_bundled_cue_decodes_and_stays_inside_the_playback_budget() {
+		for sound in ALL_SOUNDS {
+			let pcm = samples(sound, 48_000, &|| true)
+				.unwrap_or_else(|()| panic!("{sound:?} was rejected by the decoder"));
+			assert!(
+				pcm.len() <= 48_000 * 6,
+				"{sound:?} decodes to {} frames, past the six second cap",
+				pcm.len()
+			);
+			assert!(
+				pcm.iter().any(|frame| frame[0].abs() > 0.001 || frame[1].abs() > 0.001),
+				"{sound:?} decoded to silence"
+			);
+		}
+	}
+	#[test]
 	fn callback_drains_delayed_output_and_cancellation_is_request_local() {
 		let config = cpal::StreamConfig {
 			channels: 4,
@@ -420,20 +452,23 @@ mod tests {
 			assert_ne!(cues[0], cues[1]);
 			assert_ne!(cues[3], cues[4]);
 			assert_ne!(cues[5], cues[6]);
+			// Durations of the bundled Nivra cues, in the order listed above.
+			// Durations of the bundled Nivra cues, in the order listed above.
 			let expectations = [
-				(0.2, 0.5),
-				(0.5, 0.9),
-				(5.0, 5.6),
-				(0.3, 0.6),
-				(0.3, 0.6),
-				(0.6, 0.9),
-				(0.6, 1.0),
-				(0.9, 1.1),
-				(1.6, 1.9),
-				(2.3, 2.6),
-				(1.0, 1.2),
-				(0.9, 1.1),
+				(0.28, 0.33),
+				(0.21, 0.26),
+				(3.02, 3.10),
+				(0.20, 0.25),
+				(0.20, 0.25),
+				(0.23, 0.28),
+				(0.22, 0.27),
+				(0.18, 0.23),
+				(0.29, 0.34),
+				(1.70, 1.78),
+				(0.25, 0.30),
+				(0.25, 0.30),
 			];
+			// cues[9] is the outgoing ring, which repeats on OUTGOING_RING_INTERVAL.
 			assert!(
 				Duration::from_secs_f64(cues[9].len() as f64 / f64::from(rate))
 					+ Duration::from_millis(100)
