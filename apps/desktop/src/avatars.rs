@@ -2068,6 +2068,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn synthetic_download_limits_redirects_and_retry_delay() {
+		crate::ensure_tls_provider();
 		let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
 		let address = listener.local_addr().unwrap();
 		let bytes = png(2, 2);

@@ -833,6 +833,7 @@ mod tests {
 
 	#[tokio::test]
 	async fn embedded_image_download_requires_bounded_png_length() {
+		crate::ensure_tls_provider();
 		let failed = Arc::new(AtomicBool::new(false));
 		let file = CopyFile::create("image.png", failed.clone()).unwrap();
 		let client = reqwest::Client::builder()

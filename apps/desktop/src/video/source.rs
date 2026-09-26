@@ -230,6 +230,7 @@ mod tests {
 
 	#[test]
 	fn alternating_tracks_reuse_buffered_ranges() {
+		crate::ensure_tls_provider();
 		let listener = TcpListener::bind("127.0.0.1:0").unwrap();
 		let address = listener.local_addr().unwrap();
 		let url = url::Url::parse(&format!("http://{address}/tracks.mov")).unwrap();
