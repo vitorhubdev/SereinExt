@@ -6,10 +6,12 @@ the macOS icon set, and copies the scalable vector sources. Rasterizing needs ei
 `resvg` 0.45.1 command line tool on PATH (or `--resvg <path>`) or the `resvg_py` module:
 
     cargo install resvg --version 0.45.1 --root /tmp/resvg-tool
+import re
     python3 tools/generate-brand-icons.py --resvg /tmp/resvg-tool/bin/resvg
 """
 
 import argparse
+import re
 import shutil
 import struct
 import subprocess
@@ -181,15 +183,30 @@ def main():
     scalable = hicolor / "scalable" / "apps"
     scalable.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(master, scalable / "nivra.svg")
+    # The symbolic icon is the mark centred on a 1024 canvas. The mark is authored in
+    # its own square box, so scaling it about the origin centres it; the transform is
+    # baked into the path so the file stays plain geometry with no wrapper group.
     mark = (BRAND / "nivra-mark.svg").read_text(encoding="utf-8")
+    box = [float(v) for v in mark.split("viewBox=" + chr(34), 1)[1].split(chr(34), 1)[0].split()]
+    scale = 1024.0 / box[2]
     body = mark[mark.index("<path"):mark.rindex("</svg>")]
-    body = body.replace('fill="#fff"', 'fill="#000000"')
-    symbolic = ('<?xml version=\'1.0\' encoding=\'UTF-8\'?>\n'
-                '<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'1024\' height=\'1024\' '
-                'viewBox=\'0 0 1024 1024\' fill=\'none\'>\n'
-                + body
-                + "</svg>\n")
-    (scalable / "nivra-symbolic.svg").write_text(symbolic, encoding="utf-8", newline="\n")
+    body = body.replace("fill=" + chr(34) + "#fff" + chr(34), "fill=" + chr(34) + "#000000" + chr(34))
+    quoted = "d=" + chr(34)
+    start = body.index(quoted) + len(quoted)
+    end = body.index(chr(34), start)
+    scaled = re.sub(
+        r"-?[0-9]+(?:\.[0-9]+)?",
+        lambda match: "%.2f" % (float(match.group(0)) * scale),
+        body[start:end],
+    )
+    body = body[:start] + scaled + body[end:]
+    head = "".join([
+        "<?xml version=" + chr(39) + "1.0" + chr(39) + " encoding=" + chr(39) + "UTF-8" + chr(39) + "?>" + chr(10),
+        "<svg xmlns=" + chr(39) + "http://www.w3.org/2000/svg" + chr(39) + " width=" + chr(39) + "1024" + chr(39) + " height=" + chr(39) + "1024" + chr(39) + " ",
+        "viewBox=" + chr(39) + "0 0 1024 1024" + chr(39) + " fill=" + chr(39) + "none" + chr(39) + ">" + chr(10),
+    ])
+    symbolic = head + body + "</svg>" + chr(10)
+    (scalable / "nivra-symbolic.svg").write_text(symbolic, encoding="utf-8", newline=chr(10))
 
     windows = ROOT / "packaging" / "windows"
     frames = []
