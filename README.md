@@ -14,6 +14,15 @@
 > **SereinExt is an independent modified fork of [ViceVerse-cz/Serein](https://github.com/ViceVerse-cz/Serein).**
 > Upstream remains credited as the original project. SereinExt versions and changes are maintained in this repository and may intentionally diverge from upstream.
 
+### SereinExt 1.0.4
+
+Version 1.0.4 keeps the 1.0.3 client and adds the local work finished after that release:
+
+- saved logins survive a system keyring hiccup, with clearer guidance when sign-in needs attention;
+- the app tells you when the PC cannot keep up with Maximum noise suppression and switches to Standard;
+- the first-run terms dialog is simpler;
+- link previews handle X, Vimeo and YouTube addresses more strictly.
+
 ### SereinExt 1.0.3
 
 Version 1.0.3 keeps the 1.0.2 client and adds the local work finished after that release:
@@ -87,7 +96,7 @@ SereinExt is currently **source/tag first**. Until this repository publishes its
 
 - Repository: [`vitorhubdev/SereinExt`](https://github.com/vitorhubdev/SereinExt)
 - Development branch: `main`
-- Workspace version: `1.0.3`
+- Workspace version: `1.0.4`
 - Version history: [Tags](https://github.com/vitorhubdev/SereinExt/tags)
 
 ### Build from source
