@@ -811,6 +811,122 @@ mod tests {
 		);
 	}
 
+	fn pin_frame(
+		ctx: &egui::Context,
+		state: &State,
+		user: &User,
+		events: Vec<Event>,
+		profile: &mut crate::profiles::ProfileSession,
+		action: &mut Option<Action>,
+		prefs: &model::ChannelPreferences,
+	) -> (egui::Response, Vec<(String, Rect)>) {
+		let mut response = None;
+		let mut output = ctx.run_ui(
+			egui::RawInput {
+				screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(320.0, 420.0))),
+				events,
+				..Default::default()
+			},
+			|ui| {
+				let row = ui.button(&user.name);
+				show_with_pin(
+					&row,
+					state,
+					user,
+					profile,
+					action,
+					Some(crate::shortcuts::ShortcutView::new(prefs, true)),
+				);
+				response = Some(row);
+			},
+		);
+		output.textures_delta.clear();
+		let mut text = vec![];
+		for shape in output.shapes {
+			labels(&shape.shape, &mut text);
+		}
+		(response.unwrap(), text)
+	}
+
+	#[test]
+	fn every_plain_option_closes_the_menu() {
+		let ctx = egui::Context::default();
+		let state = test_support::demo_state();
+		let peer = state.channels.iter().find(|c| c.kind == 1).expect("dm").recipients[0].clone();
+		let friend = state.friends().next().expect("friend").clone();
+		let prefs = model::ChannelPreferences {
+			favorites: vec![],
+			pinned: vec![],
+			collapsed_categories: vec![],
+		};
+		for (label, target, pin) in [
+			("Profile", &peer, false),
+			("Mention", &peer, false),
+			("Add Note", &peer, false),
+			("Add Friend Nickname", &friend, false),
+			("Pin DM", &peer, true),
+			("Mute Conversation", &peer, false),
+			("Close DM", &peer, false),
+			("Block", &peer, false),
+		] {
+			let mut profile = crate::profiles::ProfileSession::default();
+			let mut action = None;
+			let mut open = |events: Vec<Event>| {
+				if pin {
+					pin_frame(&ctx, &state, target, events, &mut profile, &mut action, &prefs).0
+				} else {
+					frame(&ctx, &state, target, events, &mut profile, &mut action).0
+				}
+			};
+			let row = open(vec![]);
+			for pressed in [true, false] {
+				open(pointer(row.rect.center(), PointerButton::Secondary, pressed));
+			}
+			let (_, text) = if pin {
+				pin_frame(&ctx, &state, target, vec![], &mut profile, &mut action, &prefs)
+			} else {
+				frame(&ctx, &state, target, vec![], &mut profile, &mut action)
+			};
+			let pos = text
+				.iter()
+				.find(|(s, _)| s == label)
+				.unwrap_or_else(|| panic!("Missing {label}: {text:?}"))
+				.1
+				.center();
+			for pressed in [true, false] {
+				if pin {
+					pin_frame(
+						&ctx,
+						&state,
+						target,
+						pointer(pos, PointerButton::Primary, pressed),
+						&mut profile,
+						&mut action,
+						&prefs,
+					);
+				} else {
+					frame(
+						&ctx,
+						&state,
+						target,
+						pointer(pos, PointerButton::Primary, pressed),
+						&mut profile,
+						&mut action,
+					);
+				}
+			}
+			if label == "Profile" {
+				assert_eq!(profile.open_user().unwrap().id, target.id);
+			} else {
+				assert!(action.is_some(), "{label} click did nothing");
+			}
+			assert!(
+				!egui::Popup::is_any_open(&ctx),
+				"{label} left the menu open"
+			);
+		}
+	}
+
 	#[test]
 	fn dm_row_and_avatar_open_menu_without_navigation_and_dispatch_once() {
 		for avatar in [false, true] {
