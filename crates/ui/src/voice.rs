@@ -3190,6 +3190,11 @@ impl MessagingUi {
 		}
 	}
 
+	/// Frames the header may stay green after leaving the connected phases
+	/// before it admits the disconnect with yellow. Device reopens flap the
+	/// phase for a frame or two around member joins and leaves.
+	const CONNECTED_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
 	/// Call details drawn inside the account card while connected: Discord's "Voice
 	/// Connected" header, then a row of quick actions above the identity row.
 	pub(super) fn voice_card_section(
@@ -3206,6 +3211,29 @@ impl MessagingUi {
 		let channel_id = call.channel;
 		let camera = call.camera;
 		let connected = matches!(phase, Phase::Connected | Phase::Waiting);
+		// Hold the last green through sub-second flaps: device reopens flip
+		// the phase for a frame or two, and the header must not blink. Only
+		// a sustained disconnect turns it yellow. Failed stays red at once.
+		let unconnected_id = ui.id().with("call-panel-unconnected-since");
+		if connected || phase == Phase::Failed {
+			ui.ctx()
+				.data_mut(|data| data.remove::<std::time::Instant>(unconnected_id));
+		}
+		let unconnected_for = if connected || phase == Phase::Failed {
+			None
+		} else {
+			let since = ui.ctx().data_mut(|data| {
+				if let Some(since) = data.get_temp::<std::time::Instant>(unconnected_id) {
+					since
+				} else {
+					let now = std::time::Instant::now();
+					data.insert_temp(unconnected_id, now);
+					now
+				}
+			});
+			Some(since.elapsed())
+		};
+		let settled = unconnected_for.is_none_or(|ago| ago > Self::CONNECTED_GRACE);
 		let error = call.error;
 		let channel = state
 			.channel(call.channel)
@@ -3223,14 +3251,14 @@ impl MessagingUi {
 			"Voice preview"
 		} else if phase == Phase::Failed {
 			"Call failed"
-		} else if connected {
+		} else if connected || !settled {
 			"Voice Connected"
 		} else {
 			"Connecting…"
 		};
 		let color = if phase == Phase::Failed {
 			colors.danger
-		} else if connected || state.demo {
+		} else if connected || state.demo || !settled {
 			colors.positive
 		} else {
 			colors.warning
@@ -5278,6 +5306,57 @@ mod tests {
 			 "{name} paints past the meter at {meter_left}: ends at {end}"
 			);
 		}
+	}
+
+	#[test]
+	fn call_header_holds_green_through_short_flaps() {
+		// A 200 ms dip never reaches the header; an 800 ms one does. The
+		// title and its color move in the same branch, so the title proves
+		// which side of the 500 ms grace each frame falls on.
+		let ctx = egui::Context::default();
+		design::apply(&ctx);
+		let mut state = test_support::voice_demo_state();
+		state.demo = false;
+		let call = state.voice.active.as_mut().expect("fixture call");
+		call.phase = client_core::voice::Phase::OpeningAudio;
+		let mut view = MessagingUi::default();
+		let mut titles = Vec::new();
+		let mut frame = |view: &mut MessagingUi, state: &mut State| {
+			let mut commands = Vec::new();
+			let mut output = ctx.run_ui(
+				egui::RawInput {
+					screen_rect: Some(egui::Rect::from_min_size(
+						egui::Pos2::ZERO,
+						egui::vec2(400.0, 800.0),
+					)),
+					events: vec![],
+					..Default::default()
+				},
+				|ui| {
+					ui.set_width(360.0);
+					view.voice_card_section(ui, state, &mut commands);
+				},
+			);
+			output.textures_delta.clear();
+			for shape in &output.shapes {
+				if let egui::Shape::Text(text) = &shape.shape {
+					let title = text.galley.job.text.clone();
+					if title == "Voice Connected" || title == "Connecting…" {
+						titles.push(title);
+					}
+				}
+			}
+		};
+		frame(&mut view, &mut state);
+		std::thread::sleep(std::time::Duration::from_millis(200));
+		frame(&mut view, &mut state);
+		std::thread::sleep(std::time::Duration::from_millis(650));
+		frame(&mut view, &mut state);
+		assert_eq!(
+			titles,
+			["Voice Connected", "Voice Connected", "Connecting…"],
+		 "200 ms holds green, 800 ms turns yellow: {titles:?}"
+		);
 	}
 
 	#[test]
