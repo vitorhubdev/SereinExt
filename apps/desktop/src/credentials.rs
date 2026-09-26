@@ -170,6 +170,19 @@ fn probe_accounts(accounts: &[model::Id]) -> Result<Vec<model::Id>, CredentialEr
 	Ok(present)
 }
 
+/// Applies an account probe to the roster. A failed probe leaves every row
+/// untouched and reports no changes, so one locked entry never logs out
+/// accounts whose tokens are still in the store.
+pub fn apply_probe(
+	accounts: &mut [model::SavedAccount],
+	result: Result<Vec<model::Id>, CredentialError>,
+) -> Option<Vec<model::Id>> {
+	match result {
+		Ok(present) => Some(forget_absent_tokens(accounts, &present)),
+		Err(_) => None,
+	}
+}
+
 /// Drops roster rows whose token is not in this app's store. Returns the ids that changed.
 pub fn forget_absent_tokens(
 	accounts: &mut [model::SavedAccount],
@@ -210,6 +223,28 @@ mod tests {
 		let status = loaded_status(&Err(CredentialError::NoStore));
 		assert!(status.contains("No OS keyring"));
 		assert!(status.contains("sign in each launch"));
+	}
+
+	#[test]
+	fn a_probe_error_never_forgets_existing_tokens() {
+		let account = |id, has_token| model::SavedAccount {
+			id: model::Id(id),
+			name: "synthetic".into(),
+			display: None,
+			avatar: None,
+			discriminator: 0,
+			has_token,
+		};
+		let mut accounts = vec![account(1, true), account(2, true), account(3, false)];
+		let dropped = apply_probe(&mut accounts, Err(CredentialError::Unavailable));
+		assert_eq!(dropped, None);
+		assert!(accounts[0].has_token);
+		assert!(accounts[1].has_token);
+		assert!(!accounts[2].has_token);
+		let dropped = apply_probe(&mut accounts, Ok(vec![model::Id(2)]));
+		assert_eq!(dropped, Some(vec![model::Id(1)]));
+		assert!(!accounts[0].has_token);
+		assert!(accounts[1].has_token);
 	}
 
 	#[test]

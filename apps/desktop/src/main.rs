@@ -5163,11 +5163,9 @@ public static class SereinExtShortcut {
 					}
 				}
 				credentials::Outcome::AccountsProbed(result) => {
-					let ok = result.is_ok();
-					let present = result.unwrap_or_default();
-					let dropped =
-						credentials::forget_absent_tokens(&mut self.messaging.accounts, &present);
-					if ok {
+					if let Some(dropped) =
+						credentials::apply_probe(&mut self.messaging.accounts, result)
+					{
 						for account in dropped {
 							self.queue_cache_for(
 								model::Id(0),
@@ -5177,9 +5175,9 @@ public static class SereinExtShortcut {
 								},
 							);
 						}
-					}
-					if !self.messaging.accounts.iter().any(|saved| saved.has_token) {
-						self.credential_status = "";
+						if !self.messaging.accounts.iter().any(|saved| saved.has_token) {
+							self.credential_status = "";
+						}
 					}
 					self.account_tokens_probed = true;
 				}
