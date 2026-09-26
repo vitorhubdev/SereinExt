@@ -771,6 +771,8 @@ struct Desktop {
 	window_transparent: bool,
 	reading: reading_settings::ReadingSettings,
 	app_settings: app_settings::Settings,
+	/// The stored app preferences could not be read, so first-run acceptance is unknown.
+	app_preferences_unread: bool,
 	updater: updater::Updater,
 	game_activity: toggle_setting::Settings,
 	tray_setting: toggle_setting::Settings,
@@ -907,6 +909,36 @@ fn user_action_notice(event: &Event) -> Option<(ui::design::Level, &'static str)
 		Ok(()) => (ui::design::Level::Success, action.completion_label()),
 		Err(failure) => (ui::design::Level::Error, failure.label()),
 	})
+}
+const NOTICES_SUMMARY: &str = "SereinExt is an unofficial app for your own Discord account: it is not Discord, it is not endorsed by Discord, and Discord's rules still apply to your account. It also includes other people's work (libraries, fonts and icons) under their own licenses, and accepting here does not waive those licenses or shift their copyright. Continuing confirms that you understand both points.";
+const NOTICES_PREFERENCES_UNREAD: &str = "Your app preferences could not be read, so SereinExt cannot tell whether you accepted this before.";
+const APP_PREFERENCES_NOT_SAVED: &str = "App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch.";
+/// Full license texts, revealed on demand from the first-run notices dialog.
+const THIRD_PARTY_NOTICES: &str = include_str!("../../../THIRD_PARTY_NOTICES.md");
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum NoticesPrompt {
+	Hidden,
+	/// `preferences_unread`: the stored acceptance could not be read, so it is unknown.
+	Show {
+		preferences_unread: bool,
+	},
+}
+/// Whether the first-run notices dialog is due. A failed preferences read shows it anyway
+/// (acceptance is unknown); only a still-pending read keeps it back.
+fn notices_prompt(demo: bool, settings: &app_settings::Settings, unread: bool) -> NoticesPrompt {
+	let unread = unread && !settings.loaded;
+	if demo || settings.current.notices_accepted || !(settings.loaded || unread) {
+		return NoticesPrompt::Hidden;
+	}
+	NoticesPrompt::Show {
+		preferences_unread: unread,
+	}
+}
+/// Records acceptance in memory and queues it for the next preferences save.
+fn accept_notices(settings: &mut app_settings::Settings) {
+	settings.current.notices_accepted = true;
+	settings.state.dirty = true;
+	settings.state.touched = true;
 }
 fn queue_channel_preferences(
 	cache: Option<&cache::Cache>,
@@ -1341,6 +1373,7 @@ impl Desktop {
 		});
 		cache_pending += usize::from(presence_load_pending);
 		let mut app_settings = app_settings::Settings::default();
+		let mut app_preferences_unread = false;
 		if cache.as_ref().is_some_and(|cache| {
 			cache.queue(
 				state.generation,
@@ -1351,6 +1384,7 @@ impl Desktop {
 			cache_pending += 1;
 		} else if !demo {
 			app_settings.state.failed = true;
+			app_preferences_unread = true;
 		}
 		let mut reading = reading_settings::ReadingSettings::default();
 		let mut game_activity = toggle_setting::Settings::default();
@@ -1924,6 +1958,7 @@ impl Desktop {
 			window_transparent: transparency_available,
 			reading,
 			app_settings,
+			app_preferences_unread,
 			updater: updater::Updater::new(demo),
 			game_activity,
 			tray_setting,
@@ -3973,48 +4008,89 @@ impl Desktop {
 		}
 	}
 	fn notices_dialog(&mut self, ctx: &egui::Context) {
-		if self.state.demo
-			|| !self.app_settings.loaded
-			|| self.app_settings.current.notices_accepted
-		{
+		let NoticesPrompt::Show { preferences_unread } = notices_prompt(
+			self.state.demo,
+			&self.app_settings,
+			self.app_preferences_unread,
+		) else {
 			return;
-		}
+		};
 		let language = self.messaging.language;
+		let licenses_key = egui::Id::unique("notices-full-licenses");
+		let mut licenses_open =
+			ctx.data(|data| data.get_temp::<bool>(licenses_key).unwrap_or(false));
 		let mut accept = false;
-		egui::Window::new(ui::i18n::text(language, "Before you use SereinExt"))
-			.collapsible(false)
-			.resizable(true)
-			.default_width(520.0)
-			.anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
-			.show(ctx, |ui| {
-				ui.set_min_width(420.0);
-				ui.label(ui::i18n::text(
-					language,
-					"SereinExt is an unofficial app for your own Discord account. It is not Discord and is not endorsed by Discord. Discord's own rules still apply to your account.",
-				));
-				ui.add_space(8.0);
-				ui.label(ui::i18n::text(
-					language,
-					"This program also includes other people's work: libraries, fonts and icons. Their licenses are part of the app. Accepting here does not remove those licenses or shift their copyright.",
-				));
-				ui.add_space(8.0);
-				egui::ScrollArea::vertical()
-					.max_height(240.0)
-					.show(ui, |ui| {
-						ui.label(include_str!("../../../THIRD_PARTY_NOTICES.md"));
-					});
-				ui.add_space(8.0);
+		// Closing must not count as accepting, and there is nothing to go back to: only the
+		// footer action ends this dialog, so `close` from Escape/backdrop is ignored.
+		ui::dialog::Dialog::new(
+			"notices-first-run",
+			ui::i18n::text(language, "Before you use SereinExt"),
+		)
+		.persistent()
+		.width(500.0)
+		.show(ctx, |d| {
+			let reserved = 300.0;
+			let licenses_height = (d.available_height() - reserved).clamp(120.0, 320.0);
+			d.content(|ui| {
+				let colors = ui::design::palette(ui);
+				ui.add(
+					egui::Label::new(
+						egui::RichText::new(ui::i18n::text(language, NOTICES_SUMMARY))
+							.size(14.0)
+							.color(colors.text),
+					)
+					.wrap(),
+				);
+				if preferences_unread {
+					ui.add_space(4.0);
+					ui::dialog::notice(
+						ui,
+						ui::dialog::Level::Warning,
+						ui::i18n::text(language, NOTICES_PREFERENCES_UNREAD),
+					);
+				}
+				ui.add_space(4.0);
+				let toggle = if licenses_open {
+					"Hide full licenses"
+				} else {
+					"View full licenses"
+				};
 				if ui
-					.button(ui::i18n::text(language, "I understand — continue"))
+					.link(
+						egui::RichText::new(ui::i18n::text(language, toggle))
+							.size(13.0)
+							.color(colors.link),
+					)
 					.clicked()
 				{
-					accept = true;
+					licenses_open = !licenses_open;
+				}
+				if licenses_open {
+					egui::ScrollArea::vertical()
+						.max_height(licenses_height)
+						.auto_shrink([false, true])
+						.show(ui, |ui| {
+							ui.set_width(ui.available_width());
+							ui.label(
+								egui::RichText::new(THIRD_PARTY_NOTICES)
+									.size(12.0)
+									.color(colors.muted),
+							);
+						});
 				}
 			});
+			d.footer(|ui| {
+				accept = ui::dialog::action(
+					ui,
+					ui::i18n::text(language, "I understand — continue"),
+					ui::dialog::Action::Primary,
+				)
+				.clicked();
+			});
+		});
+		ctx.data_mut(|data| data.insert_temp(licenses_key, licenses_open));
 		if accept {
-			self.app_settings.current.notices_accepted = true;
-			self.app_settings.state.dirty = true;
-			self.app_settings.state.touched = true;
+			accept_notices(&mut self.app_settings);
 		}
 	}
 	fn ensure_notification_shortcut(&self) {
@@ -4889,6 +4965,7 @@ public static class SereinExtShortcut {
 			match &outcome {
 				cache::Outcome::AppPreferences(result) => {
 					self.app_settings.loaded = result.is_ok();
+					self.app_preferences_unread = result.is_err();
 					if !self.app_settings.state.touched {
 						match result {
 							Ok(value) => self.app_settings.current = value.as_ref().clone(),
@@ -6267,7 +6344,8 @@ impl eframe::App for Desktop {
 			self.messaging.storage_status = self.cache_status;
 			self.messaging.notification_status = self.notifications.status().label();
 			if self.app_settings.state.failed {
-				self.messaging.notification_sound_status = "Could not save device notification settings. Changes apply only until restart.";
+				self.messaging.notification_sound_status =
+					ui::i18n::text(self.messaging.language, APP_PREFERENCES_NOT_SAVED);
 			}
 			let mut commands = self.messaging.show(ui, &mut self.state);
 			if let Some(request) = ui::take_web_media_request(&ctx) {
@@ -6876,6 +6954,80 @@ impl eframe::App for Desktop {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	fn loaded_settings() -> app_settings::Settings {
+		app_settings::Settings {
+			loaded: true,
+			..Default::default()
+		}
+	}
+	#[test]
+	fn notices_show_until_accepted() {
+		let settings = loaded_settings();
+		assert!(!settings.current.notices_accepted);
+		assert_eq!(
+			notices_prompt(false, &settings, false),
+			NoticesPrompt::Show {
+				preferences_unread: false
+			}
+		);
+		assert_eq!(
+			notices_prompt(true, &settings, false),
+			NoticesPrompt::Hidden
+		);
+		// A read still in flight must not flash the dialog at someone who already accepted.
+		let pending = app_settings::Settings::default();
+		assert_eq!(
+			notices_prompt(false, &pending, false),
+			NoticesPrompt::Hidden
+		);
+	}
+	#[test]
+	fn notices_show_with_warning_when_preferences_could_not_be_read() {
+		let mut settings = app_settings::Settings::default();
+		settings.state.failed = true;
+		assert_eq!(
+			notices_prompt(false, &settings, true),
+			NoticesPrompt::Show {
+				preferences_unread: true
+			}
+		);
+		// A later observe() may clear `failed`; the unread flag alone keeps the prompt up.
+		settings.state.failed = false;
+		assert_eq!(
+			notices_prompt(false, &settings, true),
+			NoticesPrompt::Show {
+				preferences_unread: true
+			}
+		);
+	}
+	#[test]
+	fn accepting_notices_hides_them_and_queues_a_save() {
+		for (mut settings, unread) in [(loaded_settings(), false), (Default::default(), true)] {
+			accept_notices(&mut settings);
+			assert!(settings.current.notices_accepted);
+			assert!(settings.state.dirty && settings.state.touched);
+			assert_eq!(
+				notices_prompt(false, &settings, unread),
+				NoticesPrompt::Hidden
+			);
+		}
+	}
+	#[test]
+	fn notices_strings_are_translated() {
+		for key in [
+			"Before you use SereinExt",
+			NOTICES_SUMMARY,
+			NOTICES_PREFERENCES_UNREAD,
+			"View full licenses",
+			"Hide full licenses",
+			"I understand — continue",
+			APP_PREFERENCES_NOT_SAVED,
+		] {
+			for language in [model::Language::PortugueseBrazil, model::Language::Spanish] {
+				assert_ne!(ui::i18n::text(language, key), key, "{language:?}: {key}");
+			}
+		}
+	}
 	#[test]
 	fn user_action_results_use_toasts() {
 		let success = Event::UserAction(client_core::user_actions::Event::Written {

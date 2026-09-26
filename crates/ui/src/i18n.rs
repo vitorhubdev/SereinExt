@@ -576,11 +576,16 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Share Screen" => "Compartilhar tela",
 		"Cancel" => "Cancelar",
 		"Before you use SereinExt" => "Antes de usar o SereinExt",
-		"SereinExt is an unofficial app for your own Discord account. It is not Discord and is not endorsed by Discord. Discord's own rules still apply to your account." => {
-			"O SereinExt é um aplicativo não oficial para a sua conta do Discord. Não é o Discord e não é endossado pelo Discord. As regras do Discord continuam valendo para a sua conta."
+		"SereinExt is an unofficial app for your own Discord account: it is not Discord, it is not endorsed by Discord, and Discord's rules still apply to your account. It also includes other people's work (libraries, fonts and icons) under their own licenses, and accepting here does not waive those licenses or shift their copyright. Continuing confirms that you understand both points." => {
+			"O SereinExt é um aplicativo não oficial para a sua própria conta do Discord: não é o Discord, não é endossado pelo Discord, e as regras do Discord continuam valendo para a sua conta. Ele também inclui trabalho de outras pessoas (bibliotecas, fontes e ícones) sob as licenças delas, e aceitar aqui não anula essas licenças nem transfere o direito autoral delas. Ao continuar, você confirma que entendeu esses dois pontos."
 		}
-		"This program also includes other people's work: libraries, fonts and icons. Their licenses are part of the app. Accepting here does not remove those licenses or shift their copyright." => {
-			"Este programa também inclui trabalho de outras pessoas: bibliotecas, fontes e ícones. As licenças delas fazem parte do aplicativo. Aceitar aqui não apaga essas licenças nem transfere o direito autoral."
+		"Your app preferences could not be read, so SereinExt cannot tell whether you accepted this before." => {
+			"Não foi possível ler as preferências do aplicativo, então o SereinExt não sabe se você já aceitou isto antes."
+		}
+		"View full licenses" => "Ver licenças completas",
+		"Hide full licenses" => "Ocultar licenças completas",
+		"App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch." => {
+			"As preferências do aplicativo não foram salvas. Se o seu aceite dos termos não foi registrado, o SereinExt vai perguntar de novo na próxima vez que abrir."
 		}
 		"I understand — continue" => "Entendi — continuar",
 		"Zoom" => "Zoom",
@@ -1231,11 +1236,16 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"Share Screen" => "Compartir pantalla",
 		"Cancel" => "Cancelar",
 		"Before you use SereinExt" => "Antes de usar SereinExt",
-		"SereinExt is an unofficial app for your own Discord account. It is not Discord and is not endorsed by Discord. Discord's own rules still apply to your account." => {
-			"SereinExt es una aplicación no oficial para tu propia cuenta de Discord. No es Discord y Discord no la respalda. Las reglas de Discord siguen aplicando a tu cuenta."
+		"SereinExt is an unofficial app for your own Discord account: it is not Discord, it is not endorsed by Discord, and Discord's rules still apply to your account. It also includes other people's work (libraries, fonts and icons) under their own licenses, and accepting here does not waive those licenses or shift their copyright. Continuing confirms that you understand both points." => {
+			"SereinExt es una aplicación no oficial para tu propia cuenta de Discord: no es Discord, Discord no la respalda y las reglas de Discord siguen aplicando a tu cuenta. También incluye trabajo de otras personas (bibliotecas, fuentes e iconos) bajo sus propias licencias, y aceptar aquí no deja sin efecto esas licencias ni transfiere sus derechos de autor. Al continuar, confirmas que entiendes ambos puntos."
 		}
-		"This program also includes other people's work: libraries, fonts and icons. Their licenses are part of the app. Accepting here does not remove those licenses or shift their copyright." => {
-			"Este programa también incluye trabajo de otras personas: bibliotecas, fuentes e iconos. Sus licencias forman parte de la aplicación. Aceptar aquí no borra esas licencias ni transfiere el derecho de autor."
+		"Your app preferences could not be read, so SereinExt cannot tell whether you accepted this before." => {
+			"No se pudieron leer las preferencias de la aplicación, así que SereinExt no puede saber si ya aceptaste esto antes."
+		}
+		"View full licenses" => "Ver licencias completas",
+		"Hide full licenses" => "Ocultar licencias completas",
+		"App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch." => {
+			"Las preferencias de la aplicación no se guardaron. Si tu aceptación de los términos no quedó registrada, SereinExt volverá a preguntar la próxima vez que se abra."
 		}
 		"I understand — continue" => "Entendido — continuar",
 		"Zoom" => "Zoom",
@@ -1683,8 +1693,11 @@ mod tests {
 			"Share Screen",
 			"Cancel",
 			"Before you use SereinExt",
-			"SereinExt is an unofficial app for your own Discord account. It is not Discord and is not endorsed by Discord. Discord's own rules still apply to your account.",
-			"This program also includes other people's work: libraries, fonts and icons. Their licenses are part of the app. Accepting here does not remove those licenses or shift their copyright.",
+			"SereinExt is an unofficial app for your own Discord account: it is not Discord, it is not endorsed by Discord, and Discord's rules still apply to your account. It also includes other people's work (libraries, fonts and icons) under their own licenses, and accepting here does not waive those licenses or shift their copyright. Continuing confirms that you understand both points.",
+			"Your app preferences could not be read, so SereinExt cannot tell whether you accepted this before.",
+			"View full licenses",
+			"Hide full licenses",
+			"App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch.",
 			"I understand — continue",
 		];
 		for key in KEYS {

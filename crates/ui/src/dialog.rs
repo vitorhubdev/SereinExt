@@ -105,6 +105,12 @@ impl Dialog {
 		self.width = width;
 		self
 	}
+	/// Hides the close control for dialogs that only end through a footer action. Escape and
+	/// backdrop clicks still report [`Response::close`]; the caller decides to ignore them.
+	pub fn persistent(mut self) -> Self {
+		self.dismissable = false;
+		self
+	}
 	pub fn show<R>(self, ctx: &egui::Context, add: impl FnOnce(&mut Body<'_>) -> R) -> Response<R> {
 		let Self {
 			id,
