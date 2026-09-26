@@ -55,6 +55,8 @@ use trail::Place;
 
 pub const MAX_DRAFT_BYTES: usize = 2 * 1024 * 1024;
 pub const MAX_CONTENT: usize = 2000;
+/// Message length for full Nitro; Basic and Classic keep `MAX_CONTENT`.
+pub const MAX_CONTENT_NITRO: usize = 4000;
 /// Discord accepts at most ten attachments per message.
 pub const MAX_ATTACHMENTS: usize = 10;
 pub const MAX_NAV: usize = model::account::MAX_ENTRIES;
@@ -619,6 +621,9 @@ pub struct ReadingCursor {
 
 pub struct State {
 	pub stickers: stickers::Stickers,
+	/// Full Nitro on the owner account, from the entitlement event. Only full
+	/// Nitro raises the message length; Basic and Classic keep 2000 characters.
+	pub nitro_full: bool,
 	pub interactions: interactions::Interactions,
 	pub application_commands: application_commands::Catalog,
 	pub messaging_permissions: messaging_permissions::Settings,
@@ -830,6 +835,7 @@ impl Default for State {
 	fn default() -> Self {
 		Self {
 			stickers: Default::default(),
+			nitro_full: false,
 			interactions: Default::default(),
 			application_commands: Default::default(),
 			messaging_permissions: Default::default(),
@@ -1563,6 +1569,16 @@ impl State {
 		let before = self.timeline.row_ids().next()?;
 		Some(self.history(Some(before)))
 	}
+	/// Characters allowed in one message for this account: 4000 with full Nitro,
+	/// 2000 otherwise. The flag comes from the entitlement event, which carries
+	/// the Discord `premium_type` of the owner (`2` is full Nitro).
+	pub fn message_char_limit(&self) -> usize {
+		if self.nitro_full {
+			MAX_CONTENT_NITRO
+		} else {
+			MAX_CONTENT
+		}
+	}
 	pub fn prepare_send(&mut self) -> Option<Command> {
 		self.prepare_send_with_attachment(None)
 	}
@@ -1642,7 +1658,7 @@ impl State {
 			self.drafts.get(&channel).map_or("", String::as_str)
 		};
 		if (content.trim().is_empty() && filenames.is_empty() && sticker.is_none())
-			|| content.chars().count() > MAX_CONTENT
+			|| content.chars().count() > self.message_char_limit()
 			|| self.pending.len() >= 64
 			|| self.draft_bytes()
 				+ content.len()
@@ -2427,6 +2443,7 @@ impl State {
 					&& !matches!(premium_type, Patch::Absent)
 				{
 					self.stickers.external_allowed = matches!(premium_type, Patch::Value(2 | 3));
+					self.nitro_full = matches!(premium_type, Patch::Value(2));
 				}
 				Ok(())
 			}
@@ -4187,6 +4204,79 @@ mod tests {
 		assert!(state.prepare_send_with_attachment(Some("a.txt")).is_none());
 		state.logout();
 		assert!(!state.has_unsent());
+	}
+
+	fn nitro_state(premium_type: Patch<u8>) -> State {
+		let mut state = State::default();
+		let own = Id(7);
+		state.user = Some(User {
+			id: own,
+			name: "Owner".into(),
+			avatar: None,
+			webhook: false,
+			kind: Default::default(),
+			discriminator: 0,
+			primary_guild: None,
+		});
+		state.apply(Envelope {
+			generation: state.generation,
+			event: Event::StickerEntitlement {
+				user: own,
+				premium_type,
+			},
+		});
+		state
+	}
+
+	#[test]
+	fn message_limit_follows_full_nitro_only() {
+		assert_eq!(State::default().message_char_limit(), MAX_CONTENT);
+		for premium in [None, Some(0), Some(1), Some(3), Some(255)] {
+			let premium = premium.map_or(Patch::Absent, Patch::Value);
+			let state = nitro_state(premium);
+			assert!(!state.nitro_full);
+			assert_eq!(state.message_char_limit(), MAX_CONTENT);
+		}
+		let null = nitro_state(Patch::Null);
+		assert!(!null.nitro_full);
+		let nitro = nitro_state(Patch::Value(2));
+		assert!(nitro.nitro_full);
+		assert_eq!(nitro.message_char_limit(), MAX_CONTENT_NITRO);
+	}
+
+	fn dm_state() -> State {
+		State {
+			channels: vec![Channel {
+				id: Id(1),
+				guild: None,
+				parent_id: None,
+				kind: 1,
+				name: "Synthetic DM".into(),
+				position: 0,
+				recipients: vec![],
+				last_message: None,
+				icon: None,
+				member_list_id: None,
+				message_count: None,
+			}],
+			selected: Some(Id(1)),
+			auth: auth::AuthState::Authenticated,
+			freshness: Freshness::Fresh,
+			gateway_connected: true,
+			..State::default()
+		}
+	}
+
+	#[test]
+	fn short_text_sends_as_a_normal_message() {
+		let mut state = dm_state();
+		state.drafts.insert(Id(1), "Hello".into());
+		let Command::Send { content, .. } = state.prepare_send().unwrap() else {
+			panic!()
+		};
+		assert_eq!(content, "Hello");
+		assert!(state.pending[0].attachments.is_empty());
+		assert!(!state.drafts.contains_key(&Id(1)));
 	}
 	use super::*;
 

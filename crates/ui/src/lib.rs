@@ -129,6 +129,51 @@ pub struct AttachmentPaste {
 	pub image: Option<std::sync::Arc<egui::ColorImage>>,
 }
 
+/// Over-limit composer text waiting in the rename dialog.
+pub struct LongTextDialog {
+	pub channel: Id,
+	pub text: String,
+	pub filename: String,
+}
+
+/// Over-limit composer text staged as a `.txt` attachment. The desktop upload
+/// wiring reads `bytes` when it resolves the staged filename.
+pub struct LongTextAttachment {
+	pub channel: Id,
+	pub filename: String,
+	pub bytes: Vec<u8>,
+}
+
+/// Default staged filename for over-limit text.
+pub const LONG_TEXT_DEFAULT_FILENAME: &str = "message.txt";
+
+/// Appends `.txt` when missing so the staged file always has the text extension.
+/// Returns `None` for blank names.
+pub fn normalize_txt_filename(name: &str) -> Option<String> {
+	let trimmed = name.trim();
+	if trimmed.is_empty() {
+		return None;
+	}
+	Some(if trimmed.ends_with(".txt") {
+		trimmed.to_owned()
+	} else {
+		format!("{trimmed}.txt")
+	})
+}
+
+/// Filename rules mirrored from the send path: bounded, no directories, no
+/// control characters, and always a `.txt` file with a non-empty stem.
+pub(crate) fn valid_txt_filename(name: &str) -> bool {
+	!name.trim().is_empty()
+		&& name.len() <= 256
+		&& !matches!(name, "." | "..")
+		&& name.ends_with(".txt")
+		&& name.trim_end_matches(".txt").trim().len() > 0
+		&& name
+			.chars()
+			.all(|c| !c.is_control() && !matches!(c, '/' | '\\' | ':'))
+}
+
 fn thread_member_rows<'a>(
 	state: &'a State,
 	list: &'a model::MemberList,
@@ -354,6 +399,15 @@ pub struct MessagingUi {
 	pub remove_attachment_requested: bool,
 	pub cancel_upload_requested: bool,
 	pub upload_busy: bool,
+	/// Over-limit text staged as a `.txt` attachment after the rename dialog. The
+	/// bytes stay here so tests and the desktop upload wiring can read them next
+	/// to the optimistic row; a rejected send puts the text back in the draft.
+	pub long_text_attachment: Option<LongTextAttachment>,
+	/// Rename dialog for over-limit text; closed on send or cancel.
+	pub long_text_dialog: Option<LongTextDialog>,
+	/// Send was pressed with over-limit text; the dialog opens once the fresh
+	/// buffer is in scope. Private: only the composer sets and consumes this.
+	long_text_send_requested: bool,
 	/// Transient problem and progress notices. Nothing here outlives its deadline.
 	pub toasts: toasts::Toasts,
 	pending_upload: Option<pending::Upload>,
@@ -2790,11 +2844,12 @@ impl MessagingUi {
                             })
                             .inner;
                         let send = enter || send_button.clicked();
-                        if count_before + 200 >= MAX_CONTENT {
+                        let limit = state.message_char_limit();
+                        if count_before + 200 >= limit {
                             ui.label(
-                                RichText::new(format!("{}", MAX_CONTENT.saturating_sub(count_before)))
+                                RichText::new(format!("{}", limit.saturating_sub(count_before)))
                                     .size(11.0)
-                                    .color(if count_before >= MAX_CONTENT { colors.danger } else { colors.muted }),
+                                    .color(if count_before >= limit { colors.danger } else { colors.muted }),
                             );
                         }
                         let pick = ui
@@ -3019,7 +3074,6 @@ impl MessagingUi {
                                         horizontal_arrows: true, vertical_arrows: true, escape: editing_here,
                                         ..Default::default()
                                     })
-                                    .char_limit(MAX_CONTENT)
                                     .desired_rows(1)
                                     .desired_width(f32::INFINITY)
                                     // Horizontal layouts reserve the interaction height, including around icons.
@@ -3088,6 +3142,18 @@ impl MessagingUi {
                         }
                         self.mention_lookup.text = self.mention_menu.member_query().to_owned();
                         self.mention_lookup.sync(ctx, state, channel, 0, commands);
+                        if std::mem::take(&mut self.long_text_send_requested)
+                            && !editing_here
+                            && self.long_text_dialog.is_none()
+                        {
+                            // The fresh buffer only exists out here; the send site above
+                            // merely recorded the request.
+                            self.long_text_dialog = Some(LongTextDialog {
+                                channel,
+                                text: std::mem::take(&mut new_draft),
+                                filename: LONG_TEXT_DEFAULT_FILENAME.into(),
+                            });
+                        }
                         if !editing_here && (!new_draft.is_empty() || restore_empty_draft) {
                             state.drafts.insert(channel, new_draft);
                         }
@@ -3111,6 +3177,15 @@ impl MessagingUi {
                                 } else {
                                     state.status = "Edit kept. Wait for your current message and connection, and enter nonempty text.";
                                 }
+                            } else if send
+                                && !application_command
+                                && self.long_text_dialog.is_none()
+                                && count_before > state.message_char_limit()
+                            {
+                                // Over-limit text is renamed and sent as `.txt` instead of
+                                // being cut or rejected. The dialog opens below once the
+                                // fresh buffer is in scope.
+                                self.long_text_send_requested = true;
                             } else if self.send_application_command(state, channel, commands)
                                 || self.handle_builtin_slash(state, channel, ctx, commands) {
                             } else if !self.upload_busy && !(state.demo && self.attachment.is_some())
@@ -3121,6 +3196,7 @@ impl MessagingUi {
                                 self.timeline.follow_latest(state);
                                 commands.push(command);
                             }
+                            self.show_long_text_dialog(ctx, state, channel, commands);
                             if !application_command { edit.request_focus(); }
                             if application_command && self.slash_commands.active.is_none() {
                                 ctx.memory_mut(|memory| memory.request_focus(composer_id));
@@ -3152,6 +3228,142 @@ impl MessagingUi {
 			self.edit_sent = false;
 		}
 	}
+	/// Rename dialog for over-limit composer text. Enviar stages the text as a
+	/// `.txt` attachment and dispatches it at once; Cancel keeps the draft.
+	fn show_long_text_dialog(
+		&mut self,
+		ctx: &egui::Context,
+		state: &mut State,
+		channel: Id,
+		commands: &mut Vec<Command>,
+	) {
+		let Some(dialog) = self.long_text_dialog.as_mut() else {
+			return;
+		};
+		if dialog.channel != channel {
+			return;
+		}
+		let language = self.language;
+		let ready = normalize_txt_filename(&dialog.filename)
+			.as_deref()
+			.is_some_and(valid_txt_filename);
+		let mut send = false;
+		let mut cancel = false;
+		crate::dialog::Dialog::new(
+			"long-text-rename",
+			crate::i18n::text(language, "Send as text file?"),
+		)
+		.width(440.0)
+		.show(ctx, |d| {
+			d.content(|ui| {
+				ui.label(
+					egui::RichText::new(crate::i18n::text(
+						language,
+						"Your message is too long for chat, so it will be sent as a file.",
+					))
+					.size(13.0),
+				);
+				ui.add_space(4.0);
+				crate::dialog::label(ui, crate::i18n::text(language, "File name"));
+				if let Some(dialog) = self.long_text_dialog.as_mut() {
+					crate::dialog::input(
+						ui,
+						egui::TextEdit::singleline(&mut dialog.filename)
+							.hint_text(LONG_TEXT_DEFAULT_FILENAME),
+					);
+				}
+				if !ready {
+					ui.add_space(4.0);
+					crate::dialog::notice(
+						ui,
+						crate::dialog::Level::Warning,
+						crate::i18n::text(language, "That file name will not work."),
+					);
+				}
+			});
+			d.footer(|ui| {
+				ui.add_enabled_ui(ready, |ui| {
+					if crate::dialog::action(
+						ui,
+						crate::i18n::text(language, "Send"),
+						crate::dialog::Action::Primary,
+					)
+					.clicked()
+					{
+						send = true;
+					}
+				});
+				if crate::dialog::action(
+					ui,
+					crate::i18n::text(language, "Cancel"),
+					crate::dialog::Action::Neutral,
+				)
+				.clicked()
+				{
+					cancel = true;
+				}
+			});
+		});
+		if cancel {
+			if let Some(dialog) = self.long_text_dialog.take() {
+				// The dialog owns the text, so cancelling returns it unless the
+				// owner typed a fresh draft meanwhile.
+				if !state.drafts.contains_key(&channel) {
+					state.drafts.insert(channel, dialog.text);
+				}
+			}
+		} else if send {
+			self.send_long_text(ctx, state, channel, commands);
+		}
+	}
+
+	/// Stages the dialog text as a `.txt` attachment and sends it through the
+	/// regular attachment path. The dialog owns the text, so the composer draft
+	/// is never touched here; anything that rejects the send puts the text back
+	/// unless a fresh draft arrived meanwhile.
+	fn send_long_text(
+		&mut self,
+		ctx: &egui::Context,
+		state: &mut State,
+		channel: Id,
+		commands: &mut Vec<Command>,
+	) {
+		let Some(dialog) = self.long_text_dialog.take() else {
+			return;
+		};
+		let Some(filename) =
+			normalize_txt_filename(&dialog.filename).filter(|name| valid_txt_filename(name))
+		else {
+			self.long_text_dialog = Some(dialog);
+			return;
+		};
+		self.long_text_attachment = Some(LongTextAttachment {
+			channel,
+			filename: filename.clone(),
+			bytes: dialog.text.clone().into_bytes(),
+		});
+		let mut names: Vec<String> =
+			self.selected_files().into_iter().map(|(name, _)| name).collect();
+		names.push(filename);
+		let refs: Vec<&str> = names.iter().map(String::as_str).collect();
+		match state.prepare_send_with_attachments(&refs) {
+			Some(command) => {
+				self.stage_pending_upload(ctx, &command);
+				self.timeline.follow_latest(state);
+				commands.push(command);
+			}
+			None => {
+				if let Some(staged) = self.long_text_attachment.take() {
+					if !state.drafts.contains_key(&channel) {
+						if let Ok(restored) = String::from_utf8(staged.bytes) {
+							state.drafts.insert(channel, restored);
+						}
+					}
+				}
+			}
+		}
+	}
+
 	/// Selected-file cards above the composer input, in the style of Discord's upload tray.
 	fn attachment_tray(&mut self, ui: &mut egui::Ui) {
 		let colors = design::palette(ui);
@@ -4620,6 +4832,227 @@ fn batch_delete_gap_secs() -> f64 {
 #[cfg(test)]
 mod composer_tests {
 	use super::*;
+
+	fn dm_state() -> State {
+		State {
+			channels: vec![model::Channel {
+				id: Id(1),
+				guild: None,
+				parent_id: None,
+				kind: 1,
+				name: "Synthetic DM".into(),
+				position: 0,
+				recipients: vec![],
+				last_message: None,
+				icon: None,
+				member_list_id: None,
+				message_count: None,
+			}],
+			selected: Some(Id(1)),
+			auth: client_core::auth::AuthState::Authenticated,
+			freshness: model::Freshness::Fresh,
+			gateway_connected: true,
+			..State::default()
+		}
+	}
+
+	fn dialog_labels(output: &egui::FullOutput) -> Vec<(String, egui::Rect)> {
+		fn walk(shape: &egui::Shape, out: &mut Vec<(String, egui::Rect)>) {
+			match shape {
+				egui::Shape::Text(text) => out.push((
+					text.galley.job.text.clone(),
+					text.galley.rect.translate(text.pos.to_vec2()),
+				)),
+				egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, out)),
+				_ => {}
+			}
+		}
+		let mut labels = Vec::new();
+		for shape in &output.shapes {
+			walk(&shape.shape, &mut labels);
+		}
+		labels
+	}
+
+	fn click_label(
+		ctx: &egui::Context,
+		view: &mut MessagingUi,
+		state: &mut State,
+		commands: &mut Vec<Command>,
+		labels: &[(String, egui::Rect)],
+		label: &str,
+	) {
+		let pos = labels
+			.iter()
+			.find(|(text, _)| text == label)
+			.unwrap_or_else(|| panic!("Missing {label}: {labels:?}"))
+			.1
+			.center();
+		for pressed in [true, false] {
+			let mut output = ctx.run_ui(
+				egui::RawInput {
+					screen_rect: Some(egui::Rect::from_min_size(
+						egui::Pos2::ZERO,
+						egui::vec2(1120.0, 760.0),
+					)),
+					events: vec![
+						egui::Event::PointerMoved(pos),
+						egui::Event::PointerButton {
+							pos,
+							button: egui::PointerButton::Primary,
+							pressed,
+							modifiers: egui::Modifiers::NONE,
+						},
+					],
+					..Default::default()
+				},
+				|_| {
+					view.show_long_text_dialog(ctx, state, Id(1), commands);
+				},
+			);
+			output.textures_delta.clear();
+		}
+	}
+
+	fn render_dialog(
+		ctx: &egui::Context,
+		view: &mut MessagingUi,
+		state: &mut State,
+		commands: &mut Vec<Command>,
+	) -> Vec<(String, egui::Rect)> {
+		let mut output = ctx.run_ui(
+			egui::RawInput {
+				screen_rect: Some(egui::Rect::from_min_size(
+					egui::Pos2::ZERO,
+					egui::vec2(1120.0, 760.0),
+				)),
+				..Default::default()
+			},
+			|_| {
+				view.show_long_text_dialog(ctx, state, Id(1), commands);
+			},
+		);
+		output.textures_delta.clear();
+		dialog_labels(&output)
+	}
+
+	#[test]
+	fn long_text_filenames_normalize_and_validate_like_the_send_path() {
+		assert_eq!(normalize_txt_filename("notes"), Some("notes.txt".into()));
+		assert_eq!(normalize_txt_filename("notes.txt"), Some("notes.txt".into()));
+		assert_eq!(normalize_txt_filename("  padded  "), Some("padded.txt".into()));
+		assert_eq!(normalize_txt_filename(""), None);
+		assert_eq!(normalize_txt_filename("   "), None);
+		let max_stem = "a".repeat(252);
+		for valid in [
+			"message.txt".to_string(),
+			"notes.txt".to_string(),
+			"résumé.txt".to_string(),
+			format!("{max_stem}.txt"),
+		] {
+			assert!(valid_txt_filename(&valid), "{valid}");
+		}
+		let overlong = format!("{}.txt", "a".repeat(253));
+		for invalid in [
+			"",
+			"   ",
+			".",
+			"..",
+			".txt",
+			"notes",
+			"a/b.txt",
+			"a\\b.txt",
+			"a:b.txt",
+			"a\nb.txt",
+			overlong.as_str(),
+		] {
+			assert!(!valid_txt_filename(invalid), "{invalid}");
+		}
+	}
+
+	#[test]
+	fn over_limit_text_dispatches_as_attachment_with_exact_bytes() {
+		let ctx = egui::Context::default();
+		let mut state = dm_state();
+		let mut view = MessagingUi::default();
+		let text = "x".repeat(2500);
+		view.long_text_dialog = Some(LongTextDialog {
+			channel: Id(1),
+			text: text.clone(),
+			filename: "notes".into(),
+		});
+		let mut commands = vec![];
+		view.send_long_text(&ctx, &mut state, Id(1), &mut commands);
+		assert_eq!(commands.len(), 1);
+		let staged = view.long_text_attachment.as_ref().expect("staged file");
+		assert_eq!(staged.filename, "notes.txt");
+		assert_eq!(staged.bytes, text.into_bytes());
+		assert_eq!(state.pending[0].attachments, ["notes.txt"]);
+		assert!(!state.drafts.contains_key(&Id(1)));
+	}
+
+	#[test]
+	fn dialog_send_dispatches_the_staged_file() {
+		let ctx = egui::Context::default();
+		let mut state = dm_state();
+		let mut view = MessagingUi::default();
+		let text = "y".repeat(2100);
+		view.long_text_dialog = Some(LongTextDialog {
+			channel: Id(1),
+			text: text.clone(),
+			filename: "notes".into(),
+		});
+		let mut commands = vec![];
+		let labels = render_dialog(&ctx, &mut view, &mut state, &mut commands);
+		click_label(&ctx, &mut view, &mut state, &mut commands, &labels, "Send");
+		assert_eq!(commands.len(), 1);
+		assert!(view.long_text_dialog.is_none());
+		let staged = view.long_text_attachment.as_ref().expect("staged file");
+		assert_eq!(staged.filename, "notes.txt");
+		assert_eq!(staged.bytes, text.into_bytes());
+	}
+
+	#[test]
+	fn cancel_keeps_the_draft() {
+		let ctx = egui::Context::default();
+		let mut state = dm_state();
+		let mut view = MessagingUi::default();
+		state.drafts.insert(Id(1), "Hello".into());
+		view.long_text_dialog = Some(LongTextDialog {
+			channel: Id(1),
+			text: "Hello".into(),
+			filename: "message.txt".into(),
+		});
+		let mut commands = vec![];
+		let labels = render_dialog(&ctx, &mut view, &mut state, &mut commands);
+		assert!(labels.iter().any(|(text, _)| text == "Send as text file?"));
+		assert!(labels.iter().any(|(text, _)| text == "FILE NAME"));
+		assert!(commands.is_empty());
+		click_label(&ctx, &mut view, &mut state, &mut commands, &labels, "Cancel");
+		assert!(view.long_text_dialog.is_none());
+		assert_eq!(state.drafts.get(&Id(1)).map(String::as_str), Some("Hello"));
+		assert!(commands.is_empty());
+		assert!(view.long_text_attachment.is_none());
+	}
+
+	#[test]
+	fn invalid_filename_is_refused() {
+		let ctx = egui::Context::default();
+		let mut state = dm_state();
+		let mut view = MessagingUi::default();
+		view.long_text_dialog = Some(LongTextDialog {
+			channel: Id(1),
+			text: "x".repeat(2500),
+			filename: "a/b.txt".into(),
+		});
+		let mut commands = vec![];
+		let labels = render_dialog(&ctx, &mut view, &mut state, &mut commands);
+		assert!(labels.iter().any(|(text, _)| text == "That file name will not work."));
+		click_label(&ctx, &mut view, &mut state, &mut commands, &labels, "Send");
+		assert!(commands.is_empty());
+		assert!(view.long_text_dialog.is_some());
+		assert!(view.long_text_attachment.is_none());
+	}
 
 	#[test]
 	fn image_surface_reaches_the_channel_header_without_a_stripe() {

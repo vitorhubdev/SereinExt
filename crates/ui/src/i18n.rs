@@ -586,6 +586,13 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Hide full licenses" => "Ocultar licenças completas",
 		"Hide offline members" => "Ocultar membros offline",
 		"Show offline members" => "Mostrar membros offline",
+		"Send as text file?" => "Enviar como arquivo de texto?",
+		"Your message is too long for chat, so it will be sent as a file." => {
+			"Sua mensagem é longa demais para o chat e será enviada como arquivo."
+		}
+		"File name" => "Nome do arquivo",
+		"Send" => "Enviar",
+		"That file name will not work." => "Esse nome de arquivo não vai funcionar.",
 		"Licenses" => "Licenças",
 		"Legal" => "Informações legais",
 		"Licenses for the libraries, fonts, icons and sounds included in SereinExt." => {
@@ -1268,6 +1275,13 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"Hide full licenses" => "Ocultar licencias completas",
 		"Hide offline members" => "Ocultar miembros sin conexión",
 		"Show offline members" => "Mostrar miembros sin conexión",
+		"Send as text file?" => "¿Enviar como archivo de texto?",
+		"Your message is too long for chat, so it will be sent as a file." => {
+			"Tu mensaje es demasiado largo para el chat y se enviará como archivo."
+		}
+		"File name" => "Nombre del archivo",
+		"Send" => "Enviar",
+		"That file name will not work." => "Ese nombre de archivo no va a funcionar.",
 		"Licenses" => "Licencias",
 		"Legal" => "Información legal",
 		"Licenses for the libraries, fonts, icons and sounds included in SereinExt." => {
@@ -1743,6 +1757,11 @@ mod tests {
 			"Hide full licenses",
 			"Hide offline members",
 			"Show offline members",
+			"Send as text file?",
+			"Your message is too long for chat, so it will be sent as a file.",
+			"File name",
+			"Send",
+			"That file name will not work.",
 			"Licenses",
 			"Legal",
 			"Licenses for the libraries, fonts, icons and sounds included in SereinExt.",
