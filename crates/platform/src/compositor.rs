@@ -22,7 +22,7 @@ impl Hider {
 }
 
 #[cfg(target_os = "linux")]
-const WORKSPACE: &str = "special:serein-tray";
+const WORKSPACE: &str = "special:nivra-tray";
 #[cfg(target_os = "linux")]
 const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(500);
 

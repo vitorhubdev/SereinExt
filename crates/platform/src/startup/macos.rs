@@ -7,13 +7,13 @@ use std::{
 	path::{Path, PathBuf},
 };
 
-const LABEL: &str = "cz.viceverse.serein.startup";
+const LABEL: &str = "io.github.vitorhubdev.Nivra.startup";
 const MAX_BYTES: u64 = 16 * 1024;
 const READ_ERROR: &str = "Could not read the macOS login setting.";
 const WRITE_ERROR: &str = "Could not update the macOS login setting.";
 const PATH_ERROR: &str = "This executable path cannot be registered for macOS login.";
 const INVALID_ENTRY: &str =
-	"The Serein login entry does not match this application. Turn startup on to replace it.";
+	"The Nivra login entry does not match this application. Turn startup on to replace it.";
 
 fn entry_path() -> Result<PathBuf, &'static str> {
 	let home = dirs::home_dir()

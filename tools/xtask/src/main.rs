@@ -405,7 +405,7 @@ fn package() -> Result<(), String> {
 		// macOS keychain grants ("Always Allow") never survive one. A locally configured
 		// Developer ID identity keeps that trust stable across rebuilds; releases are signed
 		// and notarized separately by packaging/macos/sign-release.sh, which overrides this.
-		let identity = std::env::var("SEREIN_SIGNING_IDENTITY").unwrap_or_default();
+		let identity = std::env::var("NIVRA_SIGNING_IDENTITY").unwrap_or_default();
 		let identity = if identity.trim().is_empty() {
 			"-".to_owned()
 		} else {

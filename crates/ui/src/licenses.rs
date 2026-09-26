@@ -31,7 +31,7 @@ pub const MPL_SOURCE_PREFIX: &str =
 
 /// Component groups in display order, with the English label used as the i18n key.
 const COMPONENTS: &[(&str, &str)] = &[
-	("sereinext", "Nivra"),
+	("nivraext", "Nivra"),
 	("sounds", "Notification sounds"),
 	("fonts", "Fonts"),
 	("emoji", "Emoji"),
@@ -430,7 +430,7 @@ mod tests {
 			assert_eq!(entry.id.rsplit('/').next(), Some(entry.title));
 		}
 		const { assert!(COMPRESSED_BYTES < RAW_BYTES) };
-		for (key, label) in COMPONENTS.iter().filter(|(key, _)| *key != "sereinext") {
+		for (key, label) in COMPONENTS.iter().filter(|(key, _)| *key != "nivraext") {
 			for language in [Language::PortugueseBrazil, Language::Spanish] {
 				assert_ne!(component_label(language, key), *label, "{language:?}");
 			}

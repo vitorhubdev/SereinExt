@@ -865,7 +865,7 @@ impl MessagingUi {
 				egui::Label::new(
 					RichText::new(format!(
 						"{} {clears}.",
-						crate::i18n::text(self.language, "Serein clears it")
+						crate::i18n::text(self.language, "Nivra clears it")
 					))
 					.size(12.0)
 					.color(colors.muted),

@@ -235,7 +235,7 @@ fn demo_embeds(id: u64) -> Vec<Embed> {
         description: Some("**Native embed preview**\nFormatted descriptions, *useful details*, and a static image.\n[Markdown link](https://example.com/synthetic) · https://example.org".into()),
         url: Some("https://example.com/synthetic".into()),
         color: Some(0x68ada4),
-        author: Some(EmbedAuthor { name: "Serein · synthetic example".into(), ..Default::default() }),
+        author: Some(EmbedAuthor { name: "Nivra · synthetic example".into(), ..Default::default() }),
         fields: vec![EmbedField { name:"Interface".into(),value:"Rust + egui".into(),inline:true },EmbedField { name:"Preview".into(),value:"Offline only".into(),inline:true }],
         image: Some(EmbedMedia { url:Some("https://example.com/synthetic-image.png".into()),width:640,height:240,..Default::default() }),
         footer: Some(EmbedFooter { text:"Synthetic content · no service request".into(),..Default::default() }),
@@ -275,7 +275,7 @@ pub fn demo_state() -> State {
 				emojis: Some(vec![
 					model::CustomEmoji {
 						id: Id(9001),
-						name: "serein_wave".into(),
+						name: "nivra_wave".into(),
 						animated: false,
 						available: true,
 						managed: false,
@@ -283,7 +283,7 @@ pub fn demo_state() -> State {
 					},
 					model::CustomEmoji {
 						id: Id(9002),
-						name: "serein_party".into(),
+						name: "nivra_party".into(),
 						animated: true,
 						available: true,
 						managed: false,
@@ -846,7 +846,7 @@ pub fn demo_accounts(current: &model::User) -> Vec<model::SavedAccount> {
 		},
 		model::SavedAccount {
 			id: Id(4243),
-			name: "serein.testing".into(),
+			name: "nivra.testing".into(),
 			display: None,
 			avatar: None,
 			discriminator: 0,
@@ -1214,7 +1214,7 @@ pub fn code_demo_state() -> State {
 	state.timeline.clear();
 	let texts = [
 		"One-liner: ```cargo xtask check``` and an unknown tag:\n```elixir\nIO.puts \"synthetic\"\n```",
-		"```json\n{\"name\": \"serein\", \"version\": 1, \"voice\": true, \"tags\": [\"native\", null]}\n```",
+		"```json\n{\"name\": \"nivra\", \"version\": 1, \"voice\": true, \"tags\": [\"native\", null]}\n```",
 		"Here is the reducer entry point:\n```rust\n/// Apply one gateway event.\npub fn apply(&mut self, event: Event) -> Result<(), Error> {\n    let Some(channel) = self.channels.get_mut(&event.channel) else {\n        return Err(Error::Unknown(event.channel));\n    };\n    channel.push(event.message, MAX_MESSAGES)?; // bounded\n    Ok(())\n}\n```\nThe cache stays bounded by bytes and items.",
 		"```js\nconst rows = await db.query(\"select id from users where active = $1\", [true]);\nconsole.log(`${rows.length} active`); // synthetic\n```",
 	];
@@ -1371,7 +1371,7 @@ pub fn seed_stickers(state: &mut State) {
 	state.stickers.recent = vec![guild_stickers[0].clone()];
 	state.stickers.packs = vec![model::StickerPack {
 		id: Id(9200),
-		name: "Serein Friends (synthetic)".into(),
+		name: "Nivra Friends (synthetic)".into(),
 		stickers: vec![
 			sticker(9201, "Sleep", None, Some(Id(9200))),
 			sticker(9202, "Hello", None, Some(Id(9200))),

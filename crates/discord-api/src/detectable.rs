@@ -105,7 +105,7 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Game>, &'static str> {
 	bound(games)
 }
 
-/// The reduced form Serein caches on disk. It is re-checked exactly like a fresh download.
+/// The reduced form Nivra caches on disk. It is re-checked exactly like a fresh download.
 pub fn decode_cached(bytes: &[u8]) -> Result<Vec<Game>, &'static str> {
 	let failure = "The cached game list is invalid.";
 	if bytes.len() > MAX_LIST {

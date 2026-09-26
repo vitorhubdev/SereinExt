@@ -1,7 +1,7 @@
-//! Serein theme tokens, presets and typography shared by every native view.
+//! Nivra theme tokens, presets and typography shared by every native view.
 //!
 //! The palette is resolved from egui's light/dark mode plus a process-wide [`Variant`]
-//! (the cool Serein neutrals, deep black, blue-grey, or a gradient recolour). Gradient
+//! (the cool Nivra neutrals, deep black, blue-grey, or a gradient recolour). Gradient
 //! variants paint a backdrop under translucent surfaces; see [`paint_backdrop`].
 use egui::{Color32, FontFamily, FontId, RichText, Stroke, epaint::FontColorTransferFunction};
 use std::sync::atomic::{AtomicU8, AtomicU32, Ordering};
@@ -821,7 +821,7 @@ pub fn paint_backdrop(ctx: &egui::Context) {
 
 pub const SEMIBOLD: &str = "semibold";
 pub const MEDIUM: &str = "medium";
-const WEIGHTS_KEY: &str = "serein-font-weights";
+const WEIGHTS_KEY: &str = "nivra-font-weights";
 // Called by `fonts::install` for one context; until then the weight families resolve to
 // the default face so headless contexts (tests) never reference an unknown family.
 thread_local! {
@@ -1343,7 +1343,7 @@ fn wide_button(
 	}
 	response
 }
-/// Deterministic fallback avatar colours drawn from the Serein palette, keyed by the display name.
+/// Deterministic fallback avatar colours drawn from the Nivra palette, keyed by the display name.
 fn fallback_avatar_color(name: &str) -> Color32 {
 	const COLORS: [u32; 5] = [DEFAULT_PRIMARY_RGB, 0x6b7a94, 0x2fb87a, 0xe8a33d, 0xef5561];
 	let hash = name

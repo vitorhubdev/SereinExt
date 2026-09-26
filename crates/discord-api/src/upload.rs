@@ -638,7 +638,7 @@ mod tests {
 		async fn new(bytes: &[u8]) -> Self {
 			static NEXT: AtomicU64 = AtomicU64::new(0);
 			let path = std::env::temp_dir().join(format!(
-				"serein-upload-{}-{}-{}.txt",
+				"nivra-upload-{}-{}-{}.txt",
 				std::process::id(),
 				SystemTime::now()
 					.duration_since(SystemTime::UNIX_EPOCH)

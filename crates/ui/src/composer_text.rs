@@ -538,7 +538,7 @@ mod tests {
 			let image = Image::new(&texture).fit_to_exact_size(egui::Vec2::splat(24.0));
 			let mut layout = Layout::default();
 			let mut avatars = Avatars::default();
-			let mut text = "<:serein_leaf:9001>".to_owned();
+			let mut text = "<:nivra_leaf:9001>".to_owned();
 			let message = crate::markdown::Formatted::parse(&text);
 			let mut output = ctx.run_ui(Default::default(), |ui| {
 				ui.style_mut()
@@ -606,7 +606,7 @@ mod tests {
 	fn artwork_keeps_wire_characters_and_cursor_geometry_across_wrapped_lines() {
 		let ctx = egui::Context::default();
 		emoji::install(&ctx).unwrap();
-		let text = "Hi <@42> 👩🏽‍💻 <:serein_leaf:9001>\nagain <@!42> ❤️";
+		let text = "Hi <@42> 👩🏽‍💻 <:nivra_leaf:9001>\nagain <@!42> ❤️";
 		let mut avatars = Avatars::default();
 		let mut layout = Layout::default();
 		let output = ctx.run_ui(Default::default(), |ui| {

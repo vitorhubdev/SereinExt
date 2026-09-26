@@ -21,7 +21,7 @@ pub fn text(language: Language, english: &'static str) -> &'static str {
 /// Fixed egui temp key holding the current interface language. `MessagingUi`
 /// stores it every frame so shared render helpers (menus, save bars) can read
 /// it without signature changes in files owned by other agents.
-const INTERFACE_LANGUAGE_KEY: &str = "serein-interface-language";
+const INTERFACE_LANGUAGE_KEY: &str = "nivra-interface-language";
 
 pub fn store_interface_language(ctx: &egui::Context, language: Language) {
 	ctx.data_mut(|data| data.insert_temp(egui::Id::unique(INTERFACE_LANGUAGE_KEY), language));

@@ -2599,7 +2599,7 @@ fn capability_label(capability: Capability) -> &'static str {
 			"Propose camera, screen-share and local media-device changes for approval"
 		}
 		Capability::ActionFeedback => {
-			"Receive whether a confirmed app action was accepted by Serein"
+			"Receive whether a confirmed app action was accepted by Nivra"
 		}
 		Capability::DataQueries => {
 			"Request and read bounded search, pin, thread, member, profile and GIF results"

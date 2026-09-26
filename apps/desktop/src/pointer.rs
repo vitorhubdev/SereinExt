@@ -8,7 +8,7 @@ pub struct Intercepted {
 	pub side: SidePress,
 }
 
-/// The window's pointer, translated for Serein.
+/// The window's pointer, translated for Nivra.
 ///
 /// Holds the two facts `RawInput` cannot carry across frames: whether the middle button is
 /// still down after a frame with no events, and the last position the cursor was seen at.

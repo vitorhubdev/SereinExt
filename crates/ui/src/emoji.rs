@@ -168,7 +168,7 @@ mod tests {
 	use super::*;
 	#[test]
 	fn custom_markup_is_bounded_and_never_an_arbitrary_url() {
-		for token in ["<:serein_wave:9001>", "<a:serein_party:9001>"] {
+		for token in ["<:nivra_wave:9001>", "<a:nivra_party:9001>"] {
 			assert_eq!(
 				custom_prefix(&format!("{token} trailing")),
 				Some((model::Id(9001), token.len()))

@@ -10,7 +10,7 @@ use webkit6::{gio, glib, prelude::*};
 
 const LIFETIME: Duration = Duration::from_secs(300);
 const QUERY_INTERVAL: Duration = Duration::from_millis(100);
-const PAGE: &str = "https://serein-captcha.verification.invalid/";
+const PAGE: &str = "https://nivra-captcha.verification.invalid/";
 
 struct Handoff {
 	opened: Instant,
@@ -66,11 +66,11 @@ impl CaptchaView {
 		crate::ensure_gtk_application_id();
 		let (capability, captcha_script, html) = page(challenge, dark)?;
 		let script = include_str!("captcha-linux-bridge.js")
-			.replace("__SEREIN_CAPTCHA_CAPABILITY__", &capability)
+			.replace("__NIVRA_CAPTCHA_CAPABILITY__", &capability)
 			+ "\n" + &captcha_script;
 		// WebKit evaluates in the main frame; bound the string before copying into Rust.
 		let take_script = format!(
-			"(() => {{ if (window !== window.top || location.href !== '{PAGE}') return null; const take = window['__serein_captcha_take_{}']; if (typeof take !== 'function') return null; const value = take(); return typeof value === 'string' && value.length <= 8270 && /^[\\x21-\\x7e]+$/.test(value) ? value : null; }})()",
+			"(() => {{ if (window !== window.top || location.href !== '{PAGE}') return null; const take = window['__nivra_captcha_take_{}']; if (typeof take !== 'function') return null; const value = take(); return typeof value === 'string' && value.length <= 8270 && /^[\\x21-\\x7e]+$/.test(value) ? value : null; }})()",
 			capability.trim_end_matches(':')
 		);
 		let opened = Instant::now();
@@ -111,7 +111,7 @@ impl CaptchaView {
 			&script,
 			webkit6::UserContentInjectedFrames::TopFrame,
 			webkit6::UserScriptInjectionTime::Start,
-			&["https://serein-captcha.verification.invalid/*"],
+			&["https://nivra-captcha.verification.invalid/*"],
 			&[],
 		));
 		let view = webkit6::WebView::builder()
@@ -168,7 +168,7 @@ impl CaptchaView {
 		view.connect_print(|_, _| true);
 		view.connect_show_notification(|_, _| true);
 		let window = gtk4::Window::builder()
-			.title("Verification · Serein")
+			.title("Verification · Nivra")
 			.default_width(500)
 			.default_height(560)
 			.child(&view)

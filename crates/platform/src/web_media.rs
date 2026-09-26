@@ -72,7 +72,7 @@ impl WebMediaView {
 		if persist_on {
 			use wry::WebViewBuilderExtDarwin;
 			// WKWebView has no data_directory; this is the 0.57 replacement API.
-			builder = builder.with_data_store_identifier(*b"serein-web-media");
+			builder = builder.with_data_store_identifier(*b"nivra-web-media");
 		}
 		let view = builder
 			.with_bounds(bounds(&parent))

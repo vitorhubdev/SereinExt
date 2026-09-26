@@ -316,7 +316,7 @@ impl Capture {
 			.with_fps(settings.fps)
 			.with_queue_depth(3);
 		if audio.is_some() {
-			// Serein's own playback is excluded so the call is not echoed into the stream.
+			// Nivra's own playback is excluded so the call is not echoed into the stream.
 			config = config
 				.with_captures_audio(true)
 				.with_sample_rate(48_000)

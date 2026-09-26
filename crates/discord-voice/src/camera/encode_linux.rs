@@ -302,11 +302,11 @@ mod tests {
 	fn missing_elements_report_unavailable_rather_than_panicking() {
 		assert!(gst::init().is_ok());
 		// An element this machine does not have must fail cleanly, never abort.
-		assert_eq!(make("serein-no-such-encoder").unwrap_err(), UNAVAILABLE);
+		assert_eq!(make("nivra-no-such-encoder").unwrap_err(), UNAVAILABLE);
 		// Property helpers must ignore names and types an element does not declare.
 		let convert = make("videoconvert").expect("videoconvert");
-		set_number(&convert, "serein-no-such-property", 1);
-		set_flag(&convert, "serein-no-such-property", true);
+		set_number(&convert, "nivra-no-such-property", 1);
+		set_flag(&convert, "nivra-no-such-property", true);
 		// A real property of the wrong type is left alone rather than aborting.
 		set_number(&convert, "qos", 1);
 		set_flag(&convert, "qos", true);

@@ -415,7 +415,7 @@ impl Bridge {
 			let root = if demo {
 				Some(std::env::temp_dir().join("serein-extension-demo"))
 			} else {
-				dirs::data_local_dir().map(|root| root.join("serein").join("extensions"))
+				dirs::data_local_dir().map(|root| root.join("nivra").join("extensions"))
 			};
 			let Some(root) = root else {
 				messaging.extensions.status = "Application data directory is unavailable.".into();

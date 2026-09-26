@@ -22,7 +22,7 @@ define_class!(
 	// SAFETY: NSObject has no subclassing requirements. All state and callbacks stay on
 	// the main thread, and the target lives until every menu item is disconnected.
 	#[unsafe(super = NSObject)]
-	#[name = "SereinTrayTarget"]
+	#[name = "NivraTrayTarget"]
 	#[thread_kind = MainThreadOnly]
 	#[ivars = State]
 	struct Target;
@@ -31,12 +31,12 @@ define_class!(
 	unsafe impl NSObjectProtocol for Target {}
 
 	impl Target {
-		#[unsafe(method(showSerein:))]
+		#[unsafe(method(showNivra:))]
 		fn show(&self, _sender: &NSMenuItem) {
 			self.emit(Event::Show);
 		}
 
-		#[unsafe(method(quitSerein:))]
+		#[unsafe(method(quitNivra:))]
 		fn quit(&self, _sender: &NSMenuItem) {
 			self.emit(Event::Quit);
 		}
@@ -97,8 +97,8 @@ impl Tray {
 		}
 		button.setToolTip(Some(ns_string!("Nivra")));
 		for (title, action) in [
-			(ns_string!("Show Serein"), sel!(showSerein:)),
-			(ns_string!("Quit Serein"), sel!(quitSerein:)),
+			(ns_string!("Show Nivra"), sel!(showNivra:)),
+			(ns_string!("Quit Nivra"), sel!(quitNivra:)),
 		] {
 			// SAFETY: both selectors are implemented above with the menu action signature.
 			// Tray retains their main-thread target until the menu is disconnected on drop.

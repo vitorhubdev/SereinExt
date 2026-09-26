@@ -136,7 +136,7 @@ struct Item {
 
 impl ksni::Tray for Item {
 	fn id(&self) -> String {
-		"serein".into()
+		"nivra".into()
 	}
 	fn title(&self) -> String {
 		"Nivra".into()
@@ -154,13 +154,13 @@ impl ksni::Tray for Item {
 	fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
 		vec![
 			StandardItem {
-				label: "Show Serein".into(),
+				label: "Show Nivra".into(),
 				activate: Box::new(|item: &mut Self| item.events.push(Event::Show)),
 				..Default::default()
 			}
 			.into(),
 			StandardItem {
-				label: "Minimize Serein".into(),
+				label: "Minimize Nivra".into(),
 				activate: Box::new(|item: &mut Self| item.events.push(Event::Minimize)),
 				..Default::default()
 			}

@@ -70,6 +70,13 @@ const SIGN_IN_HEADER_HEIGHT: f32 = if cfg!(target_os = "windows") {
 
 fn main() -> eframe::Result {
 	discord_api::ensure_tls_provider();
+	// One-time Nivra migration (data dir, keyring, autostart/shortcut).
+	// Data-dir failure is fatal: never open empty over old data.
+	if let Err(error) = platform::migration::migrate_all() {
+		platform::migration::show_fatal_error(&error.to_string());
+		eprintln!("Nivra migration failed: {error}");
+		std::process::exit(2);
+	}
 	#[cfg(all(debug_assertions, feature = "demo"))]
 	if std::env::args().any(|arg| arg == "--demo")
 		&& std::env::args().any(|arg| arg == "--demo-check-spotify")
@@ -303,7 +310,7 @@ fn main() -> eframe::Result {
 				.with_inner_size([1120.0, 760.0])
 				.with_min_inner_size([760.0, 520.0])
 				.with_active(!start_minimized)
-				.with_app_id("cz.viceverse.serein");
+				.with_app_id("io.github.vitorhubdev.Nivra");
 			#[cfg(any(target_os = "windows", target_os = "linux"))]
 			let builder = builder
 				.with_icon(eframe::icon_data::from_png_bytes(icon).expect("bundled app icon"));
@@ -590,7 +597,7 @@ impl FrameMetrics {
 	fn new(sample: Option<(Duration, Duration)>) -> Self {
 		Self {
 			enabled: sample.is_some()
-				|| std::env::var_os("SEREIN_FRAME_DIAGNOSTICS").is_some_and(|v| v == "1"),
+				|| std::env::var_os("NIVRA_FRAME_DIAGNOSTICS").is_some_and(|v| v == "1"),
 			started: None,
 			sample: sample.map(|(warmup, duration)| FrameSample {
 				ready: std::time::Instant::now() + warmup,
@@ -620,7 +627,7 @@ impl FrameMetrics {
 		}
 		let started = *sample.started.get_or_insert_with(|| {
 			Self::sample_record(serde_json::json!({
-				"serein_frame_sample": "start",
+				"nivra_frame_sample": "start",
 				"viewport_size": viewport_size,
 				"pixels_per_point": pixels_per_point,
 			}));
@@ -632,7 +639,7 @@ impl FrameMetrics {
 		}
 		sample.complete = true;
 		Self::sample_record(serde_json::json!({
-			"serein_frame_sample": "complete",
+			"nivra_frame_sample": "complete",
 			"elapsed_ms": elapsed.as_millis(),
 			"callbacks": self.frames,
 			"without_input": self.inputless,
@@ -693,7 +700,7 @@ impl Drop for FrameMetrics {
 			let _ = writeln!(
 				std::io::stderr(),
 				// Preserve the legacy diagnostic label; elapsed callback time is wall time.
-				"[Serein frames] callbacks={} without_input={} cpu_us_buckets(1000,2000,4000,8000,16000,32000,64000,above)={:?} reflows(total,consecutive)={:?}",
+				"[Nivra frames] callbacks={} without_input={} cpu_us_buckets(1000,2000,4000,8000,16000,32000,64000,above)={:?} reflows(total,consecutive)={:?}",
 				self.frames,
 				self.inputless,
 				self.buckets,
@@ -1582,7 +1589,7 @@ impl Desktop {
 		messaging.build = ui::design::Build {
 			channel: if cfg!(debug_assertions) {
 				ui::design::Channel::Dev
-			} else if option_env!("SEREIN_CHANNEL") == Some("nightly") {
+			} else if option_env!("NIVRA_CHANNEL") == Some("nightly") {
 				ui::design::Channel::Nightly
 			} else {
 				ui::design::Channel::Stable
@@ -3951,7 +3958,7 @@ impl Desktop {
 					ui.painter().rect_filled(mark, 14, p.accent);
 					ui::icons::paint(
 						ui.painter(),
-						ui::icons::Icon::Serein,
+						ui::icons::Icon::Nivra,
 						mark.shrink(13.0),
 						p.accent_text,
 					);
@@ -4089,7 +4096,7 @@ impl Desktop {
 			static STARTED: std::sync::Once = std::sync::Once::new();
 			STARTED.call_once(|| {
 				let script = r#"
-$shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'SereinExt.lnk'
+$shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Nivra.lnk'
 if (Test-Path -LiteralPath $shortcut) { exit 0 }
 $exe = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
 $shell = New-Object -ComObject WScript.Shell
@@ -4100,7 +4107,7 @@ $link.Save()
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
-public static class SereinExtShortcut {
+public static class NivraShortcut {
     [StructLayout(LayoutKind.Sequential)] struct PropertyKey { public Guid format; public uint id; }
     [StructLayout(LayoutKind.Explicit)] struct PropVariant {
         [FieldOffset(0)] public ushort type;
@@ -4122,13 +4129,13 @@ public static class SereinExtShortcut {
         IPropertyStore store;
         SHGetPropertyStoreFromParsingName(path, IntPtr.Zero, 2, ref iid, out store);
         PropertyKey key = new PropertyKey { format = new Guid("9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3"), id = 5 };
-        PropVariant value = new PropVariant { type = 31, value = Marshal.StringToCoTaskMemUni("cz.viceverse.serein") };
+        PropVariant value = new PropVariant { type = 31, value = Marshal.StringToCoTaskMemUni("io.github.vitorhubdev.Nivra") };
         try { store.SetValue(ref key, ref value); store.Commit(); }
         finally { Marshal.FreeCoTaskMem(value.value); Marshal.FinalReleaseComObject(store); }
     }
 }
 '@
-[SereinExtShortcut]::SetAppId($shortcut)
+[NivraShortcut]::SetAppId($shortcut)
 "#;
 				let _ = std::process::Command::new("powershell")
 					.args([
@@ -4164,7 +4171,7 @@ public static class SereinExtShortcut {
 							ui.painter().rect_filled(mark, 6, p.accent);
 							ui::icons::paint(
 								ui.painter(),
-								ui::icons::Icon::Serein,
+								ui::icons::Icon::Nivra,
 								mark.shrink(5.0),
 								p.accent_text,
 							);
@@ -4360,7 +4367,7 @@ public static class SereinExtShortcut {
 						if returning {
 							ui::design::secondary_icon_button(ui, ui::icons::Icon::Plus, label)
 						} else {
-							ui::design::primary_icon_button(ui, ui::icons::Icon::Serein, label)
+							ui::design::primary_icon_button(ui, ui::icons::Icon::Nivra, label)
 						}
 					})
 					.inner;
@@ -4412,7 +4419,7 @@ public static class SereinExtShortcut {
 			ui.painter().rect_filled(mark, 13, p.accent);
 			ui::icons::paint(
 				ui.painter(),
-				ui::icons::Icon::Serein,
+				ui::icons::Icon::Nivra,
 				mark.shrink(11.0),
 				p.accent_text,
 			);
@@ -4792,7 +4799,7 @@ public static class SereinExtShortcut {
 					ui.add(
 						egui::Label::new(
 							egui::RichText::new(
-								"For owners who already hold a valid Discord session token, for example from another signed-in Serein install. Passwords and 2FA are never used here; this bypasses Discord's hosted login page entirely.",
+								"For owners who already hold a valid Discord session token, for example from another signed-in Nivra install. Passwords and 2FA are never used here; this bypasses Discord's hosted login page entirely.",
 							)
 							.size(12.0)
 							.color(p.muted),
@@ -5299,7 +5306,7 @@ public static class SereinExtShortcut {
 						// Nothing could have been saved without a credential store.
 						Err(platform::CredentialError::NoStore) => "",
 						Err(_) => {
-							"Could not remove saved login; remove io.github.vitorhubdev.SereinExt / discord-session in your OS credential manager"
+							"Could not remove saved login; remove io.github.vitorhubdev.Nivra / discord-session in your OS credential manager"
 						}
 					};
 				}
@@ -5569,15 +5576,15 @@ public static class SereinExtShortcut {
 		}
 		if let Some(failure) = terminal {
 			for (setting, scope) in [
-				("SEREIN_MEMBER_DIAGNOSTICS", "members"),
-				("SEREIN_GATEWAY_DIAGNOSTICS", "gateway"),
+				("NIVRA_MEMBER_DIAGNOSTICS", "members"),
+				("NIVRA_GATEWAY_DIAGNOSTICS", "gateway"),
 			] {
 				if std::env::var_os(setting).as_deref() == Some(std::ffi::OsStr::new("1")) {
 					use std::io::Write;
 					// One extra fixed-label terminal line per enabled scope; closed stderr is OK.
 					let _ = writeln!(
 						std::io::stderr(),
-						"[Serein {scope}] Session stopped: {}",
+						"[Nivra {scope}] Session stopped: {}",
 						failure.label()
 					);
 				}
@@ -6288,7 +6295,7 @@ impl eframe::App for Desktop {
 						ui.painter().rect_filled(rect, 8, p.accent);
 						ui::icons::paint(
 							ui.painter(),
-							ui::icons::Icon::Serein,
+							ui::icons::Icon::Nivra,
 							rect.shrink(7.0),
 							p.accent_text,
 						);
@@ -6351,7 +6358,7 @@ impl eframe::App for Desktop {
 				self.web_media = None;
 				let persist = if request.persist {
 					dirs::data_local_dir()
-						.map(|root| Some(root.join("serein").join("web-media")))
+						.map(|root| Some(root.join("nivra").join("web-media")))
 						.ok_or("Could not locate the local data directory")
 				} else {
 					Ok(None)

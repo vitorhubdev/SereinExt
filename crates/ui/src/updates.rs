@@ -43,7 +43,7 @@ impl Default for Updates {
 	}
 }
 impl MessagingUi {
-	/// Whether the account card grows an update row, which it does only while Serein's own
+	/// Whether the account card grows an update row, which it does only while Nivra's own
 	/// title bar is hidden: the title-bar button is the only other place the prompt appears.
 	pub(super) fn shows_update_banner(&mut self) -> bool {
 		if self.shows_title_bar() {
@@ -231,7 +231,7 @@ impl MessagingUi {
 					.rect_filled(badge, 12, colors.accent.gamma_multiply(0.16));
 				crate::icons::paint(
 					ui.painter(),
-					crate::icons::Icon::Serein,
+					crate::icons::Icon::Nivra,
 					badge.shrink(10.0),
 					colors.accent,
 				);
@@ -392,7 +392,7 @@ mod tests {
 		let mut view = MessagingUi::default();
 		view.updates.available = true;
 		scan(&ctx, &mut view, &mut state);
-		// With Serein's own title bar the prompt stays up there, not in the sidebar.
+		// With Nivra's own title bar the prompt stays up there, not in the sidebar.
 		#[cfg(not(target_os = "linux"))]
 		assert!(banner(&scan(&ctx, &mut view, &mut state).0).is_none());
 		view.hide_title_bar = true;

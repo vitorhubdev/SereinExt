@@ -210,7 +210,7 @@ mod native {
 			// SAFETY: the retained winit window owns hwnd. Hooks must run on its UI thread.
 			let previous = unsafe {
 				if GetWindowThreadProcessId(hwnd, None) != GetCurrentThreadId()
-					|| !GetPropW(hwnd, w!("Serein.TrayState")).is_invalid()
+					|| !GetPropW(hwnd, w!("Nivra.TrayState")).is_invalid()
 				{
 					return Err(UNAVAILABLE);
 				}
@@ -223,7 +223,7 @@ mod native {
 			// SAFETY: these fixed names register messages, without taking ownership of pointers.
 			let (notification, restart) = unsafe {
 				(
-					RegisterWindowMessageW(w!("Serein.TrayCallback")),
+					RegisterWindowMessageW(w!("Nivra.TrayCallback")),
 					RegisterWindowMessageW(w!("TaskbarCreated")),
 				)
 			};
@@ -276,13 +276,13 @@ mod native {
 			};
 			// SAFETY: menu and hwnd are live UI-thread handles; Rc keeps callback state stable.
 			unsafe {
-				AppendMenuW(menu, MF_STRING, SHOW, w!("Show Serein")).map_err(|_| UNAVAILABLE)?;
+				AppendMenuW(menu, MF_STRING, SHOW, w!("Show Nivra")).map_err(|_| UNAVAILABLE)?;
 				AppendMenuW(menu, MF_STRING, QUIT, w!("Quit")).map_err(|_| UNAVAILABLE)?;
 				SetMenuDefaultItem(menu, SHOW as u32, 0).map_err(|_| UNAVAILABLE)?;
 				let reference = Rc::into_raw(tray.state.clone());
 				if SetPropW(
 					hwnd,
-					w!("Serein.TrayState"),
+					w!("Nivra.TrayState"),
 					Some(HANDLE(reference.cast_mut().cast())),
 				)
 				.is_err()
@@ -291,7 +291,7 @@ mod native {
 					return Err(UNAVAILABLE);
 				}
 				if SetWindowLongPtrW(hwnd, GWLP_WNDPROC, callback as *const () as isize) == 0 {
-					let _ = RemovePropW(hwnd, w!("Serein.TrayState"));
+					let _ = RemovePropW(hwnd, w!("Nivra.TrayState"));
 					drop(Rc::from_raw(reference));
 					return Err(UNAVAILABLE);
 				}
@@ -448,7 +448,7 @@ mod native {
 						) != 0
 					{
 						self.state.hooked.set(false);
-						let _ = RemovePropW(hwnd, w!("Serein.TrayState"));
+						let _ = RemovePropW(hwnd, w!("Nivra.TrayState"));
 						drop(Rc::from_raw(Rc::as_ptr(&self.state)));
 					}
 				}
@@ -475,7 +475,7 @@ mod native {
 		lparam: LPARAM,
 	) -> LRESULT {
 		// SAFETY: the UI-thread registration installed this property before replacing WNDPROC.
-		let pointer = unsafe { GetPropW(hwnd, w!("Serein.TrayState")).0.cast::<State>() };
+		let pointer = unsafe { GetPropW(hwnd, w!("Nivra.TrayState")).0.cast::<State>() };
 		if pointer.is_null() {
 			// SAFETY: no owned state is accessible; use the OS default rather than a stale pointer.
 			return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
@@ -508,7 +508,7 @@ mod native {
 			let hooked = state.hooked.replace(false);
 			state.remove_icon();
 			// SAFETY: remove only our property as the window is destroyed.
-			let _ = unsafe { RemovePropW(hwnd, w!("Serein.TrayState")) };
+			let _ = unsafe { RemovePropW(hwnd, w!("Nivra.TrayState")) };
 			if hooked {
 				// SAFETY: the destroyed window cannot dispatch again; release its registration Rc.
 				unsafe {
@@ -536,7 +536,7 @@ mod native {
 				event_loop
 					.create_window(
 						winit::window::Window::default_attributes()
-							.with_title("Serein synthetic tray test")
+							.with_title("Nivra synthetic tray test")
 							.with_inner_size(winit::dpi::LogicalSize::new(320., 200.))
 							.with_visible(false),
 					)
@@ -563,8 +563,8 @@ mod native {
 				assert!(!IsIconic(hwnd).as_bool());
 				assert_eq!(tray.take_event(), Some(Event::Show));
 				let status = vec![255u8; 32 * 32 * 4];
-				assert!(tray.set_icon(&status, 32, "Serein — test status"));
-				assert!(tray.set_icon(&status, 32, "Serein — replaced"));
+				assert!(tray.set_icon(&status, 32, "Nivra — test status"));
+				assert!(tray.set_icon(&status, 32, "Nivra — replaced"));
 				assert!(!tray.set_icon(&status[..16], 32, "wrong size"));
 				assert!(tray.state.owned.get().is_some());
 				tray.state.remove_icon();
@@ -578,7 +578,7 @@ mod native {
 				assert!(IsWindowVisible(hwnd).as_bool());
 				drop(tray);
 				assert!(IsWindowVisible(hwnd).as_bool());
-				assert!(GetPropW(hwnd, w!("Serein.TrayState")).is_invalid());
+				assert!(GetPropW(hwnd, w!("Nivra.TrayState")).is_invalid());
 				assert_ne!(
 					GetWindowLongPtrW(hwnd, GWLP_WNDPROC),
 					callback as *const () as isize

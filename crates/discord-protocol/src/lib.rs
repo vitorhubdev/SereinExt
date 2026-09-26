@@ -1880,7 +1880,7 @@ mod member_tests {
 			member.custom_status.as_deref(),
 			Some("🌙 semifluent in computerspeak")
 		);
-		let custom_emoji: MemberItem = decode(br#"{"member":{"user":{"id":"5","username":"Presence"},"presence":{"status":"online","activities":[{"type":4,"emoji":{"name":"serein_wave","id":"9001"}}]}}}"#).unwrap();
+		let custom_emoji: MemberItem = decode(br#"{"member":{"user":{"id":"5","username":"Presence"},"presence":{"status":"online","activities":[{"type":4,"emoji":{"name":"nivra_wave","id":"9001"}}]}}}"#).unwrap();
 		assert!(custom_emoji.into_model().unwrap().custom_status.is_none());
 		let long: MemberItem = decode(format!(r#"{{"member":{{"user":{{"id":"5","username":"P"}},"presence":{{"status":"dnd","activities":[{{"type":4,"state":"{}"}}]}}}}}}"#, "x".repeat(400)).as_bytes()).unwrap();
 		assert_eq!(

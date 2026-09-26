@@ -694,12 +694,12 @@ mod tests {
 		assert_eq!((width, height, rgba.len()), (180, 320, 180 * 320 * 4));
 	}
 
-	/// Developer check for real-world files: `SEREIN_VIDEO_SAMPLE=/path/clip.mp4 cargo test
+	/// Developer check for real-world files: `NIVRA_VIDEO_SAMPLE=/path/clip.mp4 cargo test
 	/// -p platform decodes_local_sample -- --ignored --nocapture`.
 	#[test]
 	#[ignore = "decodes a developer-supplied local clip"]
 	fn decodes_local_sample() {
-		let path = std::env::var("SEREIN_VIDEO_SAMPLE").expect("SEREIN_VIDEO_SAMPLE path");
+		let path = std::env::var("NIVRA_VIDEO_SAMPLE").expect("NIVRA_VIDEO_SAMPLE path");
 		let bytes = std::fs::read(path).unwrap();
 		let mut decoder = Decoder::open(Box::new(std::io::Cursor::new(bytes))).unwrap();
 		let info = decoder.info();

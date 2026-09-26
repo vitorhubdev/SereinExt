@@ -239,7 +239,7 @@ impl Metrics {
 	pub fn new(scope: Scope) -> Self {
 		static REPORTER: OnceLock<Option<mpsc::SyncSender<Report>>> = OnceLock::new();
 		let send = REPORTER.get_or_init(|| {
-			if std::env::var_os("SEREIN_VOICE_DIAGNOSTICS").is_none_or(|v| v != "1") {
+			if std::env::var_os("NIVRA_VOICE_DIAGNOSTICS").is_none_or(|v| v != "1") {
 				return None;
 			}
 			let (send, receive) = mpsc::sync_channel::<Report>(8);
@@ -418,7 +418,7 @@ impl Drop for Metrics {
 
 fn write_report(report: Report, bytes: &mut usize, writer: &mut impl Write) -> bool {
 	let mut line = format!(
-		"[Serein voice {:?}] debug={} at_ms={} window_ms={} wakes={} resets={} drops={} stalls={} noise_frames={} stages(calls,total_us,max_us): echo_render={:?} echo_capture={:?} noise={:?} encode={:?} mix={:?} receive={:?}",
+		"[Nivra voice {:?}] debug={} at_ms={} window_ms={} wakes={} resets={} drops={} stalls={} noise_frames={} stages(calls,total_us,max_us): echo_render={:?} echo_capture={:?} noise={:?} encode={:?} mix={:?} receive={:?}",
 		report.scope,
 		cfg!(debug_assertions),
 		report.at_ms,

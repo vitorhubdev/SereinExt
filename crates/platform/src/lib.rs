@@ -5,6 +5,7 @@ pub mod compositor;
 pub mod game_activity;
 pub mod hotkeys;
 pub mod locale;
+pub mod migration;
 pub mod notifications;
 pub mod pointer;
 pub mod processes;
@@ -35,10 +36,9 @@ pub use login_linux::LoginView;
 
 /// Logical height of the native header the desktop app draws above the login webview.
 pub const LOGIN_HEADER_HEIGHT: f32 = 56.0;
-const SERVICE: &str = "cz.viceverse.serein";
-/// SereinExt must not share saved Discord sessions with the upstream Serein app.
-/// Keep the native application id above for packaging compatibility while the fork is tag-only.
-const CREDENTIAL_SERVICE: &str = "io.github.vitorhubdev.SereinExt";
+const SERVICE: &str = "io.github.vitorhubdev.Nivra";
+/// Nivra must not share saved Discord sessions with the upstream Serein app.
+const CREDENTIAL_SERVICE: &str = "io.github.vitorhubdev.Nivra";
 const ACCOUNT: &str = "discord-session";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CredentialError {
@@ -150,7 +150,7 @@ impl LoginView {
 			.collect::<String>()
 			+ ":";
 		let script =
-			include_str!("login-handoff.js").replace("__SEREIN_LOGIN_CAPABILITY__", &capability);
+			include_str!("login-handoff.js").replace("__NIVRA_LOGIN_CAPABILITY__", &capability);
 		let builder = WebViewBuilder::new()
 			.with_url("https://discord.com/login")
 			.with_visible(true)

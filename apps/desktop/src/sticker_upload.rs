@@ -146,7 +146,7 @@ mod tests {
 
 	#[test]
 	fn prepared_sticker_is_bounded_square_png() {
-		let root = std::env::temp_dir().join("serein-sticker-upload-test.png");
+		let root = std::env::temp_dir().join("nivra-sticker-upload-test.png");
 		let mut source = Cursor::new(Vec::new());
 		image::DynamicImage::new_rgba8(640, 400)
 			.write_to(&mut source, image::ImageFormat::Png)

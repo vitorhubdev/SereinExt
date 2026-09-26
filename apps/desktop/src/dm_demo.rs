@@ -1,4 +1,4 @@
-//! Offline debug check: cargo run --locked -p serein --features demo -- --demo --demo-check-switcher
+//! Offline debug check: cargo run --locked -p nivra --features demo -- --demo --demo-check-switcher
 use client_core::{Command, Envelope, Event, State, auth::Failure, user_actions};
 use eframe::egui;
 use model::{Channel, Id};

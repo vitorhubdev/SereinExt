@@ -10,7 +10,7 @@ use webkit6::{gio, glib, prelude::*};
 
 const LIFETIME: Duration = Duration::from_secs(600);
 const QUERY_INTERVAL: Duration = Duration::from_millis(100);
-const HANDLER: &str = "sereinLogin";
+const HANDLER: &str = "nivraLogin";
 
 struct Handoff {
 	opened: Instant,
@@ -92,11 +92,11 @@ impl LoginView {
 			include_str!("login-handoff.js"),
 		]
 		.join("\n")
-		.replace("__SEREIN_LOGIN_CAPABILITY__", &capability);
+		.replace("__NIVRA_LOGIN_CAPABILITY__", &capability);
 		// evaluate_javascript runs in the main frame. Restrict its result before it
 		// crosses into Rust: arbitrary child-frame IPC never supplies a token body.
 		let take_script = format!(
-			"(() => {{ if (window !== window.top || location.origin !== 'https://discord.com') return null; const take = window['__serein_login_take_{}']; if (typeof take !== 'function') return null; const value = take(); return typeof value === 'string' && value.length <= 2113 && /^[\\x21-\\x7e]+$/.test(value) ? value : null; }})()",
+			"(() => {{ if (window !== window.top || location.origin !== 'https://discord.com') return null; const take = window['__nivra_login_take_{}']; if (typeof take !== 'function') return null; const value = take(); return typeof value === 'string' && value.length <= 2113 && /^[\\x21-\\x7e]+$/.test(value) ? value : null; }})()",
 			capability.trim_end_matches(':')
 		);
 		let opened = Instant::now();
@@ -267,7 +267,7 @@ impl LoginView {
 		view.connect_print(|_, _| true);
 		view.connect_show_notification(|_, _| true);
 		let window = gtk4::Window::builder()
-			.title("Discord sign-in · Serein")
+			.title("Discord sign-in · Nivra")
 			.default_width(900)
 			.default_height(700)
 			.child(&view)

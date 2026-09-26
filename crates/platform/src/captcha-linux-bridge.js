@@ -1,14 +1,14 @@
 // The passcode stays in the main frame until a bounded native query drains it.
 (() => {
   "use strict";
-  const page = "https://serein-captcha.verification.invalid/";
+  const page = "https://nivra-captcha.verification.invalid/";
   if (window !== window.top || location.href !== page) return;
-  const capability = "__SEREIN_CAPTCHA_CAPABILITY__";
+  const capability = "__NIVRA_CAPTCHA_CAPABILITY__";
   const opened = Date.now();
   let pending = null;
   let delivered = false;
   const active = () => window === window.top && location.href === page && Date.now() - opened <= 300000;
-  Object.defineProperty(window, "__serein_captcha_take_" + capability.slice(0, -1), {
+  Object.defineProperty(window, "__nivra_captcha_take_" + capability.slice(0, -1), {
     value: () => {
       const value = active() ? pending : null;
       pending = null;

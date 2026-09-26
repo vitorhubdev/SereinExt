@@ -37,7 +37,7 @@ pub(super) fn open(
 		.iter()
 		.map(|byte| format!("{byte:02x}"))
 		.collect::<String>();
-	let directory = std::env::temp_dir().join(format!("serein-video-{name}"));
+	let directory = std::env::temp_dir().join(format!("nivra-video-{name}"));
 	fs::DirBuilder::new()
 		.mode(0o700)
 		.create(&directory)
@@ -45,7 +45,7 @@ pub(super) fn open(
 	let temporary = Temporary(directory);
 	let result = convert(source, cancelled, executable, &temporary);
 	fs::remove_dir_all(&temporary.0).map_err(
-		|_| "Temporary video cleanup failed; remove serein-video files from the system temporary folder",
+		|_| "Temporary video cleanup failed; remove nivra-video files from the system temporary folder",
 	)?;
 	result
 }
@@ -85,7 +85,7 @@ fn convert(
 	// The fixed shell applies a hard 128 MiB file ceiling before replacing itself.
 	// FFmpeg's smaller soft ceiling leaves room for the final MP4 sample tables.
 	let mut child = Command::new("/bin/sh")
-		.args(["-c", "ulimit -f 131072 || exit 1; exec \"$@\"", "serein-video", executable])
+		.args(["-c", "ulimit -f 131072 || exit 1; exec \"$@\"", "nivra-video", executable])
 		.args(["-nostdin", "-hide_banner", "-loglevel", "error", "-max_alloc", "16777216",
 			"-threads", "2", "-protocol_whitelist", "file", "-format_whitelist", "mov,matroska,webm",
 			"-i"])

@@ -1,5 +1,5 @@
 //! Turn the image URLs a Rich Presence client supplies into Discord media-proxy paths.
-//! Serein never fetches the URL itself; Discord returns the proxy path presences may carry.
+//! Nivra never fetches the URL itself; Discord returns the proxy path presences may carry.
 use crate::{DiscordApi, Failure};
 use discord_protocol::rpc::MAX_ASSET_KEY;
 use model::Id;

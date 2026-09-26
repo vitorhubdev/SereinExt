@@ -1037,7 +1037,7 @@ fn role_chips(
 }
 
 pub(crate) fn profile_opener_id() -> egui::Id {
-	egui::Id::unique("serein-profile-opener")
+	egui::Id::unique("nivra-profile-opener")
 }
 
 #[derive(Default)]
@@ -1849,7 +1849,7 @@ pub fn synthetic(user: &User, guild: Option<Id>) -> model::UserProfile {
 	let hash = |c: char| c.to_string().repeat(32);
 	model::UserProfile {
         user: user.clone(),
-        username: "serein.preview".into(),
+        username: "nivra.preview".into(),
         global_name: Some(user.name.clone()),
         banner: Some(hash('a')),
         accent_color: Some(0x315c68),

@@ -206,7 +206,7 @@ impl Session {
 		let colors = design::palette_for(ctx);
 		let painter = ctx.layer_painter(egui::LayerId::new(
 			egui::Order::Foreground,
-			egui::Id::unique("serein-autoscroll"),
+			egui::Id::unique("nivra-autoscroll"),
 		));
 		painter.circle_filled(origin, 12.0, colors.raised);
 		painter.circle_stroke(origin, 12.0, Stroke::new(1.0, colors.muted));

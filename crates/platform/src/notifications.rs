@@ -54,10 +54,10 @@ pub enum Status {
 impl Status {
 	pub fn label(self) -> &'static str {
 		match self {
-			Self::Disabled => "System notifications are off in Serein settings.",
+			Self::Disabled => "System notifications are off in Nivra settings.",
 			Self::Enabling => "Checking system notification permission…",
 			Self::Ready => {
-				"Serein can send system notifications; message alerts show sender and preview."
+				"Nivra can send system notifications; message alerts show sender and preview."
 			}
 			Self::Denied => "System notifications are disabled in your OS settings.",
 			Self::QueueFull => {
@@ -66,7 +66,7 @@ impl Status {
 			Self::Unavailable => {
 				#[cfg(target_os = "macos")]
 				{
-					"System notifications unavailable. Run the packaged Serein.app and check System Settings > Notifications."
+					"System notifications unavailable. Run the packaged Nivra.app and check System Settings > Notifications."
 				}
 				#[cfg(target_os = "windows")]
 				{
@@ -148,7 +148,7 @@ impl Notifications {
 			let restore = Arc::clone(&self.restore);
 			let activated = self.activation_send.clone();
 			if std::thread::Builder::new()
-				.name("serein-notifications".into())
+				.name("nivra-notifications".into())
 				.spawn(move || worker(receive, current, status, wake, restore, activated))
 				.is_err()
 			{
@@ -408,7 +408,7 @@ fn authorize() -> Status {
 	{
 		use windows::{UI::Notifications::ToastNotificationManager, core::HSTRING};
 		let notifier = ToastNotificationManager::CreateToastNotifierWithId(&HSTRING::from(
-			"cz.viceverse.serein",
+			"io.github.vitorhubdev.Nivra",
 		));
 		match notifier {
 			Ok(notifier) => windows_setting_status(notifier.Setting(), windows_shortcut_exists()),
@@ -443,7 +443,7 @@ fn windows_setting_status(
 fn windows_shortcut_exists() -> bool {
 	std::env::var_os("APPDATA").is_some_and(|root| {
 		std::path::PathBuf::from(root)
-			.join("Microsoft/Windows/Start Menu/Programs/Serein.lnk")
+			.join("Microsoft/Windows/Start Menu/Programs/Nivra.lnk")
 			.is_file()
 	})
 }
@@ -495,7 +495,7 @@ fn show(alert: &Alert, activation: Activation) -> Result<NotificationHandle, ()>
 	#[cfg(target_os = "windows")]
 	{
 		use tauri_winrt_notification::{IconCrop, Toast};
-		let mut toast = Toast::new("cz.viceverse.serein")
+		let mut toast = Toast::new("io.github.vitorhubdev.Nivra")
 			.title(&alert.title)
 			.text1(&alert.body)
 			.on_activated(move |_| {
@@ -547,7 +547,7 @@ fn close(outstanding: &mut Option<NotificationHandle>) {
 	if outstanding.take().is_some() {
 		use windows::{UI::Notifications::ToastNotificationManager, core::HSTRING};
 		let _ = ToastNotificationManager::History()
-			.and_then(|history| history.ClearWithId(&HSTRING::from("cz.viceverse.serein")));
+			.and_then(|history| history.ClearWithId(&HSTRING::from("io.github.vitorhubdev.Nivra")));
 	}
 }
 

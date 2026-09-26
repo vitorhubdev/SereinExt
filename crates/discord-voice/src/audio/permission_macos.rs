@@ -10,7 +10,7 @@ use std::{
 	time::{Duration, Instant},
 };
 
-const DENIED: &str = "Microphone access denied. Allow Serein (or your terminal for cargo run) in System Settings > Privacy & Security > Microphone, then rejoin.";
+const DENIED: &str = "Microphone access denied. Allow Nivra (or your terminal for cargo run) in System Settings > Privacy & Security > Microphone, then rejoin.";
 
 pub(super) fn authorize(gate: &Gate, revision: u64) -> Result<(), &'static str> {
 	// SAFETY: AVMediaTypeAudio is the framework's valid process-lifetime media constant.

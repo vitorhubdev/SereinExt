@@ -215,7 +215,7 @@ mod tests {
 	#[test]
 	#[ignore = "Explicit native check: replaces the system clipboard with a temp file"]
 	fn native_copied_file_reads_as_paste_paths() {
-		let dir = std::env::temp_dir().join(format!("serein-paste-{}", std::process::id()));
+		let dir = std::env::temp_dir().join(format!("nivra-paste-{}", std::process::id()));
 		std::fs::create_dir_all(&dir).unwrap();
 		let file = dir.join("copied file.txt");
 		std::fs::write(&file, b"hello").unwrap();

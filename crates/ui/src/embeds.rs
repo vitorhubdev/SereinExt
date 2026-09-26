@@ -8,7 +8,7 @@ use egui::RichText;
 use model::{Embed, Gif, Message};
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-const WEB_MEDIA_REQUEST: &str = "serein-web-media-request";
+const WEB_MEDIA_REQUEST: &str = "nivra-web-media-request";
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct WebMediaRequest {

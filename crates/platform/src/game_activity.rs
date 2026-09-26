@@ -197,7 +197,7 @@ mod native {
 		#[tokio::test]
 		async fn private_pipe_roundtrip_contention_and_release() {
 			let name = format!(
-				r"\\.\pipe\serein-test-{}-{}",
+				r"\\.\pipe\nivra-test-{}-{}",
 				std::process::id(),
 				getrandom::u64().unwrap()
 			);
@@ -408,7 +408,7 @@ mod native {
 		async fn private_socket_roundtrip_contention_and_owned_cleanup() {
 			let directory = fs::canonicalize(std::env::temp_dir()).unwrap();
 			let path = directory.join(format!(
-				"serein-test-{}-{}",
+				"nivra-test-{}-{}",
 				std::process::id(),
 				getrandom::u64().unwrap()
 			));

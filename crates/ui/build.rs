@@ -6,12 +6,12 @@ use std::path::{Path, PathBuf};
 
 /// `(source relative to the workspace root, package path, component)`.
 const FILES: &[(&str, &str, &str)] = &[
-	("LICENSE-MIT", "LICENSE-MIT", "sereinext"),
-	("LICENSE-APACHE", "LICENSE-APACHE", "sereinext"),
+	("LICENSE-MIT", "LICENSE-MIT", "nivraext"),
+	("LICENSE-APACHE", "LICENSE-APACHE", "nivraext"),
 	(
 		"THIRD_PARTY_NOTICES.md",
 		"THIRD_PARTY_NOTICES.md",
-		"sereinext",
+		"nivraext",
 	),
 	(
 		"assets/sounds/README.md",

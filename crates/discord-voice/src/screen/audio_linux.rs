@@ -119,7 +119,7 @@ impl OwnApplication {
 			&& !binary.eq_ignore_ascii_case(&self.binary)
 			&& ![Some(binary), name, app_id].into_iter().flatten().any(|v| {
 				v.len() > 256
-					|| v.to_ascii_lowercase().contains("serein")
+					|| v.to_ascii_lowercase().contains("nivra")
 					|| v.eq_ignore_ascii_case("rustcord")
 			})
 	}
@@ -167,7 +167,7 @@ fn input(info: &pulse::pa_sink_input_info, own: &OwnApplication) -> Option<Input
 			property(info, c"application.name"),
 			property(info, c"application.id"),
 		) || property(info, c"flatpak.app-id")
-		.is_some_and(|v| v.eq_ignore_ascii_case("cz.viceverse.serein"))
+		.is_some_and(|v| v.eq_ignore_ascii_case("io.github.vitorhubdev.Nivra"))
 	{
 		return None;
 	}
@@ -372,7 +372,7 @@ impl Native {
 			}
 			native.context = pulse::pa_context_new(
 				pulse::pa_mainloop_get_api(native.mainloop),
-				c"Serein screen audio".as_ptr(),
+				c"Nivra screen audio".as_ptr(),
 			);
 			if native.context.is_null()
 				|| pulse::pa_context_connect(
@@ -490,7 +490,7 @@ impl Capture {
 		let stream = unsafe {
 			pulse::pa_stream_new(
 				native.context,
-				c"Serein isolated screen audio".as_ptr(),
+				c"Nivra isolated screen audio".as_ptr(),
 				&spec,
 				null(),
 			)
@@ -816,16 +816,16 @@ fn exclude(excluded: &mut Vec<Input>, input: Input) {
 pub(super) fn check_isolation() {
 	let own = OwnApplication {
 		pid: 42,
-		binary: "serein".into(),
+		binary: "nivra".into(),
 	};
 	assert!(!own.allows(Some("42"), Some("renamed-client"), None, None));
-	assert!(!own.allows(Some("999"), Some("serein"), None, None));
-	assert!(!own.allows(Some("999"), Some("other"), Some("Serein call"), None));
+	assert!(!own.allows(Some("999"), Some("nivra"), None, None));
+	assert!(!own.allows(Some("999"), Some("other"), Some("Nivra call"), None));
 	assert!(!own.allows(
 		Some("999"),
 		Some("other"),
 		None,
-		Some("cz.viceverse.serein")
+		Some("io.github.vitorhubdev.Nivra")
 	));
 	assert!(!own.allows(None, Some("game"), None, None));
 	assert!(!own.allows(Some("123"), None, None, None));
@@ -875,12 +875,12 @@ pub(super) fn check_isolation() {
 			Some(c"game-output.monitor")
 		);
 		let selected = list.inputs[0].clone();
-		// A new Serein playback stream reusing a former game index is never admitted.
+		// A new Nivra playback stream reusing a former game index is never admitted.
 		list.inputs.clear();
 		pulse::pa_proplist_sets(
 			props,
 			c"application.process.binary".as_ptr(),
-			c"serein".as_ptr(),
+			c"nivra".as_ptr(),
 		);
 		listed_input(null_mut(), &info, 0, (&mut list as *mut Listing).cast());
 		assert!(list.inputs.is_empty());
