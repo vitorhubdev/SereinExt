@@ -1,27 +1,52 @@
-# Serein brand assets
+# Nivra brand assets
 
-Serein's own application mark: a speech bubble carrying an S-shaped wave, in the icy
-blue-to-indigo brand gradient. These files are Serein design assets, not Apple, Discord or any
-other vendor's branding, and no third-party font is embedded in them.
+Nivra's own application mark: a glass N on a rounded plate carrying the violet-to-blue
+brand gradient. These files are Nivra design assets, not Apple, Discord or any other
+vendor's branding, and no third-party font is embedded in them.
 
-- `serein.svg` — full-colour gradient mark on its rounded plate; the master vector source.
-- `serein-flat.svg` — flat (non-gradient) variant for small or low-colour contexts.
-- `serein-mark.svg` — solid white silhouette, view box trimmed to the mark's bounding box.
-  `tools/generate-icons.py` rasterizes this one into the shared icon atlas as `serein-mark`,
-  which the interface tints at draw time.
-- `serein-1024.png` — 1024×1024 sRGB RGBA preview render of the full-colour mark.
-- `serein-tray.png` — 72×72 black-on-transparent render of `serein-mark.svg`, embedded by
-  `crates/platform` as the macOS menu bar template image; macOS tints it per appearance, so only
-  its alpha is used. Regenerate with:
+## Current mark
 
-  ```sh
-  sed 's/fill="#fff"/fill="#000"/g' assets/brand/serein-mark.svg |
-    rsvg-convert -w 72 -h 72 -o assets/brand/serein-tray.png
-  ```
+- `nivra.svg` — full colour mark on its plate; the master vector source.
+- `nivra-flat.svg` — flat (non-gradient) variant for small or low-colour contexts.
+- `nivra-mark.svg` — solid white N monogram, view box trimmed and square.
+  `tools/generate-icons.py` rasterizes this one into the shared icon atlas as
+  `nivra-mark`, which the interface tints at draw time. Its view box must stay square:
+  the generator scales a repository mark by `viewBox[2]` into a fixed 64 pixel cell.
+- `nivra-1024.png` — 1024x1024 sRGB RGBA render of the full colour mark.
+- `nivra-tray.png` — 72x72 black-on-transparent render of `nivra-mark.svg`, embedded by
+  `crates/platform` as the macOS menu bar template image; macOS tints it per appearance,
+  so only its alpha is used.
 
-The packaged platform icons built from the same artwork live in `packaging/` (`macos/Serein.icns`
-and `Serein.icon`, `windows/Serein.ico`, `linux/hicolor/*`).
+The packaged platform icons built from the same artwork live in `packaging/`
+(`macos/Nivra.icns`, `windows/Nivra.ico`, `linux/hicolor/*`).
 
-Brand palette: `#8BBEFF` → `#506DDC` → `#2D247C` plate gradient, `#F5FAFF` and `#D1E0FF` waves.
-The interface accent (`design::DEFAULT_PRIMARY_RGB`, `#1a72e8`) is drawn from the same family and
-is tuned so white text on it keeps a 4.5:1 contrast ratio.
+## How the masters were produced
+
+The supplied master artwork was a 1254x1254 RGB file with **no alpha channel** and an
+opaque black surround, which cannot be published as an application icon: every edge pixel
+was the plate colour multiplied by its coverage, so cutting the black away left a dark
+fringe. The masters here were therefore rebuilt rather than cut:
+
+1. the plate silhouette was recovered by flood filling the dark surround, and modelled as a
+   superellipse of exponent 4.5 (mean radial error 1.75 px over the traced outline);
+2. the plate colour field was estimated with a *normalised* blur, so the black surround
+   never bleeds into the field near the rim;
+3. the coverage of every pixel was measured against that field, and the stored colour was
+   **un-premultiplied** (`colour / coverage`) before being composited, which is what
+   removes the fringe;
+4. the N was traced from the artwork, simplified to 201 nodes and smoothed into cubic
+   segments; the vector reproduces the traced silhouette with an IoU of 0.993.
+
+`assets/brand/test_assets.py` measures the result: four channels, transparent corners, an
+opaque centre, and no more than 2% of the antialiased rim darker than a quarter of the
+plate median luminance. A naive cut of the same master fails that last check at 43.8%.
+
+## Previous mark
+
+The `serein-*` files are the upstream Serein artwork. They are kept until the packaging and
+interface wiring lands, and are not referenced by the current mark.
+
+## Palette
+
+Plate gradient `#F0C4FE` → `#8B44F4` → `#3E27ED` → `#0A6BFD` → `#9BDCFE`; the glass N runs
+`#FFFFFF` → `#EADCFF` → `#AE8CFF`. The flat variant uses plate `#5B2BE0` and N `#F3EAFF`.
