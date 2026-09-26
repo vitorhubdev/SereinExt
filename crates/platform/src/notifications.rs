@@ -195,7 +195,7 @@ impl Notifications {
 	/// Queue a privacy-preserving generic alert. False means disabled, unavailable or overloaded.
 	pub fn notify(&self) -> bool {
 		self.enqueue(Alert {
-			title: "Serein".into(),
+			title: "Nivra".into(),
 			body: GENERIC_BODY.into(),
 			image_path: None,
 		})
@@ -520,7 +520,7 @@ fn show(alert: &Alert, activation: Activation) -> Result<NotificationHandle, ()>
 fn notification(alert: &Alert) -> notify_rust::Notification {
 	let mut notification = notify_rust::Notification::new();
 	notification
-		.appname("Serein")
+		.appname("Nivra")
 		.summary(&alert.title)
 		.body(&alert.body)
 		.timeout(5_000);
@@ -617,11 +617,11 @@ mod tests {
 	#[test]
 	fn disabled_is_lazy_and_fixed_queue_is_bounded_and_invalidated() {
 		let alert = notification(&Alert {
-			title: "Serein".into(),
+			title: "Nivra".into(),
 			body: GENERIC_BODY.into(),
 			image_path: None,
 		});
-		assert_eq!(alert.summary, "Serein");
+		assert_eq!(alert.summary, "Nivra");
 		assert_eq!(alert.body, "You have a new message.");
 		let mut notifications = Notifications::new(|| {}, || {});
 		assert_eq!(notifications.status(), Status::Disabled);

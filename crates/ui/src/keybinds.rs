@@ -40,7 +40,7 @@ pub(super) fn show(
 	section(
 		ui,
 		t("Navigation"),
-		t("Move around Serein without reaching for the mouse."),
+		t("Move around Nivra without reaching for the mouse."),
 		NAVIGATION,
 		bindings,
 		capturing,

@@ -292,7 +292,7 @@ fn main() -> eframe::Result {
 	let transparency_available =
 		transparency_available || demo && std::env::args().any(|arg| arg == "--demo-transparency");
 	#[cfg(target_os = "windows")]
-	let icon = include_bytes!("../../../packaging/windows/serein.png").as_slice();
+	let icon = include_bytes!("../../../packaging/windows/nivra.png").as_slice();
 	#[cfg(target_os = "linux")]
 	let icon = include_bytes!("../../../packaging/linux/hicolor/256x256/apps/nivra.png").as_slice();
 	let options = eframe::NativeOptions {
@@ -2560,7 +2560,7 @@ impl Desktop {
 			};
 			tooltip.push_str(&format!(" · {count} {}", t("unread mentions")));
 		}
-		let png = include_bytes!("../../../packaging/windows/serein.png");
+		let png = include_bytes!("../../../packaging/windows/nivra.png");
 		if let Some(pixels) = platform::tray::status_icon(png, 32, pings > 0, voice)
 			&& tray.set_icon(&pixels, 32, &tooltip)
 		{

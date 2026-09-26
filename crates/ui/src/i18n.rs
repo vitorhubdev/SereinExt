@@ -1073,8 +1073,8 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		"Integrations" => "Integrações",
 		"Audit Log" => "Registro de auditoria",
 		"Navigation" => "Navegação",
-		"Move around Serein without reaching for the mouse." => {
-			"Navegue pelo Serein sem usar o mouse."
+		"Move around Nivra without reaching for the mouse." => {
+			"Navegue pelo Nivra sem usar o mouse."
 		}
 		"Messages" => "Mensagens",
 		"Composer shortcuts are only active while you are writing." => {
@@ -2297,8 +2297,8 @@ fn spanish(key: &str) -> Option<&'static str> {
 		"Integrations" => "Integraciones",
 		"Audit Log" => "Registro de auditoría",
 		"Navigation" => "Navegación",
-		"Move around Serein without reaching for the mouse." => {
-			"Muévete por Serein sin usar el ratón."
+		"Move around Nivra without reaching for the mouse." => {
+			"Muévete por Nivra sin usar el ratón."
 		}
 		"Messages" => "Mensajes",
 		"Composer shortcuts are only active while you are writing." => {
@@ -2797,7 +2797,7 @@ mod tests {
 			"Updating…",
 			"Update available",
 			"Navigation",
-			"Move around Serein without reaching for the mouse.",
+			"Move around Nivra without reaching for the mouse.",
 			"Messages",
 			"Composer shortcuts are only active while you are writing.",
 			"Text Formatting",

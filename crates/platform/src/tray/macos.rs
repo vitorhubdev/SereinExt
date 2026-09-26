@@ -93,9 +93,9 @@ impl Tray {
 			image.setSize(NSSize::new(MARK_POINTS, MARK_POINTS));
 			button.setImage(Some(&image));
 		} else {
-			button.setTitle(ns_string!("Serein"));
+			button.setTitle(ns_string!("Nivra"));
 		}
-		button.setToolTip(Some(ns_string!("Serein")));
+		button.setToolTip(Some(ns_string!("Nivra")));
 		for (title, action) in [
 			(ns_string!("Show Serein"), sel!(showSerein:)),
 			(ns_string!("Quit Serein"), sel!(quitSerein:)),

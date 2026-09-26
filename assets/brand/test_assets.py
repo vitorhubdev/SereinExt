@@ -175,10 +175,30 @@ class BrandAssetTest(unittest.TestCase):
             self.assertIn(fill.lower(), ('#fff', '#ffffff', 'white'))
 
 
+import re
 import struct
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parents[2]
-PACKAGING = ROOT / 'packaging'
+PACKAGING = ROOT / "packaging"
+
+# Every retired brand file name. A `serein-` prefix alone is not enough: the Windows
+# artwork is `serein.png`, which the first version of this gate missed.
+RETIRED_BRAND_FILES = (
+    "serein.png",
+    "serein.svg",
+    "Serein.ico",
+    "Serein.icns",
+    "serein-1024.png",
+    "serein-tray.png",
+    "serein-mark.svg",
+    "serein-flat.svg",
+)
+
+# Code embeds assets with include_bytes!/include_str!. No allowlist: nothing that is
+# bound to an application identity may be compiled into the binary.
+EMBED = re.compile(r"include_(?:bytes|str)!\s*\(\s*\"([^\"]+)\"")
+CODE_DIRS = ("apps", "crates", "tools")
 # References that must survive this change: each icon name is bound to an application
 # identity (the .desktop entry, the AppImage file name, the Flatpak app id or the macOS
 # bundle) that is renamed in the next phase, not here.
@@ -189,6 +209,12 @@ BOUND_TO_APP_ID = {
     'packaging/flatpak/cz.viceverse.serein.json': [
         '/app/share/icons/hicolor/1024x1024/apps/serein.png',
     ],
+    'packaging/flatpak/build.py': [
+        'viceverse-cz.github.io/Serein/icons/serein.png',
+    ],
+    'packaging/flatpak/serein.flatpakref': [
+        'viceverse-cz.github.io/Serein/icons/serein.png',
+    ],
     'packaging/macos/Info.plist': [
         'Serein.icns',
     ],
@@ -197,14 +223,7 @@ BOUND_TO_APP_ID = {
         'Serein.icon',
     ],
 }
-BRAND_REFERENCE_PATTERNS = (
-    'brand/serein-',
-    'apps/serein.png',
-    'Serein.ico',
-    'Serein.icns',
-    'Serein.icon',
-    'serein-mark',
-)
+BRAND_REFERENCE_PATTERNS = RETIRED_BRAND_FILES + ("Serein.icon", "serein-mark")
 SCANNED = ('apps', 'crates', 'tools', 'packaging', 'assets', 'docs')
 TEXT_SUFFIXES = ('.rs', '.py', '.cjs', '.ts', '.js', '.md', '.nsi', '.rc', '.sh',
                  '.plist', '.json', '.toml', '.yml', '.yaml', '.svg', '.desktop', '.txt')
@@ -282,6 +301,18 @@ class PackagedIconTest(unittest.TestCase):
             pos += length
         self.assertEqual(pos, len(data), 'the icon set does not end on an entry boundary')
         self.assertGreaterEqual(entries, 8, 'the icon set is missing the macOS ladder')
+    def test_code_embeds_no_retired_brand_asset(self):
+        found = []
+        for folder in CODE_DIRS:
+            for path in sorted((ROOT / folder).rglob("*.rs")):
+                text = path.read_text(encoding="utf-8")
+                for number, line in enumerate(text.splitlines(), start=1):
+                    for target in EMBED.findall(line):
+                        name = target.replace("\\", "/").rsplit("/", 1)[-1]
+                        if name in RETIRED_BRAND_FILES:
+                            found.append(f"{path.relative_to(ROOT).as_posix()}:{number}: {target}")
+        self.assertEqual(found, [], f"code embeds a retired Serein asset: {found}")
+
     def test_only_app_id_bound_references_name_the_old_brand(self):
         found = []
         for folder in SCANNED:
@@ -304,6 +335,158 @@ class PackagedIconTest(unittest.TestCase):
                             continue
                         found.append(f'{relative}:{number}: {line.strip()}')
         self.assertEqual(found, [], 'stale Serein brand references: ' + '; '.join(found))
+
+
+import re
+import xml.etree.ElementTree as ET
+
+SVG_NS = '{http://www.w3.org/2000/svg}'
+NUMBER = re.compile(r'-?[0-9]*\.?[0-9]+')
+
+
+def path_points(d, samples=48):
+    """Sample a path, keeping both the control hull and the curve itself."""
+    toks = re.findall(r'[MLCZ]|-?[0-9]*\.?[0-9]+', d)
+    hull = []
+    curve = []
+    i = 0
+    cur = (0.0, 0.0)
+    start = (0.0, 0.0)
+    cmd = None
+    while i < len(toks):
+        if toks[i] in 'MLCZ':
+            cmd = toks[i]
+            i += 1
+            if cmd == 'Z':
+                cur = start
+                continue
+        if cmd == 'M':
+            cur = (float(toks[i]), float(toks[i + 1]))
+            start = cur
+            curve.append(cur)
+            hull.append(cur)
+            i += 2
+            cmd = 'L'
+        elif cmd == 'L':
+            cur = (float(toks[i]), float(toks[i + 1]))
+            curve.append(cur)
+            hull.append(cur)
+            i += 2
+        elif cmd == 'C':
+            c1 = (float(toks[i]), float(toks[i + 1]))
+            c2 = (float(toks[i + 2]), float(toks[i + 3]))
+            p3 = (float(toks[i + 4]), float(toks[i + 5]))
+            hull.extend((cur, c1, c2, p3))
+            for s in range(1, samples + 1):
+                u = s / samples
+                mt = 1 - u
+                curve.append((
+                    mt ** 3 * cur[0] + 3 * mt * mt * u * c1[0] + 3 * mt * u * u * c2[0] + u ** 3 * p3[0],
+                    mt ** 3 * cur[1] + 3 * mt * mt * u * c1[1] + 3 * mt * u * u * c2[1] + u ** 3 * p3[1],
+                ))
+            cur = p3
+            i += 6
+        else:
+            i += 1
+    return hull, curve
+
+
+def geometry(path):
+    """Return (hull, curve) boxes as (min_x, min_y, max_x, max_y)."""
+    root = ET.parse(path).getroot()
+    hull, curve = [], []
+    for node in root.findall('.//' + SVG_NS + 'path'):
+        h, c = path_points(node.attrib.get('d', ''))
+        hull.extend(h)
+        curve.extend(c)
+    def box(points):
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
+        return (min(xs), min(ys), max(xs), max(ys))
+    return box(hull), box(curve)
+
+
+def view_box(path):
+    root = ET.parse(path).getroot()
+    return [float(v) for v in root.attrib['viewBox'].split()]
+
+
+class VectorPlacementTest(unittest.TestCase):
+    """A renderer clips to the view box, so the artwork must live inside it and be centred."""
+
+    SVGS = (
+        'assets/brand/nivra-mark.svg',
+        'assets/brand/nivra.svg',
+        'assets/brand/nivra-flat.svg',
+        'packaging/linux/hicolor/scalable/apps/nivra.svg',
+        'packaging/linux/hicolor/scalable/apps/nivra-symbolic.svg',
+    )
+
+    def test_artwork_is_inside_its_view_box(self):
+        for name in self.SVGS:
+            with self.subTest(name=name):
+                hull, _ = geometry(ROOT / name)
+                vx, vy, vw, vh = view_box(ROOT / name)
+                self.assertGreaterEqual(hull[0], vx, f'{name}: geometry runs off the left')
+                self.assertGreaterEqual(hull[1], vy, f'{name}: geometry runs off the top')
+                self.assertLessEqual(hull[2], vx + vw, f'{name}: geometry runs off the right')
+                self.assertLessEqual(hull[3], vy + vh, f'{name}: geometry runs off the bottom')
+
+    def test_mark_is_centred_in_its_square_view_box(self):
+        path = ROOT / 'assets' / 'brand' / 'nivra-mark.svg'
+        vx, vy, vw, vh = view_box(path)
+        self.assertAlmostEqual(vx, 0.0, places=3)
+        self.assertAlmostEqual(vy, 0.0, places=3)
+        self.assertAlmostEqual(vw, vh, places=3, msg='the atlas needs a square mark box')
+        _, curve = geometry(path)
+        cx = (curve[0] + curve[2]) / 2.0
+        cy = (curve[1] + curve[3]) / 2.0
+        self.assertAlmostEqual(cx, vw / 2.0, delta=vw * 0.01, msg='the mark is off centre horizontally')
+        self.assertAlmostEqual(cy, vh / 2.0, delta=vh * 0.01, msg='the mark is off centre vertically')
+
+    def test_symbolic_mark_is_centred_on_its_canvas(self):
+        path = ROOT / 'packaging' / 'linux' / 'hicolor' / 'scalable' / 'apps' / 'nivra-symbolic.svg'
+        vx, vy, vw, vh = view_box(path)
+        _, curve = geometry(path)
+        cx = (curve[0] + curve[2]) / 2.0
+        cy = (curve[1] + curve[3]) / 2.0
+        self.assertAlmostEqual(cx, vx + vw / 2.0, delta=vw * 0.01, msg='the symbolic N is off centre horizontally')
+        self.assertAlmostEqual(cy, vy + vh / 2.0, delta=vh * 0.01, msg='the symbolic N is off centre vertically')
+
+    def test_icon_mark_is_centred_on_the_plate(self):
+        for name in ('assets/brand/nivra.svg', 'assets/brand/nivra-flat.svg'):
+            with self.subTest(name=name):
+                root = ET.parse(ROOT / name).getroot()
+                paths = root.findall('.//' + SVG_NS + 'path')
+                _, curve = geometry(ROOT / name)
+                self.assertTrue(paths)
+                # the last path is the glass N on the plate
+                d = paths[-1].attrib['d']
+                _, mark = path_points(d)
+                xs = [p[0] for p in mark]
+                ys = [p[1] for p in mark]
+                cx = (min(xs) + max(xs)) / 2.0
+                cy = (min(ys) + max(ys)) / 2.0
+                self.assertAlmostEqual(cx, 512.0, delta=4.0, msg='the N is not centred on the plate')
+                self.assertAlmostEqual(cy, 512.0, delta=4.0, msg='the N is not centred on the plate')
+
+    def test_tray_image_carries_a_centred_mark(self):
+        width, height, channels, rows = read_png(BRAND / 'nivra-tray.png')
+        self.assertEqual((width, height, channels), (TRAY, TRAY, 4))
+        left = right = top = bottom = None
+        for y, line in enumerate(rows):
+            for x in range(width):
+                if line[x * 4 + 3] > 127:
+                    left = x if left is None else left
+                    right = x
+                    top = y if top is None else top
+                    bottom = y
+        self.assertIsNotNone(left, 'the tray image is empty')
+        self.assertAlmostEqual((left + right) / 2.0, (TRAY - 1) / 2.0, delta=1.0)
+        self.assertAlmostEqual((top + bottom) / 2.0, (TRAY - 1) / 2.0, delta=1.0)
+        corners = [(0, 0), (TRAY - 1, 0), (0, TRAY - 1), (TRAY - 1, TRAY - 1)]
+        for x, y in corners:
+            self.assertEqual(rows[y][x * 4 + 3], 0, 'the tray corners must be clear')
 
 
 if __name__ == '__main__':

@@ -10,7 +10,7 @@ and spacing live in `crates/ui/src/design.rs`; every view resolves colours throu
 
 The `Palette` carries surface roles: `base` (title strip and server rail), `sidebar`
 (channel and member lists), `chat`, `raised` (composer, cards, search field, popovers), `hover`,
-`selected`, `border`, `text_strong`/`text`/`muted`, `link`, `accent` (Serein azure `#1a72e8`),
+`selected`, `border`, `text_strong`/`text`/`muted`, `link`, `accent` (Nivra violet `#6924dd`),
 presence
 colours, mention colours and an optional two-stop `backdrop` gradient. `canvas` and `surface`
 remain as aliases of `chat` and `sidebar` for older call sites.

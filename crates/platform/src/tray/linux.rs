@@ -139,7 +139,7 @@ impl ksni::Tray for Item {
 		"serein".into()
 	}
 	fn title(&self) -> String {
-		"Serein".into()
+		"Nivra".into()
 	}
 	fn icon_pixmap(&self) -> Vec<ksni::Icon> {
 		vec![ksni::Icon {

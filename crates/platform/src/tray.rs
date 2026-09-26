@@ -256,7 +256,7 @@ mod native {
 				},
 				..Default::default()
 			};
-			for (slot, unit) in data.szTip.iter_mut().zip("Serein".encode_utf16()) {
+			for (slot, unit) in data.szTip.iter_mut().zip("Nivra".encode_utf16()) {
 				*slot = unit;
 			}
 			let tray = Self {

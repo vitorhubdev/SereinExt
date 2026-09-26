@@ -103,7 +103,7 @@ impl Variant {
 	];
 	pub fn label(self) -> &'static str {
 		match self {
-			Variant::Standard => "Serein",
+			Variant::Standard => "Nivra",
 			Variant::Eclipse => "Eclipse",
 			Variant::Slate => "Slate",
 			Variant::Nightfall => "Nightfall",
@@ -250,7 +250,7 @@ const fn rgba(value: u32, alpha: u8) -> Color32 {
 	)
 }
 /// Serein azure: the house accent, packed for call sites that speak in integer colours.
-pub const DEFAULT_PRIMARY_RGB: u32 = 0x1a72e8;
+pub const DEFAULT_PRIMARY_RGB: u32 = 0x6924dd;
 pub const DEFAULT_PRIMARY_COLOR: [u8; 3] = [
 	(DEFAULT_PRIMARY_RGB >> 16) as u8,
 	(DEFAULT_PRIMARY_RGB >> 8) as u8,
@@ -1732,6 +1732,35 @@ mod tests {
 			"éFF400",
 		] {
 			assert_eq!(parse_hex_color(text), None);
+		}
+	}
+	#[test]
+	fn default_accent_stays_on_the_approved_nivra_violet() {
+		// Pinned deliberately: the accent is part of the brand decision, not a free value.
+		assert_eq!(DEFAULT_PRIMARY_RGB, 0x6924dd);
+		for dark in [false, true] {
+			let base = colors(dark, Variant::Standard);
+			assert_eq!(base.accent, rgb(DEFAULT_PRIMARY_RGB));
+			assert!(
+				contrast(base.accent_text, base.accent) >= 4.5,
+				"{dark}: white on the accent must stay readable"
+			);
+			assert!(
+				contrast(base.mention_text, base.mention_bg.blend(base.chat)) >= 4.5,
+				"{dark}: mention text must stay readable on the mention tint"
+			);
+		}
+	}
+	#[test]
+	fn the_standard_preset_keeps_the_key_it_was_saved_under() {
+		// Preferences written before the rename stored `standard`; the label is display
+		// only and is never a persistence key, so a saved setting still round trips.
+		assert_eq!(Variant::Standard.key(), "standard");
+		assert_eq!(Variant::from_key("standard"), Some(Variant::Standard));
+		assert_eq!(Variant::Standard.label(), "Nivra");
+		for variant in Variant::ALL {
+			assert_eq!(Variant::from_key(variant.key()), Some(variant));
+			assert_eq!(Variant::from_key(variant.label()), None);
 		}
 	}
 	#[test]
