@@ -4475,7 +4475,10 @@ fn volume_control(
 			if step(ui, "−", t("5% quieter")) {
 				*value = volume_step_down(*value);
 			}
-			let width = (ui.available_width() - 30.0).max(80.0);
+			// Both 26 px steppers plus their gaps need 60 px; reserving less
+			// pushes the "+" button past the menu edge, where it still
+			// renders but no longer answers clicks.
+			let width = (ui.available_width() - 60.0).max(80.0);
 			ui.allocate_ui(egui::vec2(width, 28.0), |ui| {
 				design::marked_slider(ui, value, 0..=200, "%", 5.0, &[100]);
 			});
@@ -4621,6 +4624,54 @@ fn device_combo(
 mod tests {
 	use super::*;
 
+	fn texts(output: &egui::FullOutput) -> Vec<(String, egui::Rect)> {
+		let mut found = Vec::new();
+		fn walk(shape: &egui::Shape, found: &mut Vec<(String, egui::Rect)>) {
+			match shape {
+				egui::Shape::Text(text) => found.push((
+					text.galley.job.text.clone(),
+					text.galley.rect.translate(text.pos.to_vec2()),
+				)),
+				egui::Shape::Vec(shapes) => {
+					for shape in shapes {
+						walk(shape, found);
+					}
+				}
+				_ => {}
+			}
+		}
+		for shape in &output.shapes {
+			walk(&shape.shape, &mut found);
+		}
+		found
+	}
+
+	// Press and release land on separate frames: that is how real clicks
+	// arrive, and some widgets only arm across frames.
+	fn press(pos: egui::Pos2) -> Vec<egui::Event> {
+		vec![
+			egui::Event::PointerMoved(pos),
+			egui::Event::PointerButton {
+				pos,
+				button: egui::PointerButton::Primary,
+				pressed: true,
+				modifiers: egui::Modifiers::NONE,
+			},
+		]
+	}
+
+	fn release(pos: egui::Pos2) -> Vec<egui::Event> {
+		vec![
+			egui::Event::PointerMoved(pos),
+			egui::Event::PointerButton {
+				pos,
+				button: egui::PointerButton::Primary,
+				pressed: false,
+				modifiers: egui::Modifiers::NONE,
+			},
+		]
+	}
+
 	#[test]
 	fn voice_channel_hover_text_uses_ascii_separators() {
 		assert_eq!(
@@ -4756,6 +4807,235 @@ mod tests {
 		state.voice.active = None;
 		view.voice_bot_safe_volume = true;
 		assert_eq!(mixed(&view, &state, bot), None);
+	}
+
+	#[test]
+	fn volume_control_fits_narrow_menus() {
+		// The menu is 260 px wide: minus, slider and plus with their gaps
+		// must paint inside it, or the right side renders yet never answers.
+		let ctx = egui::Context::default();
+		design::apply(&ctx);
+		let mut volume = 100u16;
+		let frame = |volume: &mut u16, events: Vec<egui::Event>| {
+			let mut output = ctx.run_ui(
+				egui::RawInput {
+					screen_rect: Some(egui::Rect::from_min_size(
+						egui::Pos2::ZERO,
+						egui::vec2(400.0, 300.0),
+					)),
+					events,
+					..Default::default()
+				},
+				|ui| {
+					ui.allocate_ui(egui::vec2(260.0, 300.0), |ui| {
+						volume_control(ui, volume, "User volume", model::Language::English);
+					});
+				},
+			);
+			output.textures_delta.clear();
+			output
+		};
+		let output = frame(&mut volume, vec![]);
+		// Only the stepper band counts, anchored on the "+" glyph itself:
+		// the readout sits in it, while the title above and the presets
+		// below are separate rows.
+		let plus_y = texts(&output)
+			.iter()
+			.find(|(text, _)| text == "+")
+			.map(|(_, rect)| rect.center().y)
+			.unwrap();
+		let mut right = 0.0f32;
+		let mut wide = Vec::new();
+		for shape in &output.shapes {
+			let rect = shape.shape.visual_bounding_rect();
+			if (rect.center().y - plus_y).abs() > 15.0 {
+				continue;
+			}
+			right = right.max(rect.right());
+			if rect.right() > 261.0 {
+				let label = match &shape.shape {
+					egui::Shape::Text(text) => text.galley.job.text.clone(),
+					other => format!("{other:?}"),
+				};
+				wide.push((rect, label.chars().take(24).collect::<String>()));
+			}
+		}
+		assert!(
+			right <= 261.0,
+			"stepper row overflows a 260 px menu: paints to {right}: {wide:?}"
+		);
+		let plus = texts(&output)
+			.iter()
+			.find(|(text, _)| text == "+")
+			.map(|(_, rect)| rect.center())
+			.unwrap();
+		frame(&mut volume, press(plus));
+		frame(&mut volume, release(plus));
+		assert_eq!(volume, 105, "the stepper answers inside a narrow menu");
+	}
+
+	#[test]
+	fn participant_volume_menu_survives_inside_clicks_and_reopens() {
+		let ctx = egui::Context::default();
+		design::apply(&ctx);
+		let state = test_support::voice_demo_state();
+		let entry = state.voice.roster[1].clone();
+		let mut view = MessagingUi::default();
+		let frame = |view: &mut MessagingUi,
+		             state: &State,
+		             events: Vec<egui::Event>|
+		 -> (egui::FullOutput, egui::Rect) {
+			let mut row = egui::Rect::NOTHING;
+			let mut output = ctx.run_ui(
+				egui::RawInput {
+					screen_rect: Some(egui::Rect::from_min_size(
+						egui::Pos2::ZERO,
+						egui::vec2(400.0, 800.0),
+					)),
+					events,
+					..Default::default()
+				},
+				|ui| {
+					ui.set_width(360.0);
+					if let Some(response) =
+						view.voice_participant(ui, state, &entry, false)
+					{
+						row = response.rect;
+					}
+				},
+			);
+			output.textures_delta.clear();
+			(output, row)
+		};
+		let right_click = |pos: egui::Pos2| {
+			vec![
+				egui::Event::PointerMoved(pos),
+				egui::Event::PointerButton {
+					pos,
+					button: egui::PointerButton::Secondary,
+					pressed: true,
+					modifiers: egui::Modifiers::NONE,
+				},
+				egui::Event::PointerButton {
+					pos,
+					button: egui::PointerButton::Secondary,
+					pressed: false,
+					modifiers: egui::Modifiers::NONE,
+				},
+			]
+		};
+		let click = |view: &mut MessagingUi, state: &State, pos: egui::Pos2| {
+			frame(view, state, vec![egui::Event::PointerMoved(pos)]);
+			frame(view, state, press(pos));
+			frame(view, state, release(pos))
+		};
+		// Settle one frame so the row rect is known.
+		let (_, row) = frame(&mut view, &state, vec![]);
+		assert!(row.width() > 0.0, "participant row renders");
+		let open_menu = |view: &mut MessagingUi, state: &State| {
+			let (_, _) = frame(view, state, right_click(row.center()));
+			let (output, _) = frame(view, state, vec![]);
+			texts(&output)
+		};
+		// Open with right-click: the menu shows its volume section.
+		let labels = open_menu(&mut view, &state);
+		assert!(
+			labels.iter().any(|(text, _)| text == "Mute" || text == "Unmute"),
+			"right-click opens the participant menu: {labels:?}"
+		);
+		assert!(
+			labels.iter().any(|(text, _)| text == "User volume"),
+			"menu shows the volume section: {labels:?}"
+		);
+		// Decisive: plus first on a fresh menu, no prior drag or preset.
+		let user = entry.participant.user.0;
+		let mixed = |view: &MessagingUi| {
+			view.voice_user_volume_overrides()
+				.iter()
+				.find(|(id, _)| *id == user)
+				.map(|(_, volume)| *volume)
+		};
+		let drag = |view: &mut MessagingUi,
+		            state: &State,
+		            from: egui::Pos2,
+		            to: egui::Pos2| {
+			frame(view, state, press(from));
+			frame(view, state, vec![egui::Event::PointerMoved(to)]);
+			frame(view, state, release(to))
+		};
+		let plus = labels
+			.iter()
+			.find(|(text, _)| text == "+")
+			.map(|(_, rect)| rect.center())
+			.unwrap();
+		let (output, _) = click(&mut view, &state, plus);
+		let after = texts(&output);
+		assert_eq!(
+			mixed(&view),
+			Some(105),
+			"stepper answers on a fresh menu: {after:?}"
+		);
+		assert!(
+			after.iter().any(|(text, _)| text == "User volume"),
+			"clicking inside keeps the menu open: {after:?}"
+		);
+		let (_, _) = drag(&mut view, &state, egui::pos2(85.0, 120.0), egui::pos2(95.0, 120.0));
+		let (output, _) = frame(&mut view, &state, vec![]);
+		let dragged = mixed(&view);
+		assert!(
+			matches!(dragged, Some(volume) if volume != 100),
+			"slider drag changes the volume: {dragged:?}"
+		);
+		assert!(
+			texts(&output).iter().any(|(text, _)| text == "User volume"),
+			"drag keeps the menu open"
+		);
+		// The "+" stepper adds 5 to the dragged value; the menu stays open.
+		let labels = open_menu(&mut view, &state);
+		let plus = labels
+			.iter()
+			.find(|(text, _)| text == "+")
+			.map(|(_, rect)| rect.center())
+			.unwrap();
+		let (output, _) = click(&mut view, &state, plus);
+		let after = texts(&output);
+		let stepped = mixed(&view).unwrap();
+		assert_eq!(
+			stepped,
+			volume_step_up(dragged.unwrap()),
+			"stepper click adds 5 percent"
+		);
+		assert!(
+			after.iter().any(|(text, _)| text == "User volume"),
+			"clicking inside keeps the menu open: {after:?}"
+		);
+		// A preset button sets the volume absolutely; the menu stays open.
+		let preset = after
+			.iter()
+			.find(|(text, _)| text == "50%")
+			.map(|(_, rect)| rect.center())
+			.unwrap();
+		let (output, _) = click(&mut view, &state, preset);
+		let after = texts(&output);
+		assert_eq!(mixed(&view), Some(50), "preset click sets 50 percent");
+		assert!(
+			after.iter().any(|(text, _)| text == "User volume"),
+			"clicking inside keeps the menu open: {after:?}"
+		);
+		// Close on the row itself past the popup edge, then right-click
+		// opens the menu again. (Outside clicks never reach the close path
+		// in a headless harness — verified with a bare egui popup — so the
+		// test closes through the row, which the menu explicitly honors.)
+		let (output, _) = click(&mut view, &state, egui::pos2(340.0, 17.0));
+		assert!(
+			!texts(&output).iter().any(|(text, _)| text == "User volume"),
+			"row click closes the menu"
+		);
+		let labels = open_menu(&mut view, &state);
+		assert!(
+			labels.iter().any(|(text, _)| text == "User volume"),
+			"right-click reopens the menu: {labels:?}"
+		);
 	}
 
 	#[test]
