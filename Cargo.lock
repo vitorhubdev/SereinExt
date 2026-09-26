@@ -7846,6 +7846,7 @@ dependencies = [
  "client-core",
  "egui",
  "extensions",
+ "flate2",
  "image",
  "model",
  "pulldown-cmark",

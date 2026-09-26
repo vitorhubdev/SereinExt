@@ -584,6 +584,25 @@ fn portuguese_brazil(key: &str) -> Option<&'static str> {
 		}
 		"View full licenses" => "Ver licenças completas",
 		"Hide full licenses" => "Ocultar licenças completas",
+		"Licenses" => "Licenças",
+		"Legal" => "Informações legais",
+		"Licenses for the libraries, fonts, icons and sounds included in SereinExt." => {
+			"Licenças das bibliotecas, fontes, ícones e sons incluídos no SereinExt."
+		}
+		"Filter licenses" => "Filtrar licenças",
+		"No licenses match this filter." => "Nenhuma licença corresponde a este filtro.",
+		"All licenses" => "Todas as licenças",
+		"Source code for the MPL-2.0 components in this version is published on its release page as" => {
+			"O código-fonte dos componentes sob MPL-2.0 desta versão está publicado na página de lançamento dela como"
+		}
+		"Notification sounds" => "Sons de notificação",
+		"Fonts" => "Fontes",
+		"Emoji" => "Emojis",
+		"Icons" => "Ícones",
+		"Core libraries" => "Bibliotecas principais",
+		"Sign-in" => "Entrada na conta",
+		"Audio playback" => "Reprodução de áudio",
+		"Other dependencies" => "Outras dependências",
 		"App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch." => {
 			"As preferências do aplicativo não foram salvas. Se o seu aceite dos termos não foi registrado, o SereinExt vai perguntar de novo na próxima vez que abrir."
 		}
@@ -1245,6 +1264,25 @@ fn spanish(key: &str) -> Option<&'static str> {
 		}
 		"View full licenses" => "Ver licencias completas",
 		"Hide full licenses" => "Ocultar licencias completas",
+		"Licenses" => "Licencias",
+		"Legal" => "Información legal",
+		"Licenses for the libraries, fonts, icons and sounds included in SereinExt." => {
+			"Licencias de las bibliotecas, fuentes, iconos y sonidos incluidos en SereinExt."
+		}
+		"Filter licenses" => "Filtrar licencias",
+		"No licenses match this filter." => "Ninguna licencia coincide con este filtro.",
+		"All licenses" => "Todas las licencias",
+		"Source code for the MPL-2.0 components in this version is published on its release page as" => {
+			"El código fuente de los componentes bajo MPL-2.0 de esta versión se publica en su página de lanzamiento como"
+		}
+		"Notification sounds" => "Sonidos de notificación",
+		"Fonts" => "Fuentes",
+		"Emoji" => "Emojis",
+		"Icons" => "Iconos",
+		"Core libraries" => "Bibliotecas principales",
+		"Sign-in" => "Inicio de sesión",
+		"Audio playback" => "Reproducción de audio",
+		"Other dependencies" => "Otras dependencias",
 		"App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch." => {
 			"Las preferencias de la aplicación no se guardaron. Si tu aceptación de los términos no quedó registrada, SereinExt volverá a preguntar la próxima vez que se abra."
 		}
@@ -1699,6 +1737,21 @@ mod tests {
 			"Your app preferences could not be read, so SereinExt cannot tell whether you accepted this before.",
 			"View full licenses",
 			"Hide full licenses",
+			"Licenses",
+			"Legal",
+			"Licenses for the libraries, fonts, icons and sounds included in SereinExt.",
+			"Filter licenses",
+			"No licenses match this filter.",
+			"All licenses",
+			crate::licenses::MPL_SOURCE_PREFIX,
+			"Notification sounds",
+			"Fonts",
+			"Emoji",
+			"Icons",
+			"Core libraries",
+			"Sign-in",
+			"Audio playback",
+			"Other dependencies",
 			"App preferences were not saved. If your acceptance of the terms was not recorded, SereinExt will ask again next launch.",
 			"Your session expired; sign in again to continue.",
 			"I understand — continue",

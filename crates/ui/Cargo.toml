@@ -20,6 +20,10 @@ unicode-segmentation = "=1.13.3"
 unicode-bidi = "=0.3.18"
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
 ruzstd = { version = "0.9.0", default-features = false, features = ["std"] }
+flate2.workspace = true
+
+[build-dependencies]
+flate2.workspace = true
 
 [dev-dependencies]
 test-support.workspace = true

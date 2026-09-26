@@ -918,8 +918,6 @@ const APP_PREFERENCES_NOT_SAVED: &str = "App preferences were not saved. If your
 /// The raw state status ("reconnect explicitly; drafts remain in RAM") stays for
 /// diagnostics; this line tells the owner that signing in again is all it takes.
 const SESSION_EXPIRED_SIGN_IN_AGAIN: &str = "Your session expired; sign in again to continue.";
-/// Full license texts, revealed on demand from the first-run notices dialog.
-const THIRD_PARTY_NOTICES: &str = include_str!("../../../THIRD_PARTY_NOTICES.md");
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum NoticesPrompt {
 	Hidden,
@@ -4027,10 +4025,8 @@ impl Desktop {
 			return;
 		};
 		let language = self.messaging.language;
-		let licenses_key = egui::Id::unique("notices-full-licenses");
-		let mut licenses_open =
-			ctx.data(|data| data.get_temp::<bool>(licenses_key).unwrap_or(false));
 		let mut accept = false;
+		let mut view_licenses = false;
 		// Closing must not count as accepting, and there is nothing to go back to: only the
 		// footer action ends this dialog, so `close` from Escape/backdrop is ignored.
 		ui::dialog::Dialog::new(
@@ -4040,8 +4036,6 @@ impl Desktop {
 		.persistent()
 		.width(500.0)
 		.show(ctx, |d| {
-			let reserved = 300.0;
-			let licenses_height = (d.available_height() - reserved).clamp(120.0, 320.0);
 			d.content(|ui| {
 				let colors = ui::design::palette(ui);
 				ui.add(
@@ -4061,34 +4055,13 @@ impl Desktop {
 					);
 				}
 				ui.add_space(4.0);
-				let toggle = if licenses_open {
-					"Hide full licenses"
-				} else {
-					"View full licenses"
-				};
-				if ui
+				view_licenses = ui
 					.link(
-						egui::RichText::new(ui::i18n::text(language, toggle))
+						egui::RichText::new(ui::i18n::text(language, "View full licenses"))
 							.size(13.0)
 							.color(colors.link),
 					)
-					.clicked()
-				{
-					licenses_open = !licenses_open;
-				}
-				if licenses_open {
-					egui::ScrollArea::vertical()
-						.max_height(licenses_height)
-						.auto_shrink([false, true])
-						.show(ui, |ui| {
-							ui.set_width(ui.available_width());
-							ui.label(
-								egui::RichText::new(THIRD_PARTY_NOTICES)
-									.size(12.0)
-									.color(colors.muted),
-							);
-						});
-				}
+					.clicked();
 			});
 			d.footer(|ui| {
 				accept = ui::dialog::action(
@@ -4099,7 +4072,10 @@ impl Desktop {
 				.clicked();
 			});
 		});
-		ctx.data_mut(|data| data.insert_temp(licenses_key, licenses_open));
+		if view_licenses {
+			self.messaging.open_licenses();
+		}
+		self.messaging.show_licenses(ctx);
 		if accept {
 			accept_notices(&mut self.app_settings);
 		}

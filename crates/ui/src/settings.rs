@@ -12,6 +12,8 @@ pub(super) struct Settings {
 	pub(super) editor: crate::profile_edit::Editor,
 	pub(super) notifications: crate::notification_settings::Navigation,
 	pub(super) messaging_permissions: crate::messaging_permissions::Navigation,
+	/// Shared with the first-run notices, which open it through [`MessagingUi::open_licenses`].
+	pub(super) licenses: crate::licenses::LicensesUi,
 }
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -122,7 +124,7 @@ impl Page {
 			Self::Account => "my account profile logout",
 			Self::Profile => "profile edit display name about me bio pronouns color colour",
 			Self::General => {
-				"general windows macos login menu bar startup autostart automatically open minimized minimize close tray background title bar caption window buttons graphics gpu adapter render discrete integrated hardware acceleration performance battery"
+				"general windows macos login menu bar startup autostart automatically open minimized minimize close tray background title bar caption window buttons graphics gpu adapter render discrete integrated hardware acceleration performance battery legal licenses open source notices"
 			}
 			Self::Appearance => {
 				"appearance customization primary accent hex window effects transparency blur theme dark light system mode zoom scale layout sidebar width people members member list reset colour color preset"
@@ -199,6 +201,14 @@ impl MessagingUi {
 		self.settings.open = true;
 		self.settings.page = Page::Updates;
 		self.settings.query.clear();
+	}
+	/// Opens the licenses screen over whatever is showing.
+	pub fn open_licenses(&mut self) {
+		self.settings.licenses.open();
+	}
+	/// Draws the licenses screen while it is open; safe to call from more than one host.
+	pub fn show_licenses(&mut self, ctx: &egui::Context) {
+		crate::licenses::show(ctx, &mut self.settings.licenses, self.language);
 	}
 
 	pub(super) fn keybinds_shortcut(&mut self, ctx: &egui::Context) {
@@ -458,7 +468,11 @@ impl MessagingUi {
 		if modal.should_close() {
 			self.settings.open = false;
 		}
-		if self.keybind_capture.is_none()
+		// The licenses screen sits on top and takes Escape for itself.
+		let licenses_open = self.settings.licenses.open;
+		self.show_licenses(ctx);
+		if !licenses_open
+			&& self.keybind_capture.is_none()
 			&& ctx.input_mut(|input| {
 				crate::keybinds::pressed_exact(
 					input,
@@ -921,6 +935,27 @@ impl MessagingUi {
 								.on_hover_text(preference.description());
 							}
 						});
+				},
+			);
+		});
+		design::group(ui, crate::i18n::text(self.language, "Legal"), |ui| {
+			design::row(
+				ui,
+				crate::i18n::text(self.language, "Licenses"),
+				Some(crate::i18n::text(
+					self.language,
+					"Licenses for the libraries, fonts, icons and sounds included in SereinExt.",
+				)),
+				|ui| {
+					if design::button(
+						ui,
+						crate::i18n::text(self.language, "Open"),
+						design::ButtonKind::Outline,
+					)
+					.clicked()
+					{
+						self.open_licenses();
+					}
 				},
 			);
 		});

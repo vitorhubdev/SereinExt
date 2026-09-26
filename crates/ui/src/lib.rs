@@ -50,6 +50,7 @@ mod highlight;
 pub mod i18n;
 pub mod icons;
 mod invites;
+pub mod licenses;
 mod local_time;
 mod markdown;
 mod member_search;
