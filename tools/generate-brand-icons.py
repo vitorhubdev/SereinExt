@@ -183,22 +183,42 @@ def main():
     scalable = hicolor / "scalable" / "apps"
     scalable.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(master, scalable / "nivra.svg")
-    # The symbolic icon is the mark centred on a 1024 canvas. The mark is authored in
-    # its own square box, so scaling it about the origin centres it; the transform is
-    # baked into the path so the file stays plain geometry with no wrapper group.
+    # The symbolic icon is the mark centred on a 1024 canvas with the historic
+    # symbolic margin: the old serein-symbolic kept ~18% padding each side
+    # (bbox 187.56..833.39 x 173.37..826.30, i.e. 645.83 x 652.93 in a 1024 canvas).
+    # The mark itself stays tight for the atlas; only the symbolic gets the margin.
+    # Scale the mark's N to fit inside that bbox, centred in the canvas.
     mark = (BRAND / "nivra-mark.svg").read_text(encoding="utf-8")
-    box = [float(v) for v in mark.split("viewBox=" + chr(34), 1)[1].split(chr(34), 1)[0].split()]
-    scale = 1024.0 / box[2]
     body = mark[mark.index("<path"):mark.rindex("</svg>")]
     body = body.replace("fill=" + chr(34) + "#fff" + chr(34), "fill=" + chr(34) + "#000000" + chr(34))
     quoted = "d=" + chr(34)
     start = body.index(quoted) + len(quoted)
     end = body.index(chr(34), start)
-    scaled = re.sub(
-        r"-?[0-9]+(?:\.[0-9]+)?",
-        lambda match: "%.2f" % (float(match.group(0)) * scale),
-        body[start:end],
-    )
+    d_mark = body[start:end]
+    nums = [float(v) for v in re.findall(r"-?[0-9]+(?:\.[0-9]+)?", d_mark)]
+    xs = nums[0::2]
+    ys = nums[1::2]
+    xmin, xmax = min(xs), max(xs)
+    ymin, ymax = min(ys), max(ys)
+    # Historic serein-symbolic bbox size; the N keeps its aspect, centred.
+    SEREIN_W, SEREIN_H = 833.39 - 187.56, 826.30 - 173.37
+    sym_scale = min(SEREIN_W / (xmax - xmin), SEREIN_H / (ymax - ymin))
+    sym_tx = 512.0 - (xmin + xmax) * 0.5 * sym_scale
+    sym_ty = 512.0 - (ymin + ymax) * 0.5 * sym_scale
+    it = iter(nums)
+    # Transform x,y pairs: x' = x*s + tx, y' = y*s + ty. Consume pairs in order.
+    out_nums = []
+    for x, y in zip(xs, ys):
+        out_nums.append("%.2f" % (x * sym_scale + sym_tx))
+        out_nums.append("%.2f" % (y * sym_scale + sym_ty))
+    # Rebuild d by replacing numbers in order (M/L/Z structure has only numbers).
+    idx = 0
+    def _repl(match):
+        nonlocal idx
+        v = out_nums[idx]
+        idx += 1
+        return v
+    scaled = re.sub(r"-?[0-9]+(?:\.[0-9]+)?", _repl, d_mark)
     body = body[:start] + scaled + body[end:]
     head = "".join([
         "<?xml version=" + chr(39) + "1.0" + chr(39) + " encoding=" + chr(39) + "UTF-8" + chr(39) + "?>" + chr(10),

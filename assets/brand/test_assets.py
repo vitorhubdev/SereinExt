@@ -470,6 +470,46 @@ class VectorPlacementTest(unittest.TestCase):
                 self.assertAlmostEqual(cx, 512.0, delta=4.0, msg='the N is not centred on the plate')
                 self.assertAlmostEqual(cy, 512.0, delta=4.0, msg='the N is not centred on the plate')
 
+    def test_n_is_geometric_straight_with_rounded_corners(self):
+        """The clean N is straight legs plus a wide diagonal (w=556,h=600,stem=152).
+        Traced artwork used cubic wiggles; the geometric version is only M/L/Z."""
+        for name in (
+            'assets/brand/nivra-mark.svg',
+            'assets/brand/nivra.svg',
+            'assets/brand/nivra-flat.svg',
+            'packaging/linux/hicolor/scalable/apps/nivra.svg',
+            'packaging/linux/hicolor/scalable/apps/nivra-symbolic.svg',
+        ):
+            with self.subTest(name=name):
+                root = ET.parse(ROOT / name).getroot()
+                paths = root.findall('.//' + SVG_NS + 'path')
+                # The N is the last path in every file (plate comes first where present).
+                d = paths[-1].attrib.get('d', '')
+                self.assertTrue(d, f'{name}: N path is empty')
+                self.assertNotIn('C', d, f'{name}: N still uses cubic wiggles')
+                self.assertIn('L', d, f'{name}: N has no straight segments')
+
+    def test_symbolic_keeps_the_historic_margin(self):
+        """serein-symbolic kept ~18% padding (bbox 187.56..833.39 x 173.37..826.30).
+        A 1 px top/bottom margin is too tight; the N must sit inside that margin."""
+        path = ROOT / 'packaging' / 'linux' / 'hicolor' / 'scalable' / 'apps' / 'nivra-symbolic.svg'
+        _, curve = geometry(path)
+        xmin, ymin, xmax, ymax = curve
+        w, h = xmax - xmin, ymax - ymin
+        # Same relative size as the old symbolic: ~63% of the 1024 canvas.
+        self.assertGreaterEqual(w, 1024 * 0.55, f'symbolic N too narrow: {w:.1f}')
+        self.assertLessEqual(w, 1024 * 0.70, f'symbolic N too wide: {w:.1f}')
+        self.assertGreaterEqual(h, 1024 * 0.55, f'symbolic N too short: {h:.1f}')
+        self.assertLessEqual(h, 1024 * 0.70, f'symbolic N too tall: {h:.1f}')
+        # Same relative margin: at least 15% clear on every side (old kept ~18%).
+        for side, value in (
+            ('left', xmin), ('top', ymin),
+            ('right', 1024 - xmax), ('bottom', 1024 - ymax),
+        ):
+            self.assertGreaterEqual(
+                value, 1024 * 0.15, f'symbolic {side} margin too tight: {value:.1f}'
+            )
+
     def test_tray_image_carries_a_centred_mark(self):
         width, height, channels, rows = read_png(BRAND / 'nivra-tray.png')
         self.assertEqual((width, height, channels), (TRAY, TRAY, 4))

@@ -249,8 +249,8 @@ const fn rgba(value: u32, alpha: u8) -> Color32 {
 		alpha,
 	)
 }
-/// Serein azure: the house accent, packed for call sites that speak in integer colours.
-pub const DEFAULT_PRIMARY_RGB: u32 = 0x6924dd;
+/// Nivra violet: the house accent, packed for call sites that speak in integer colours.
+pub const DEFAULT_PRIMARY_RGB: u32 = 0x7c44f5;
 pub const DEFAULT_PRIMARY_COLOR: [u8; 3] = [
 	(DEFAULT_PRIMARY_RGB >> 16) as u8,
 	(DEFAULT_PRIMARY_RGB >> 8) as u8,
@@ -1737,7 +1737,8 @@ mod tests {
 	#[test]
 	fn default_accent_stays_on_the_approved_nivra_violet() {
 		// Pinned deliberately: the accent is part of the brand decision, not a free value.
-		assert_eq!(DEFAULT_PRIMARY_RGB, 0x6924dd);
+		// #7C44F5: white 5.25:1, panel #0d1016 3.63:1, chat #161b25 3.29:1.
+		assert_eq!(DEFAULT_PRIMARY_RGB, 0x7c44f5);
 		for dark in [false, true] {
 			let base = colors(dark, Variant::Standard);
 			assert_eq!(base.accent, rgb(DEFAULT_PRIMARY_RGB));
@@ -1746,10 +1747,23 @@ mod tests {
 				"{dark}: white on the accent must stay readable"
 			);
 			assert!(
+				contrast(base.accent, base.base) >= 3.0,
+				"{dark}: accent must stay visible against the panel"
+			);
+			assert!(
+				contrast(base.accent, base.chat) >= 3.0,
+				"{dark}: accent must stay visible against the chat"
+			);
+			assert!(
 				contrast(base.mention_text, base.mention_bg.blend(base.chat)) >= 4.5,
 				"{dark}: mention text must stay readable on the mention tint"
 			);
 		}
+		// Pin the three dark-Standard ratios the owner approved.
+		let dark = colors(true, Variant::Standard);
+		assert!(contrast(Color32::WHITE, dark.accent) >= 4.5);
+		assert!(contrast(dark.accent, rgb(0x0d1016)) >= 3.0);
+		assert!(contrast(dark.accent, rgb(0x161b25)) >= 3.0);
 	}
 	#[test]
 	fn the_standard_preset_keeps_the_key_it_was_saved_under() {
